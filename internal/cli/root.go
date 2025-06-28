@@ -84,6 +84,8 @@ func initializeServices(cmd *cobra.Command, args []string) {
 		logger.Info("Verbose mode enabled")
 	}
 
+	envManager = env_manager.NewEnvManager()
+
 	configPath := config.GetConfigPath(envManager)
 	if verbose {
 		logger.Config("Using configuration file: %s", configPath)
