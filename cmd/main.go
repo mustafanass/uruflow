@@ -23,8 +23,6 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"uruflow.com/env_manager"
 	"uruflow.com/internal/cli"
 )
 
