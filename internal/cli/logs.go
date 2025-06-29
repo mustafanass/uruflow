@@ -142,12 +142,3 @@ func findMostRecentLogFile(logDir string) string {
 	
 	return mostRecent
 }
-
-// Helper function to check if file doesn't exist
-func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
-}
