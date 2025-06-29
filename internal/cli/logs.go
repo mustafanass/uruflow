@@ -46,6 +46,7 @@ func init() {
 
 func showLogs(cmd *cobra.Command, args []string) {
 	var logDir = envManager.LogDir
+	fmt.Fprintf(logDir,"\n")
 	if logDir == "" {
 		fmt.Fprintf(os.Stderr, "Environment variable URUFLOW_LOG_DIR is not set\n")
 		logger.Warning("Please set environment variable URUFLOW_LOG_DIR")
