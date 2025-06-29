@@ -30,8 +30,6 @@ import (
 
 // main entry point for the CLI application
 func main() {
-	envMgr := env_manager.NewEnvManager()
-	cli.SetEnvManager(envMgr)
 	if err := cli.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
