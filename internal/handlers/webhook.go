@@ -49,15 +49,17 @@ func NewWebhookHandler(
 // HandleWebhook processes incoming webhook requests using direct deployment
 func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	
 	var response string
 	var statusCode int = http.StatusOK
 	
 	defer func() {
 		if r := recover(); r != nil {
-			h.logger.Error("Stop webhook handler: %v", r)
+			h.logger.Error("Panic in webhook handler: %v", r)
 			statusCode = http.StatusInternalServerError
 			response = `{"error": "Internal server error", "status": "failed"}`
 		}
+
 		w.WriteHeader(statusCode)
 		if response == "" {
 			response = `{"status": "ok", "message": "Request processed"}`
@@ -69,11 +71,9 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("=== WEBHOOK REQUEST START ===")
 	h.logger.Info("Webhook request received from %s", r.RemoteAddr)
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
-	defer cancel()
-	r = r.WithContext(ctx)
-
+	deployCtx, deployCancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer deployCancel()
+	
 	if r.Method != http.MethodPost {
 		h.logger.Warning("Invalid method: %s (expected POST)", r.Method)
 		statusCode = http.StatusMethodNotAllowed
@@ -132,10 +132,10 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	h.logger.Success("All checks passed, starting direct deployment")
 
 	select {
-	case <-ctx.Done():
-		h.logger.Error("Request context cancelled")
+	case <-deployCtx.Done():
+		h.logger.Error("Deployment context cancelled during validation")
 		statusCode = http.StatusRequestTimeout
-		response = `{"error": "Request timeout", "status": "failed"}`
+		response = `{"error": "Deployment timeout during validation", "status": "failed"}`
 		return
 	default:
 	}
@@ -150,7 +150,7 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	repoPath := filepath.Join(h.config.Settings.WorkDir, repo.Name, branch)
 	h.logger.Webhook("Verifying SSH connection before deployment")
 
-	if err := h.testSSHWithContext(ctx); err != nil {
+	if err := h.testSSHWithContext(deployCtx); err != nil {
 		h.logger.Error("SSH connection test failed: %v", err)
 		statusCode = http.StatusInternalServerError
 		response = fmt.Sprintf(`{"error": "SSH connection failed: %v", "status": "failed"}`, err)
@@ -164,8 +164,7 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	startTime := time.Now()
 	h.logger.Webhook("Starting direct deployment for %s:%s", repo.Name, branch)
-
-	if err := h.deployWithContext(ctx, *repo, branch); err != nil {
+	if err := h.deployWithContext(deployCtx, *repo, branch); err != nil {
 		duration := time.Since(startTime)
 		h.logger.Error("Webhook deployment failed after %v: %v", duration.Round(time.Second), err)
 		statusCode = http.StatusInternalServerError
@@ -216,7 +215,7 @@ func (h *WebhookHandler) testSSHWithContext(ctx context.Context) error {
 // deployWithContext deploys with context timeout
 func (h *WebhookHandler) deployWithContext(ctx context.Context, repo models.Repository, branch string) error {
 	resultChan := make(chan error, 1)
-	
+
 	go func() {
 		defer close(resultChan)
 		err := h.deploymentService.DeployDirect(repo, branch)
@@ -238,7 +237,7 @@ func (h *WebhookHandler) applyGitSafetyFixes(repoPath string) error {
 		currentUser = "unknown"
 	}
 
-	h.logger.Webhook("Applying aggressive Git safety fixes as user: %s (UID: %d)", currentUser, os.Getuid())
+	h.logger.Webhook("Applying Git safety fixes as user: %s (UID: %d)", currentUser, os.Getuid())
 
 	cmd := exec.Command("git", "config", "--global", "safe.directory", "*")
 	if err := cmd.Run(); err != nil {
@@ -297,7 +296,7 @@ func (h *WebhookHandler) fixOwnershipAsRoot(repoPath, parentDir string) error {
 			return fmt.Errorf("failed to fix repository ownership: %v", err)
 		}
 	}
-
+	
 	if _, err := os.Stat(parentDir); err == nil {
 		cmd := exec.Command("chown", "-R", "root:root", parentDir)
 		if err := cmd.Run(); err != nil {
