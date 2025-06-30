@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,26 +48,53 @@ func NewWebhookHandler(
 
 // HandleWebhook processes incoming webhook requests using direct deployment
 func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var response string
+	var statusCode int = http.StatusOK
+	
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error("Stop webhook handler: %v", r)
+			statusCode = http.StatusInternalServerError
+			response = `{"error": "Internal server error", "status": "failed"}`
+		}
+		w.WriteHeader(statusCode)
+		if response == "" {
+			response = `{"status": "ok", "message": "Request processed"}`
+		}
+		fmt.Fprint(w, response)
+		
+		h.logger.Info("=== WEBHOOK REQUEST END (Status: %d) ===", statusCode)
+	}()
+
 	h.logger.Info("=== WEBHOOK REQUEST START ===")
 	h.logger.Info("Webhook request received from %s", r.RemoteAddr)
 
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	r = r.WithContext(ctx)
+
 	if r.Method != http.MethodPost {
 		h.logger.Warning("Invalid method: %s (expected POST)", r.Method)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		statusCode = http.StatusMethodNotAllowed
+		response = `{"error": "Method not allowed", "status": "failed"}`
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.logger.Error("Error reading request body: %v", err)
-		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		statusCode = http.StatusBadRequest
+		response = `{"error": "Error reading request body", "status": "failed"}`
 		return
 	}
+	defer r.Body.Close()
 
 	var webhook models.GitHubWebhook
 	if err := json.Unmarshal(body, &webhook); err != nil {
 		h.logger.Error("Error decoding webhook JSON: %v", err)
-		http.Error(w, "Bad request - invalid JSON", http.StatusBadRequest)
+		statusCode = http.StatusBadRequest
+		response = `{"error": "Bad request - invalid JSON", "status": "failed"}`
 		return
 	}
 
@@ -74,8 +102,7 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	if !strings.HasPrefix(webhook.Ref, "refs/heads/") {
 		h.logger.Info("Ignoring non-branch ref: %s", webhook.Ref)
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Ignoring non-branch ref: %s", webhook.Ref)
+		response = fmt.Sprintf(`{"status": "ignored", "message": "Ignoring non-branch ref: %s"}`, webhook.Ref)
 		return
 	}
 
@@ -85,56 +112,48 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	repo := h.repositoryService.GetRepository(webhook.Repository.Name)
 	if repo == nil {
 		h.logger.Error("Repository '%s' not found in configuration", webhook.Repository.Name)
-		http.Error(w, fmt.Sprintf("Repository '%s' not configured", webhook.Repository.Name), http.StatusNotFound)
+		statusCode = http.StatusNotFound
+		response = fmt.Sprintf(`{"error": "Repository '%s' not configured", "status": "failed"}`, webhook.Repository.Name)
 		return
 	}
 
 	if !repo.AutoDeploy {
 		h.logger.Info("Auto-deploy disabled for repository %s", repo.Name)
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Auto-deploy disabled for repository %s", repo.Name)
+		response = fmt.Sprintf(`{"status": "disabled", "message": "Auto-deploy disabled for repository %s"}`, repo.Name)
 		return
 	}
 
 	if !h.repositoryService.IsBranchConfigured(repo, branch) {
 		h.logger.Info("Branch '%s' not configured for deployment in repository '%s'", branch, repo.Name)
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Branch '%s' not configured for deployment", branch)
+		response = fmt.Sprintf(`{"status": "ignored", "message": "Branch '%s' not configured for deployment"}`, branch)
 		return
 	}
 
 	h.logger.Success("All checks passed, starting direct deployment")
 
+	select {
+	case <-ctx.Done():
+		h.logger.Error("Request context cancelled")
+		statusCode = http.StatusRequestTimeout
+		response = `{"error": "Request timeout", "status": "failed"}`
+		return
+	default:
+	}
+
 	if !h.gitService.IsSSHAvailable() {
 		h.logger.Error("SSH authentication not available for webhook deployment")
-		http.Error(w, "SSH authentication not configured", http.StatusInternalServerError)
+		statusCode = http.StatusInternalServerError
+		response = `{"error": "SSH authentication not configured", "status": "failed"}`
 		return
 	}
 
 	repoPath := filepath.Join(h.config.Settings.WorkDir, repo.Name, branch)
 	h.logger.Webhook("Verifying SSH connection before deployment")
 
-	maxRetries := 3
-	var lastErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		h.logger.Webhook("SSH connection test attempt %d/%d", attempt, maxRetries)
-		if err := h.gitService.TestSSHConnection(); err != nil {
-			lastErr = err
-			h.logger.Warning("SSH test attempt %d failed: %v", attempt, err)
-			if attempt < maxRetries {
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-		} else {
-			h.logger.Success("SSH connection verified for webhook deployment")
-			lastErr = nil
-			break
-		}
-	}
-
-	if lastErr != nil {
-		h.logger.Error("SSH connection test failed for webhook after %d attempts: %v", maxRetries, lastErr)
-		http.Error(w, fmt.Sprintf("SSH connection failed: %v", lastErr), http.StatusInternalServerError)
+	if err := h.testSSHWithContext(ctx); err != nil {
+		h.logger.Error("SSH connection test failed: %v", err)
+		statusCode = http.StatusInternalServerError
+		response = fmt.Sprintf(`{"error": "SSH connection failed: %v", "status": "failed"}`, err)
 		return
 	}
 
@@ -146,21 +165,70 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 	h.logger.Webhook("Starting direct deployment for %s:%s", repo.Name, branch)
 
-	if err := h.deploymentService.DeployDirect(*repo, branch); err != nil {
+	if err := h.deployWithContext(ctx, *repo, branch); err != nil {
 		duration := time.Since(startTime)
 		h.logger.Error("Webhook deployment failed after %v: %v", duration.Round(time.Second), err)
-		http.Error(w, fmt.Sprintf("Deployment failed: %v", err), http.StatusInternalServerError)
+		statusCode = http.StatusInternalServerError
+		response = fmt.Sprintf(`{"error": "Deployment failed: %v", "status": "failed", "duration": "%v"}`, err, duration.Round(time.Second))
 		return
 	}
 
 	duration := time.Since(startTime)
 	h.logger.Success("Webhook deployment completed successfully for %s:%s (took %v)", repo.Name, branch, duration.Round(time.Second))
-	w.WriteHeader(http.StatusOK)
-	response := fmt.Sprintf("Deployment completed successfully for %s:%s (commit: %s) in %v",
+	
+	response = fmt.Sprintf(`{"status": "success", "message": "Deployment completed successfully", "repository": "%s", "branch": "%s", "commit": "%s", "duration": "%v"}`,
 		repo.Name, branch, webhook.HeadCommit.ID[:7], duration.Round(time.Second))
-	fmt.Fprintf(w, response)
+}
 
-	h.logger.Info("=== WEBHOOK REQUEST END ===")
+// testSSHWithContext tests SSH connection with context timeout
+func (h *WebhookHandler) testSSHWithContext(ctx context.Context) error {
+	maxRetries := 3
+	var lastErr error
+	
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("SSH test cancelled: %v", ctx.Err())
+		default:
+		}
+		
+		h.logger.Webhook("SSH connection test attempt %d/%d", attempt, maxRetries)
+		if err := h.gitService.TestSSHConnection(); err != nil {
+			lastErr = err
+			h.logger.Warning("SSH test attempt %d failed: %v", attempt, err)
+			if attempt < maxRetries {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("SSH test cancelled during retry: %v", ctx.Err())
+				case <-time.After(time.Duration(attempt) * time.Second):
+					continue
+				}
+			}
+		} else {
+			h.logger.Success("SSH connection verified for webhook deployment")
+			return nil
+		}
+	}
+	
+	return fmt.Errorf("SSH connection test failed after %d attempts: %v", maxRetries, lastErr)
+}
+
+// deployWithContext deploys with context timeout
+func (h *WebhookHandler) deployWithContext(ctx context.Context, repo models.Repository, branch string) error {
+	resultChan := make(chan error, 1)
+	
+	go func() {
+		defer close(resultChan)
+		err := h.deploymentService.DeployDirect(repo, branch)
+		resultChan <- err
+	}()
+	
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("deployment cancelled: %v", ctx.Err())
+	case err := <-resultChan:
+		return err
+	}
 }
 
 // applyGitSafetyFixes applies Git safety configurations specifically for webhook context
@@ -172,13 +240,11 @@ func (h *WebhookHandler) applyGitSafetyFixes(repoPath string) error {
 
 	h.logger.Webhook("Applying aggressive Git safety fixes as user: %s (UID: %d)", currentUser, os.Getuid())
 
-	// Set global wildcard to trust all directories
 	cmd := exec.Command("git", "config", "--global", "safe.directory", "*")
 	if err := cmd.Run(); err != nil {
 		h.logger.Warning("Failed to set global safe directory wildcard: %v", err)
 	}
 
-	// Add comprehensive list of safe directories
 	parentDir := filepath.Dir(repoPath)
 	grandParentDir := filepath.Dir(parentDir)
 	workDir := h.config.Settings.WorkDir
@@ -204,7 +270,6 @@ func (h *WebhookHandler) applyGitSafetyFixes(repoPath string) error {
 		}
 	}
 
-	// Always fix ownership aggressively when running as root
 	if os.Getuid() == 0 {
 		h.logger.Webhook("Running as root, applying aggressive ownership fixes")
 		dirsToFix := []string{grandParentDir, parentDir, repoPath, workDir}
@@ -226,7 +291,6 @@ func (h *WebhookHandler) applyGitSafetyFixes(repoPath string) error {
 
 // fixOwnershipAsRoot fixes ownership when running as root
 func (h *WebhookHandler) fixOwnershipAsRoot(repoPath, parentDir string) error {
-	// Fix repository ownership
 	if _, err := os.Stat(repoPath); err == nil {
 		cmd := exec.Command("chown", "-R", "root:root", repoPath)
 		if err := cmd.Run(); err != nil {
@@ -234,7 +298,6 @@ func (h *WebhookHandler) fixOwnershipAsRoot(repoPath, parentDir string) error {
 		}
 	}
 
-	// Fix parent directory ownership
 	if _, err := os.Stat(parentDir); err == nil {
 		cmd := exec.Command("chown", "-R", "root:root", parentDir)
 		if err := cmd.Run(); err != nil {
@@ -246,7 +309,6 @@ func (h *WebhookHandler) fixOwnershipAsRoot(repoPath, parentDir string) error {
 }
 
 func (h *WebhookHandler) ensureUserPermissions(repoPath, parentDir, currentUser string) error {
-
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		h.logger.Warning("Failed to create parent directory: %v", err)
 	}
