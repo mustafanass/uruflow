@@ -83,7 +83,7 @@ func checkCurrentUser() {
 	cmd := exec.Command("groups")
 	if output, err := cmd.Output(); err == nil {
 		groups := strings.TrimSpace(string(output))
-		fmt.Printf("   👥 Groups: %s\n", groups)
+		fmt.Printf("   ⚙️ Groups: %s\n", groups)
 
 		if strings.Contains(groups, "docker") {
 			fmt.Printf("   🟢 User is in docker group\n")
@@ -98,7 +98,7 @@ func checkCurrentUser() {
 }
 
 func checkDockerAccess() {
-	fmt.Printf("🐳 Docker Access:\n")
+	fmt.Printf("📦 Docker Access:\n")
 
 	if _, err := exec.LookPath("docker"); err != nil {
 		fmt.Printf("   ❌ Docker command not found\n")
