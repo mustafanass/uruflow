@@ -141,10 +141,9 @@ sudo systemctl start uruflow
 
 ```bash
 # Repository management
-uruflow repo init                    # Initialize all repositories locally
 uruflow repo list                    # List repositories
-uruflow repo status                  # Check status
-uruflow repo update my-app           # Update specific repository
+uruflow repo info                    # Check info of repo
+uruflow repo update [my-app]         # Update specific repository
 
 # Deployments
 uruflow deploy my-app main           # Manual deployment
@@ -153,16 +152,13 @@ uruflow deploy status                # Check deployment status
 
 # Monitoring
 uruflow status                       # System overview
-uruflow status --detailed            # Detailed system status
 uruflow logs -f                      # Live logs (real time)
 uruflow logs my-app                  # View logs for specific repository
 uruflow ssh test                     # Test SSH connection
 
 # Configuration
 uruflow config info                  # Show configuration
-uruflow config validate             # Validate config
 uruflow config reload               # Reload configuration without restart
-uruflow config path                  # Show config file path
 
 # System diagnostics
 uruflow system check                 # Check permissions and setup
@@ -261,6 +257,7 @@ docker logs container-name
 |----------|-------------|----------|
 | `URUFLOW_CONFIG_DIR` | Configuration directory | Yes |
 | `URUFLOW_LOG_DIR` | Log directory | Yes |
+| `DEBUG` | Enable debug mode | No |
 
 ## License
 
