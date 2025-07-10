@@ -530,7 +530,6 @@ func (h *WebhookHandler) sendResponse(w http.ResponseWriter, statusCode int, res
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.Error("Failed to encode response: %v", err)
-		// Fallback to plain text
 		fmt.Fprintf(w, `{"status":"error","message":"Failed to encode response"}`)
 	}
 }
