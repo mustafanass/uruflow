@@ -257,7 +257,6 @@ docker logs container-name
 |----------|-------------|----------|
 | `URUFLOW_CONFIG_DIR` | Configuration directory | Yes |
 | `URUFLOW_LOG_DIR` | Log directory | Yes |
-| `DEBUG` | Enable debug mode | No |
 
 ## License
 
