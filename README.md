@@ -1,8 +1,10 @@
 # Uruflow - Automated Docker Deployment System
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Version](https://img.shields.io/badge/Version-0.3.2-green.svg)](https://github.com/mustafanass/uruflow/releases)
 [![Go Version](https://img.shields.io/badge/Go-1.21.5+-00ADD8.svg)](https://golang.org/)
 [![Docker](https://img.shields.io/badge/Docker-20.10+-2496ED.svg)](https://www.docker.com/)
+[![Docker Compose](https://img.shields.io/badge/Docker%20Compose-2.0+-2496ED.svg)](https://docs.docker.com/compose/)
 
 **Uruflow** is a lightweight, automated deployment system that listens for GitHub webhook events and automatically deploys your Docker applications when you push code to specified branches. Built in Go for performance and reliability.
 
@@ -47,9 +49,8 @@ newgrp docker
 cd /opt
 sudo git clone https://github.com/mustafanass/uruflow.git
 cd uruflow
-sudo go build -o uruflow .
+sudo go build -o uruflow cmd/main.go
 sudo cp uruflow /usr/local/bin/
-sudo chmod +x /usr/local/bin/uruflow
 ```
 
 ### Setup
@@ -104,7 +105,7 @@ Create `/etc/uruflow/config.json`:
   }
 }
 ```
-
+> **⚠️ Note:** Container names should not specify in docker-compose.yml files as they are generated dynamically based on the repository name and branch. Adding static container names may cause deployment conflicts and naming confusion.
 ### System Service
 
 Create `/etc/systemd/system/uruflow.service`:
@@ -260,7 +261,6 @@ docker logs container-name
 |----------|-------------|----------|
 | `URUFLOW_CONFIG_DIR` | Configuration directory | Yes |
 | `URUFLOW_LOG_DIR` | Log directory | Yes |
-| `DEBUG` | Enable debug mode | No |
 
 ## License
 
