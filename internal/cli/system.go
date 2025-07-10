@@ -140,11 +140,6 @@ func checkGitConfiguration() {
 	} else {
 		dirs := strings.Split(strings.TrimSpace(string(output)), "\n")
 		fmt.Printf("   🟢 Safe directories configured (%d):\n", len(dirs))
-		for _, dir := range dirs {
-			if dir != "" {
-				fmt.Printf("      📁 %s\n", dir)
-			}
-		}
 	}
 	fmt.Printf("\n")
 }
