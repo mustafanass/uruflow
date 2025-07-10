@@ -22,9 +22,14 @@ package handlers
 
 // Update: re-design the webhook, better error handling advanced internal process , add request id for all request
 // add internal helper methods , add support for both github and gitlab based its models you can see more on models
+// fixed webhook validations for secret key, and encrypt secret key and decrypt using Sha256 for github, and gitlab only compares tokens directly (based on gitlab design)
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -125,6 +130,14 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.validateWebhookSecret(r, body, requestID); err != nil {
+		response.Status = "failed"
+		response.Error = "Unauthorized"
+		response.Message = "Webhook signature validation failed"
+		h.sendResponse(w, http.StatusUnauthorized, response)
+		return
+	}
+
 	webhook, err := h.parseWebhook(body, requestID)
 	if err != nil {
 		response.Status = "failed"
@@ -191,6 +204,72 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	response.Message = "Deployment completed successfully"
 	response.Details = deploymentDetails
 	h.sendResponse(w, http.StatusOK, response)
+}
+
+// validateWebhookSecret validates the webhook secret for both GitHub and GitLab
+func (h *WebhookHandler) validateWebhookSecret(r *http.Request, body []byte, requestID string) error {
+	secretKey := h.config.Webhook.Secret
+	if secretKey == "" {
+		h.logger.Warning("[%s] No webhook secret configured - skipping validation", requestID)
+		return nil
+	}
+
+	githubSignature := r.Header.Get("X-Hub-Signature-256")
+	if githubSignature == "" {
+		githubSignature = r.Header.Get("X-Hub-Signature")
+	}
+
+	gitlabSignature := r.Header.Get("X-Gitlab-Token")
+	if githubSignature != "" {
+		return h.validateGitHubSignature(githubSignature, body, secretKey, requestID)
+	} else if gitlabSignature != "" {
+		return h.validateGitLabSignature(gitlabSignature, secretKey, requestID)
+	}
+
+	h.logger.Error("[%s] No signature header found in webhook request", requestID)
+	return fmt.Errorf("missing webhook signature")
+}
+
+// validateGitHubSignature validates GitHub webhook signature
+func (h *WebhookHandler) validateGitHubSignature(signature string, body []byte, secret string, requestID string) error {
+	var expectedSignature string
+
+	if strings.HasPrefix(signature, "sha256=") {
+		h.logger.Debug("[%s] Validating GitHub SHA256 signature", requestID)
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(body)
+		expectedSignature = "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	} else if strings.HasPrefix(signature, "sha1=") {
+		h.logger.Debug("[%s] Validating GitHub SHA1 signature (legacy)", requestID)
+		mac := hmac.New(sha1.New, []byte(secret))
+		mac.Write(body)
+		expectedSignature = "sha1=" + hex.EncodeToString(mac.Sum(nil))
+	} else {
+		h.logger.Error("[%s] Invalid GitHub signature format: %s", requestID, signature)
+		return fmt.Errorf("invalid signature format")
+	}
+
+	if !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
+		h.logger.Error("[%s] GitHub signature validation failed", requestID)
+		h.logger.Debug("[%s] Expected: %s, Got: %s", requestID, expectedSignature, signature)
+		return fmt.Errorf("invalid webhook signature")
+	}
+
+	h.logger.Success("[%s] GitHub signature validation passed", requestID)
+	return nil
+}
+
+// validateGitLabSignature validates GitLab webhook signature
+func (h *WebhookHandler) validateGitLabSignature(signature string, secret string, requestID string) error {
+	h.logger.Debug("[%s] Validating GitLab token signature", requestID)
+
+	if signature != secret {
+		h.logger.Error("[%s] GitLab token validation failed", requestID)
+		return fmt.Errorf("invalid webhook token")
+	}
+
+	h.logger.Success("[%s] GitLab token validation passed", requestID)
+	return nil
 }
 
 // readRequestBody reads and validates the request body
