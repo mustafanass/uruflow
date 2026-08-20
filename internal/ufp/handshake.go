@@ -35,7 +35,13 @@ type Identity struct {
 	Roles    []Role
 }
 
-type SecretLookup func(agentID string) (secret string, name string, found bool)
+type Credential struct {
+	Secret string
+	Name   string
+	Roles  []Role
+}
+
+type SecretLookup func(agentID string) (Credential, bool)
 
 func Accept(netConn net.Conn, lookup SecretLookup) (*Conn, *Identity, error) {
 	conn := NewConn(netConn)
@@ -51,16 +57,20 @@ func Accept(netConn net.Conn, lookup SecretLookup) (*Conn, *Identity, error) {
 		conn.reject("malformed HELLO")
 		return nil, nil, err
 	}
+	if hello.AgentID == "" || len(hello.AgentID) > 128 || len(hello.Hostname) > 255 || len(hello.Version) > 64 || len(hello.Platform) > 64 {
+		conn.reject("invalid HELLO identity")
+		return nil, nil, fmt.Errorf("ufp: invalid agent identity")
+	}
 
-	roles := validRoles(hello.Roles)
-	if len(roles) == 0 {
+	claimedRoles := validRoles(hello.Roles)
+	if len(claimedRoles) == 0 || len(claimedRoles) != len(hello.Roles) {
 		conn.reject("agent declared no valid role")
 		return nil, nil, fmt.Errorf("ufp: agent %s declared no valid role", hello.AgentID)
 	}
 
-	secret, name, found := lookup(hello.AgentID)
+	credential, found := lookup(hello.AgentID)
 	if !found {
-		secret = unknownAgentSecret
+		credential.Secret = unknownAgentSecret
 	}
 
 	nonce, err := NewNonce()
@@ -85,24 +95,41 @@ func Accept(netConn net.Conn, lookup SecretLookup) (*Conn, *Identity, error) {
 		return nil, nil, err
 	}
 
-	if !VerifyProof(AuthContext, []byte(secret), nonce, proof.Proof) || !found {
+	if !VerifyProof(AuthContext, []byte(credential.Secret), nonce, proof.Proof) || !found {
 		conn.reject("agent not registered or invalid key")
 		return nil, nil, fmt.Errorf("ufp: agent %s rejected", hello.AgentID)
 	}
+	roles := validRoles(credential.Roles)
+	if len(roles) != len(credential.Roles) || !sameRoles(claimedRoles, roles) {
+		conn.reject("agent roles do not match enrollment")
+		return nil, nil, fmt.Errorf("ufp: agent %s declared roles outside its enrollment", hello.AgentID)
+	}
 
-	welcome := Welcome{AgentID: hello.AgentID, Name: name, ServerVersion: ProtocolName}
+	welcome := Welcome{AgentID: hello.AgentID, Name: credential.Name, ServerVersion: ProtocolName}
 	if err := conn.send(FrameWelcome, welcome); err != nil {
 		return nil, nil, err
 	}
 
 	return conn, &Identity{
 		AgentID:  hello.AgentID,
-		Name:     name,
+		Name:     credential.Name,
 		Hostname: hello.Hostname,
 		Version:  hello.Version,
 		Platform: hello.Platform,
 		Roles:    roles,
 	}, nil
+}
+
+func sameRoles(left, right []Role) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for _, role := range left {
+		if !HasRole(right, role) {
+			return false
+		}
+	}
+	return true
 }
 
 func Dial(netConn net.Conn, hello Hello, secret string) (*Conn, *Welcome, error) {

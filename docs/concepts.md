@@ -27,7 +27,7 @@ A single process that owns:
 - the certificate authority and all issued certificates
 - the private registry container
 - the UFP listener that agents connect to
-- the HTTP listener that receives webhooks
+- the HTTPS listener that receives webhooks
 - the terminal interface
 
 There is exactly one server. It is a single point of failure for *starting* work, not for *running* it.
@@ -37,8 +37,8 @@ There is exactly one server. It is a single point of failure for *starting* work
 A process running on a target machine, connecting outward to the server over UFP. Agents are never
 dialled by the server, so they can sit behind NAT.
 
-An agent declares its roles when it connects, and the server refuses operations the agent did not
-claim.
+An agent declares its roles when it connects. They must exactly match its enrollment, and both peers
+refuse operations outside those roles.
 
 ### Builder
 
@@ -47,7 +47,7 @@ pushes it to the registry. A builder needs `git` and the `docker` CLI.
 
 ### Runner
 
-A runner never sees source code, a Dockerfile, or a build toolchain. It pulls one tagged image and
+A runner never sees source code, a Dockerfile, or a build toolchain. It pulls one digest-pinned image and
 runs it. A runner needs only a Docker socket.
 
 One agent may hold both roles. One builder can serve every project.
@@ -99,14 +99,15 @@ See [Deployments](deployments.md) for the full lifecycle.
 
 ## Image
 
-The unit of deployment. A build produces two tags in the project's repository:
+The registry catalog exposes two convenient tags for each build:
 
 ```text
 <registry>/<namespace>/<project>:<commit>     12-character commit SHA, immutable
 <registry>/<namespace>/<project>:latest       moving pointer to the most recent build
 ```
 
-Releases record the immutable tag. Rollback re-releases a recorded tag rather than rebuilding a
+The deployment unit is the `repository@sha256:digest` reference, not either tag. Releases record the
+immutable digest. Rollback re-releases a recorded digest rather than rebuilding a
 commit, so what returns is byte-identical to what ran before.
 
 ## Registry
@@ -134,7 +135,7 @@ Anything else on the machine is invisible to URUFLOW.
 ## UFP
 
 The binary protocol agents and the server speak over TLS. It carries build and release instructions,
-streaming logs, and metrics. See [UFP/2 Protocol](protocol.md).
+streaming logs, and metrics. See [UFP Protocol](protocol.md).
 
 ## Terminology
 
@@ -149,7 +150,7 @@ These terms are used consistently and mean one thing each.
 | Project | One repository deployed to one set of runners |
 | Environment | A name that expands into a separate project |
 | Release | One build-and-rollout attempt |
-| Image | A tagged artifact in the registry |
+| Image | A digest-addressed artifact in the registry |
 | Container | A running instance of an image |
 | Registry | The private `registry:2` instance URUFLOW manages |
 | UFP | The server/agent wire protocol |

@@ -158,6 +158,7 @@ type Release struct {
 	Trigger     Trigger           `json:"trigger"`
 	Message     string            `json:"message,omitempty"`
 	Targets     []ReleaseTarget   `json:"targets,omitempty"`
+	Spec        Project           `json:"spec"`
 	StartedAt   time.Time         `json:"started_at"`
 	EndedAt     *time.Time        `json:"ended_at,omitempty"`
 	Duration    int64             `json:"duration"`

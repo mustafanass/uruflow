@@ -20,8 +20,10 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -70,6 +72,10 @@ type Server struct {
 
 func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 	if err := cfg.EnsureDirs(); err != nil {
+		return nil, err
+	}
+
+	if err := validateKeyMaterial(cfg, store); err != nil {
 		return nil, err
 	}
 
@@ -131,6 +137,36 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 	}, nil
 }
 
+func validateKeyMaterial(cfg *config.Config, store storage.Store) error {
+	_, certErr := os.Stat(cfg.CACertPath())
+	_, keyErr := os.Stat(cfg.CAKeyPath())
+	if os.IsNotExist(certErr) && os.IsNotExist(keyErr) {
+		agents, err := store.ListAgents()
+		if err != nil {
+			return fmt.Errorf("inspect enrolled agents: %w", err)
+		}
+		if len(agents) > 0 {
+			return fmt.Errorf("certificate authority is missing while agents are enrolled")
+		}
+	}
+	if os.IsNotExist(certErr) != os.IsNotExist(keyErr) {
+		return fmt.Errorf("certificate authority material is incomplete")
+	}
+
+	if _, err := os.Stat(cfg.SecretKeyPath()); os.IsNotExist(err) {
+		stored, listErr := store.ListSecrets()
+		if listErr != nil {
+			return fmt.Errorf("inspect encrypted secrets: %w", listErr)
+		}
+		if len(stored) > 0 {
+			return fmt.Errorf("secret encryption key is missing while encrypted secrets exist")
+		}
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Server) Start() error {
 	if err := s.reconcile(); err != nil {
 		return err
@@ -157,12 +193,24 @@ func (s *Server) Start() error {
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 		IdleTimeout:  idleTimeout,
+		TLSConfig:    &tls.Config{MinVersion: tls.VersionTLS13},
 	}
 
-	logger.Info("[HTTP] webhooks on %s%s", s.cfg.HTTPAddr(), s.cfg.Webhook.Path)
+	scheme := "https"
+	if !s.cfg.Webhook.TLS {
+		scheme = "http"
+	}
+	logger.Info("[HTTP] webhooks on %s://%s%s", scheme, s.cfg.HTTPAddr(), s.cfg.Webhook.Path)
 
 	go func() {
-		if err := s.http.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if s.cfg.Webhook.TLS {
+			certPath, keyPath := s.cfg.WebhookCertificatePaths()
+			err = s.http.ListenAndServeTLS(certPath, keyPath)
+		} else {
+			err = s.http.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			logger.Error("[HTTP] %v", err)
 		}
 	}()

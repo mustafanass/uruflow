@@ -55,14 +55,43 @@ func testServer(t *testing.T) (*Server, string) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	store.CreateAgent(&models.Agent{ID: "b1", Name: "builder-01", Key: "k",
-		Roles: []models.Role{models.RoleBuilder, models.RoleRunner}})
-
 	server, err := NewServer(cfg, store)
 	if err != nil {
 		t.Skipf("server unavailable: %v", err)
 	}
+	store.CreateAgent(&models.Agent{ID: "b1", Name: "builder-01", Key: "k",
+		Roles: []models.Role{models.RoleBuilder, models.RoleRunner}})
 	return server, dir
+}
+
+func TestMissingKeyMaterialFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Server.DataDir = dir
+	if err := cfg.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sqlite.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.CreateAgent(&models.Agent{ID: "a1", Name: "runner-01", Key: "k",
+		Roles: []models.Role{models.RoleRunner}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateKeyMaterial(cfg, store); err == nil {
+		t.Fatal("missing CA was replaced while an agent was enrolled")
+	}
+	if err := store.DeleteAgent("a1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSecret("token", []byte("encrypted")); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateKeyMaterial(cfg, store); err == nil || !strings.Contains(err.Error(), "secret encryption key") {
+		t.Fatal("missing vault key was replaced while encrypted secrets existed")
+	}
 }
 
 func TestDeletingAFileReportsAnOrphanedProject(t *testing.T) {

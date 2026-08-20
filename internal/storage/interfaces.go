@@ -42,10 +42,13 @@ type Store interface {
 	DeleteProject(name string) error
 
 	CreateRelease(release *models.Release) error
+	ClaimRelease(release *models.Release, targets []models.ReleaseTarget) error
 	UpdateRelease(release *models.Release) error
 	GetRelease(id string) (*models.Release, error)
 	ListReleases(limit int) ([]models.Release, error)
+	ListActiveReleases() ([]models.Release, error)
 	ListReleasesByProject(project string, limit int) ([]models.Release, error)
+	ProjectHasActiveRelease(project string) (bool, error)
 	LastSuccessfulRelease(project string) (*models.Release, error)
 
 	SaveReleaseTarget(target *models.ReleaseTarget) error
@@ -68,6 +71,7 @@ type Store interface {
 	GetSecret(name string) ([]byte, error)
 	ListSecrets() ([]models.Secret, error)
 	DeleteSecret(name string) error
+	ClaimWebhookDelivery(provider, deliveryID string) (bool, error)
 
 	SetAllAgentsOffline() error
 	FailUnfinishedReleases(message string) error

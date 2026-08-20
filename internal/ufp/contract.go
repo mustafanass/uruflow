@@ -23,7 +23,7 @@ import "time"
 const (
 	ServerName   = "uruflow-server"
 	AuthContext  = "uruflow-agent-auth-v1"
-	ProtocolName = "UFP/2"
+	ProtocolName = "UFP"
 )
 
 const (
@@ -51,6 +51,7 @@ const (
 
 const (
 	TopicRegistryConfig = "registry.config"
+	TopicRegistryReady  = "registry.ready"
 	TopicJobLog         = "job.log"
 	TopicJobStatus      = "job.status"
 	TopicMetrics        = "metrics.push"

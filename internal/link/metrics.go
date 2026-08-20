@@ -19,6 +19,7 @@
 package link
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/logic"
@@ -38,7 +39,9 @@ func (s *Server) applyMetrics(identity *ufp.Identity, metrics ufp.Metrics) {
 		LoadAvg:       metrics.System.LoadAvg,
 		Uptime:        metrics.System.Uptime,
 	}
-	s.store.SetAgentMetrics(identity.AgentID, system)
+	if err := s.store.SetAgentMetrics(identity.AgentID, system); err != nil {
+		return
+	}
 
 	containers := make([]models.Container, 0, len(metrics.Containers))
 	for _, reported := range metrics.Containers {
@@ -60,7 +63,11 @@ func (s *Server) applyMetrics(identity *ufp.Identity, metrics ufp.Metrics) {
 			StartedAt:    time.Unix(reported.StartedAt, 0),
 		})
 	}
-	s.store.ReplaceContainers(identity.AgentID, containers)
+	if metrics.ContainersAvailable {
+		if err := s.store.ReplaceContainers(identity.AgentID, containers); err != nil {
+			return
+		}
+	}
 
 	s.evaluateAlerts(identity, metrics, containers)
 }
@@ -99,12 +106,63 @@ func (s *Server) evaluateAlerts(identity *ufp.Identity, metrics ufp.Metrics, con
 		}
 		raise(logic.CheckContainerDown(identity.AgentID, identity.Name, container.Name))
 	}
+	if metrics.ContainersAvailable {
+		for _, name := range s.missingContainers(identity.AgentID, containers) {
+			raise(logic.CheckContainerDown(identity.AgentID, identity.Name, name))
+		}
+	}
 
 	for _, stale := range open {
-		if stale.Type != logic.KindAgentOffline {
+		if stale.Type != logic.KindAgentOffline && (metrics.ContainersAvailable || stale.Type != logic.KindContainerDown) {
 			s.store.ResolveAlert(stale.ID)
 		}
 	}
+}
+
+func (s *Server) missingContainers(agentID string, containers []models.Container) []string {
+	present := make(map[string]bool, len(containers))
+	for _, container := range containers {
+		present[container.Project+"\x00"+container.Service] = true
+	}
+
+	projects, err := s.store.ListProjects()
+	if err != nil {
+		return nil
+	}
+	missing := make([]string, 0)
+	for index := range projects {
+		release, err := s.store.LastSuccessfulRelease(projects[index].Name)
+		if err != nil {
+			continue
+		}
+		spec := release.Spec
+		if spec.Name == "" {
+			spec = projects[index]
+		}
+		if !contains(spec.Runners, agentID) {
+			continue
+		}
+		for _, service := range spec.ServiceList() {
+			if present[spec.Name+"\x00"+service.Name] {
+				continue
+			}
+			name := "uruflow-" + spec.Name
+			if service.Name != "" {
+				name = fmt.Sprintf("%s-%s", name, service.Name)
+			}
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+func contains(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) raiseAlert(alert *models.Alert) {

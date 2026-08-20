@@ -89,8 +89,8 @@ func TestHandshakeAndEnvelopes(t *testing.T) {
 	handler := &echoHandler{events: make(chan *Event, 1)}
 
 	go func() {
-		conn, identity, err := Accept(server, func(string) (string, string, bool) {
-			return secret, "builder-01", true
+		conn, identity, err := Accept(server, func(string) (Credential, bool) {
+			return Credential{Secret: secret, Name: "builder-01", Roles: []Role{RoleBuilder}}, true
 		})
 		if err != nil {
 			accepted <- nil
@@ -140,7 +140,9 @@ func TestHandshakeRejectsWrongSecret(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	go Accept(server, func(string) (string, string, bool) { return "right", "agent", true })
+	go Accept(server, func(string) (Credential, bool) {
+		return Credential{Secret: "right", Name: "agent", Roles: []Role{RoleRunner}}, true
+	})
 
 	hello := Hello{AgentID: "a1", Roles: []Role{RoleRunner}}
 	if _, _, err := Dial(client, hello, "wrong"); err == nil {
@@ -153,9 +155,26 @@ func TestHandshakeRejectsRolelessAgent(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	go Accept(server, func(string) (string, string, bool) { return "key", "agent", true })
+	go Accept(server, func(string) (Credential, bool) {
+		return Credential{Secret: "key", Name: "agent", Roles: []Role{RoleRunner}}, true
+	})
 
 	if _, _, err := Dial(client, Hello{AgentID: "a1"}, "key"); err == nil {
 		t.Fatal("expected the handshake to fail without a role")
+	}
+}
+
+func TestHandshakeRejectsRolesOutsideEnrollment(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	go Accept(server, func(string) (Credential, bool) {
+		return Credential{Secret: "key", Name: "agent", Roles: []Role{RoleRunner}}, true
+	})
+
+	hello := Hello{AgentID: "a1", Roles: []Role{RoleBuilder, RoleRunner}}
+	if _, _, err := Dial(client, hello, "key"); err == nil {
+		t.Fatal("expected the handshake to reject roles outside enrollment")
 	}
 }

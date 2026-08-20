@@ -129,7 +129,7 @@ services:
     dockerfile: Dockerfile.worker
     command: ./worker
   cache:
-    image: redis:7-alpine
+    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     volumes: ["/srv/shop/redis:/data"]
 ```
 
@@ -142,7 +142,8 @@ uruflow-shop-prod-cache
 ```
 
 A service is **built** when it declares `dockerfile`, and **prebuilt** when it declares `image`.
-Declaring both is rejected. Built services get their own image repository,
+Declaring both is rejected. Prebuilt images must use an immutable `repository@sha256:digest`
+reference; mutable tags are rejected. Built services get their own image repository,
 `<registry>/<namespace>/<project>-<service>`, so each is versioned independently by commit.
 
 Every field a single-service project supports is available per service: `command`, `ports`,
@@ -168,7 +169,11 @@ or leaves it exactly as it was. See [Deployments](deployments.md#3-release-safet
 
 Omitting `services` keeps the existing behaviour exactly: one container named `uruflow-<project>`,
 one image repository, and the project-level `dockerfile`, `context`, `ports`, `volumes` and `command`
-fields apply to it. Nothing you have today needs changing.
+fields apply to it.
+
+Project, environment and service names use lowercase letters, digits, `.`, `_` and `-`, start with a
+letter or digit, and are at most 63 characters. Dockerfile and build-context paths must stay inside
+the checked-out source directory.
 
 ## 5. Environments
 

@@ -133,8 +133,8 @@ func (s *Server) Addr() string {
 func (s *Server) Online(agentID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, found := s.sessions[agentID]
-	return found
+	session, found := s.sessions[agentID]
+	return found && session.ready.Load()
 }
 
 func (s *Server) OnlineAgents() []string {
@@ -142,8 +142,10 @@ func (s *Server) OnlineAgents() []string {
 	defer s.mu.RUnlock()
 
 	agents := make([]string, 0, len(s.sessions))
-	for agentID := range s.sessions {
-		agents = append(agents, agentID)
+	for agentID, session := range s.sessions {
+		if session.ready.Load() {
+			agents = append(agents, agentID)
+		}
 	}
 	return agents
 }
@@ -153,18 +155,29 @@ func (s *Server) Request(ctx context.Context, agentID, method string, payload an
 	session, found := s.sessions[agentID]
 	s.mu.RUnlock()
 
-	if !found {
+	if !found || !session.ready.Load() {
+		return nil, fmt.Errorf("%s: %w", agentID, ErrAgentOffline)
+	}
+	if _, err := s.store.GetAgent(agentID); err != nil {
+		session.conn.Close()
 		return nil, fmt.Errorf("%s: %w", agentID, ErrAgentOffline)
 	}
 
 	response, err := session.conn.Request(ctx, method, payload)
 	if err != nil {
+		session.conn.Close()
 		return nil, err
 	}
 	if !response.OK {
 		return nil, errors.New(response.ErrorMessage())
 	}
 	return response, nil
+}
+
+func (s *Server) current(session *Session) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sessions[session.identity.AgentID] == session
 }
 
 func (s *Server) accept() {
@@ -194,30 +207,36 @@ func (s *Server) handshake(netConn net.Conn) {
 	host, _, _ := net.SplitHostPort(netConn.RemoteAddr().String())
 	session := newSession(s, conn, identity, host)
 
-	s.register(session)
+	if err := s.register(session); err != nil {
+		conn.Close()
+		logger.Warn("[LINK] register %s failed: %v", identity.Name, err)
+		return
+	}
 	defer s.unregister(session)
 
 	if err := session.pushRegistry(); err != nil {
 		logger.Warn("[LINK] registry handoff to %s failed: %v", identity.Name, err)
+		conn.Close()
+		return
 	}
 
 	go conn.Heartbeat(s.ctx)
 
-	logger.Info("[LINK] agent %s connected from %s roles=%v", identity.Name, host, identity.Roles)
+	logger.Debug("[LINK] agent %s authenticated from %s", identity.Name, host)
 	if err := conn.Serve(s.ctx, session); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Debug("[LINK] session with %s ended: %v", identity.Name, err)
 	}
 }
 
-func (s *Server) lookupSecret(agentID string) (string, string, bool) {
+func (s *Server) lookupSecret(agentID string) (ufp.Credential, bool) {
 	agent, err := s.store.GetAgent(agentID)
 	if err != nil || agent == nil {
-		return "", "", false
+		return ufp.Credential{}, false
 	}
-	return agent.Key, agent.Name, true
+	return ufp.Credential{Secret: agent.Key, Name: agent.Name, Roles: agent.Roles}, true
 }
 
-func (s *Server) register(session *Session) {
+func (s *Server) register(session *Session) error {
 	s.mu.Lock()
 	if existing, found := s.sessions[session.identity.AgentID]; found {
 		existing.conn.Close()
@@ -227,35 +246,98 @@ func (s *Server) register(session *Session) {
 
 	agent, err := s.store.GetAgent(session.identity.AgentID)
 	if err != nil {
-		return
+		s.mu.Lock()
+		if s.sessions[session.identity.AgentID] == session {
+			delete(s.sessions, session.identity.AgentID)
+		}
+		s.mu.Unlock()
+		return err
 	}
 
 	agent.Host = session.host
 	agent.Hostname = session.identity.Hostname
 	agent.Version = session.identity.Version
 	agent.Platform = session.identity.Platform
-	agent.Roles = session.identity.Roles
+	agent.LastSeen = time.Now()
+	agent.Status = models.AgentOffline
+	if err := s.store.UpdateAgent(agent); err != nil {
+		s.mu.Lock()
+		if s.sessions[session.identity.AgentID] == session {
+			delete(s.sessions, session.identity.AgentID)
+		}
+		s.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+func (s *Server) markReady(session *Session) error {
+	s.mu.Lock()
+	if current, found := s.sessions[session.identity.AgentID]; !found || current != session {
+		s.mu.Unlock()
+		return fmt.Errorf("stale session for %s", session.identity.AgentID)
+	}
+	if session.ready.Load() {
+		s.mu.Unlock()
+		return nil
+	}
+	agent, err := s.store.GetAgent(session.identity.AgentID)
+	if err != nil {
+		session.ready.Store(false)
+		s.mu.Unlock()
+		return err
+	}
 	agent.Status = models.AgentOnline
 	agent.LastSeen = time.Now()
-	s.store.UpdateAgent(agent)
-
+	if err := s.store.UpdateAgent(agent); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	session.ready.Store(true)
+	s.mu.Unlock()
+	if alerts, err := s.store.ListActiveAlerts(); err == nil {
+		for _, alert := range alerts {
+			if alert.AgentID == agent.ID && alert.Type == logic.KindAgentOffline {
+				s.store.ResolveAlert(alert.ID)
+			}
+		}
+	}
 	s.notify(func(events Events) { events.AgentConnected(agent) })
+	logger.Info("[LINK] agent %s ready from %s roles=%v", session.identity.Name, session.host, session.identity.Roles)
+	return nil
 }
 
 func (s *Server) unregister(session *Session) {
 	agentID := session.identity.AgentID
 
 	s.mu.Lock()
+	removed := false
 	if current, found := s.sessions[agentID]; found && current == session {
 		delete(s.sessions, agentID)
+		removed = true
 	}
 	s.mu.Unlock()
+	if !removed {
+		return
+	}
+	if !session.ready.Load() {
+		return
+	}
 
 	s.store.SetAgentStatus(agentID, models.AgentOffline)
 	s.raiseAlert(logic.CheckAgentOffline(agentID, session.identity.Name))
 	s.notify(func(events Events) { events.AgentDisconnected(agentID) })
 
 	logger.Warn("[LINK] agent %s disconnected", session.identity.Name)
+}
+
+func (s *Server) Revoke(agentID string) {
+	s.mu.RLock()
+	session := s.sessions[agentID]
+	s.mu.RUnlock()
+	if session != nil {
+		session.conn.Close()
+	}
 }
 
 func (s *Server) notify(deliver func(Events)) {
@@ -277,6 +359,6 @@ func (s *Server) tlsConfig() (*tls.Config, error) {
 
 	return &tls.Config{
 		Certificates: []tls.Certificate{certificate},
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
 	}, nil
 }

@@ -206,7 +206,7 @@ func TestServicesLoadFromTheEnvironmentFile(t *testing.T) {
 			"  app:\n    dockerfile: Dockerfile\n    context: .\n    ports: [\"8080:80\"]\n"+
 			"    env:\n      ROLE: web\n"+
 			"  worker:\n    dockerfile: Dockerfile.worker\n    command: ./worker\n"+
-			"  cache:\n    image: redis:7-alpine\n    volumes: [\"/srv/shop/redis:/data\"]\n")
+			"  cache:\n    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n    volumes: [\"/srv/shop/redis:/data\"]\n")
 
 	result := NewLoader(root, fakeAgents()).Load()
 	if len(result.Problems) != 0 {
@@ -238,7 +238,7 @@ func TestServicesLoadFromTheEnvironmentFile(t *testing.T) {
 	if byName["worker"].Command != "./worker" || byName["worker"].BuildFile() != "Dockerfile.worker" {
 		t.Fatalf("worker = %+v", byName["worker"])
 	}
-	if byName["cache"].Built() || byName["cache"].Image != "redis:7-alpine" {
+	if byName["cache"].Built() || byName["cache"].Image != "redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
 		t.Fatalf("cache should be prebuilt: %+v", byName["cache"])
 	}
 	if len(byName["cache"].Volumes) != 1 {

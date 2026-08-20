@@ -580,7 +580,10 @@ func (p *Projects) remove() {
 		return
 	}
 
-	p.server.Pipeline().Remove(project.Name)
+	if err := p.server.Pipeline().Remove(project.Name); err != nil {
+		p.Fail(err)
+		return
+	}
 	if project.Managed() {
 		if err := p.server.Loader().Remove(project.Base(), project.Env); err != nil {
 			p.Fail(err)

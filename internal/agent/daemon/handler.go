@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/ufp"
 	"github.com/mustafanass/uruflow/pkg/logger"
 )
@@ -43,7 +44,16 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if d.builder == nil {
 			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleBuilder)
 		}
-		go d.runBuild(payload)
+		if err := validateBuildRequest(payload); err != nil {
+			return nil, err
+		}
+		job, start, err := d.beginJob(payload.Project, payload.JobID)
+		if err != nil {
+			return nil, err
+		}
+		if start {
+			go d.runBuild(payload, job)
+		}
 		return ufp.Accepted{JobID: payload.JobID}, nil
 
 	case ufp.MethodReleaseRun:
@@ -54,7 +64,16 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if !d.cfg.HasRole(ufp.RoleRunner) {
 			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleRunner)
 		}
-		go d.runRelease(payload)
+		if err := validateReleaseRequest(payload); err != nil {
+			return nil, err
+		}
+		job, start, err := d.beginJob(payload.Project, payload.JobID)
+		if err != nil {
+			return nil, err
+		}
+		if start {
+			go d.runRelease(payload, job)
+		}
 		return ufp.Accepted{JobID: payload.JobID}, nil
 
 	case ufp.MethodReleaseStop:
@@ -62,7 +81,21 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if err := request.Decode(&payload); err != nil {
 			return nil, err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+		if !d.cfg.HasRole(ufp.RoleRunner) {
+			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleRunner)
+		}
+		if payload.Project == "" {
+			return nil, fmt.Errorf("project is required")
+		}
+		job, start, err := d.beginJob(payload.Project, ufp.MethodReleaseStop)
+		if err != nil {
+			return nil, err
+		}
+		if !start {
+			return nil, fmt.Errorf("project %s already has a stop operation running", payload.Project)
+		}
+		defer d.endJob(payload.Project, job)
+		ctx, cancel := context.WithTimeout(job.ctx, actionTimeout)
 		defer cancel()
 		if err := d.runner.Stop(ctx, payload.Project); err != nil {
 			return nil, err
@@ -75,7 +108,21 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if err := request.Decode(&payload); err != nil {
 			return nil, err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+		if !d.cfg.HasRole(ufp.RoleRunner) {
+			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleRunner)
+		}
+		if payload.Project == "" {
+			return nil, fmt.Errorf("project is required")
+		}
+		job, start, err := d.beginJob(payload.Project, ufp.MethodReleaseRemove)
+		if err != nil {
+			return nil, err
+		}
+		if !start {
+			return nil, fmt.Errorf("project %s already has a remove operation running", payload.Project)
+		}
+		defer d.endJob(payload.Project, job)
+		ctx, cancel := context.WithTimeout(job.ctx, actionTimeout)
 		defer cancel()
 		if err := d.runner.Remove(ctx, payload.Project); err != nil {
 			return nil, err
@@ -88,6 +135,12 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if err := request.Decode(&payload); err != nil {
 			return nil, err
 		}
+		if !d.cfg.HasRole(ufp.RoleRunner) {
+			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleRunner)
+		}
+		if payload.ContainerID == "" {
+			return nil, fmt.Errorf("container id is required")
+		}
 		d.followContainer(payload)
 		return ufp.Accepted{}, nil
 
@@ -96,6 +149,12 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if err := request.Decode(&payload); err != nil {
 			return nil, err
 		}
+		if !d.cfg.HasRole(ufp.RoleRunner) {
+			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleRunner)
+		}
+		if payload.ContainerID == "" {
+			return nil, fmt.Errorf("container id is required")
+		}
 		d.stopFollow(payload.ContainerID)
 		return ufp.Accepted{}, nil
 	}
@@ -103,20 +162,68 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 	return nil, fmt.Errorf("unsupported method %q", request.Method)
 }
 
+func validateBuildRequest(request ufp.BuildRequest) error {
+	if request.JobID == "" || request.Project == "" || request.GitURL == "" || request.Branch == "" {
+		return fmt.Errorf("build request is incomplete")
+	}
+	if request.Commit != "" && !models.ValidGitCommit(request.Commit) {
+		return fmt.Errorf("build request has an invalid commit")
+	}
+	if len(request.Targets) == 0 {
+		return fmt.Errorf("build request has no targets")
+	}
+	seen := make(map[string]bool, len(request.Targets))
+	for _, target := range request.Targets {
+		if target.Image == "" || target.Dockerfile == "" || target.Context == "" || seen[target.Service] {
+			return fmt.Errorf("build target %q is invalid", target.Service)
+		}
+		seen[target.Service] = true
+	}
+	return nil
+}
+
+func validateReleaseRequest(request ufp.ReleaseRequest) error {
+	if request.JobID == "" || request.Project == "" || len(request.Services) == 0 {
+		return fmt.Errorf("release request is incomplete")
+	}
+	seen := make(map[string]bool, len(request.Services))
+	for _, service := range request.Services {
+		if !models.ValidDigestReference(service.Image) || seen[service.Name] {
+			return fmt.Errorf("release service %q is invalid", service.Name)
+		}
+		for _, port := range service.Ports {
+			if port.Host < 0 || port.Host > 65535 || port.Container < 1 || port.Container > 65535 {
+				return fmt.Errorf("release service %q has an invalid port", service.Name)
+			}
+		}
+		seen[service.Name] = true
+	}
+	return nil
+}
+
 func (d *Daemon) HandleEvent(event *ufp.Event) error {
 	if event.Topic != ufp.TopicRegistryConfig {
-		return nil
+		return fmt.Errorf("unsupported event topic %q", event.Topic)
 	}
 
 	var payload ufp.RegistryConfig
 	if err := event.Decode(&payload); err != nil {
-		return nil
+		return err
 	}
-	d.applyRegistry(payload)
+	d.connMu.RLock()
+	ctx := d.sessionCtx
+	d.connMu.RUnlock()
+	if ctx == nil {
+		return fmt.Errorf("agent session is not active")
+	}
+	if err := d.applyRegistry(ctx, payload); err != nil {
+		return err
+	}
+	d.send(ufp.TopicRegistryReady, ufp.Accepted{})
 	return nil
 }
 
-func (d *Daemon) runBuild(request ufp.BuildRequest) {
+func (d *Daemon) runBuild(request ufp.BuildRequest, job *activeJob) {
 	started := time.Now()
 	log := d.jobLogger(request.JobID, ufp.StageBuild)
 
@@ -125,10 +232,11 @@ func (d *Daemon) runBuild(request ufp.BuildRequest) {
 	})
 	logger.Info("[AGENT] build %s: %s", request.JobID, request.Project)
 
-	ctx, cancel := context.WithTimeout(context.Background(), buildTimeout)
+	ctx, cancel := context.WithTimeout(job.ctx, buildTimeout)
 	defer cancel()
 
 	result, err := d.builder.Build(ctx, request, log)
+	d.endJob(request.Project, job)
 	if err != nil {
 		log(ufp.StreamStderr, err.Error())
 		d.finishJob(request.JobID, ufp.StageBuild, err, started, ufp.JobStatus{})
@@ -144,7 +252,7 @@ func (d *Daemon) runBuild(request ufp.BuildRequest) {
 	})
 }
 
-func (d *Daemon) runRelease(request ufp.ReleaseRequest) {
+func (d *Daemon) runRelease(request ufp.ReleaseRequest, job *activeJob) {
 	started := time.Now()
 	log := d.jobLogger(request.JobID, ufp.StageRelease)
 
@@ -153,10 +261,11 @@ func (d *Daemon) runRelease(request ufp.ReleaseRequest) {
 	})
 	logger.Info("[AGENT] release %s: %s (%d service(s))", request.JobID, request.Project, len(request.Services))
 
-	ctx, cancel := context.WithTimeout(context.Background(), releaseTimeout)
+	ctx, cancel := context.WithTimeout(job.ctx, releaseTimeout)
 	defer cancel()
 
 	err := d.runner.Release(ctx, request, log)
+	d.endJob(request.Project, job)
 	if err != nil {
 		log(ufp.StreamStderr, err.Error())
 	}

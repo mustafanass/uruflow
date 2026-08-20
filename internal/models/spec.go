@@ -19,10 +19,46 @@
 package models
 
 import (
+	"encoding/hex"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var resourceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
+
+func ValidResourceName(value string) bool {
+	return resourceNamePattern.MatchString(value)
+}
+
+func ValidSourcePath(value string) bool {
+	if value == "" {
+		return true
+	}
+	cleaned := filepath.Clean(value)
+	return !filepath.IsAbs(value) && cleaned != ".." &&
+		!strings.HasPrefix(cleaned, ".."+string(filepath.Separator))
+}
+
+func ValidDigestReference(value string) bool {
+	repository, digest, found := strings.Cut(value, "@sha256:")
+	if !found || repository == "" || repository != strings.ToLower(repository) || strings.ContainsAny(repository, "@ \t\r\n") ||
+		strings.HasSuffix(repository, "/") || len(digest) != 64 || digest != strings.ToLower(digest) {
+		return false
+	}
+	_, err := hex.DecodeString(digest)
+	return err == nil
+}
+
+func ValidGitCommit(commit string) bool {
+	if len(commit) != 40 && len(commit) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(commit)
+	return err == nil
+}
 
 const (
 	protocolTCP  = "tcp"
@@ -51,6 +87,9 @@ func parsePort(entry string) (Port, error) {
 	containerPort, err := strconv.Atoi(strings.TrimSpace(container))
 	if err != nil {
 		return Port{}, fmt.Errorf("port %q has an invalid container port", entry)
+	}
+	if hostPort < 0 || hostPort > 65535 || containerPort < 1 || containerPort > 65535 {
+		return Port{}, fmt.Errorf("port %q is outside the valid range", entry)
 	}
 
 	return Port{Host: hostPort, Container: containerPort, Protocol: protocol}, nil

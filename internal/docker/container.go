@@ -167,8 +167,31 @@ func (c *Client) Inspect(ctx context.Context, id string) (*inspectResult, error)
 }
 
 func (c *Client) Exists(ctx context.Context, name string) bool {
+	exists, _ := c.ContainerExists(ctx, name)
+	return exists
+}
+
+func (c *Client) ContainerExists(ctx context.Context, name string) (bool, error) {
 	_, err := c.Inspect(ctx, name)
-	return err == nil
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *Client) ContainerOwnership(ctx context.Context, name, project string) (bool, bool, error) {
+	details, err := c.Inspect(ctx, name)
+	if errors.Is(err, ErrNotFound) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	labels := details.Config.Labels
+	return true, IsManaged(labels) && ProjectOf(labels) == project, nil
 }
 
 func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
@@ -350,7 +373,12 @@ func (c *Client) Run(ctx context.Context, spec Spec) (string, error) {
 		return "", err
 	}
 	if err := c.Start(ctx, id); err != nil {
-		c.Remove(ctx, id, true)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), requestLimit)
+		cleanupErr := c.Remove(cleanupCtx, id, true)
+		cancel()
+		if cleanupErr != nil {
+			return "", errors.Join(err, fmt.Errorf("remove failed container: %w", cleanupErr))
+		}
 		return "", err
 	}
 	return id, nil

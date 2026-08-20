@@ -5,10 +5,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.0.0-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.2.0-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
-  <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25-00ADD8?style=flat-square" alt="go"></a>
-  <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp%2F2-F5A524?style=flat-square" alt="ufp protocol"></a>
+  <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
+  <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp%2F3-F5A524?style=flat-square" alt="ufp protocol"></a>
 </p>
 
 <br>
@@ -22,14 +22,14 @@ carried on TLS.
 
 <p align="center">
   <a href="assets/uruflow-arch.png">
-    <img src="assets/uruflow-arch.png" alt="URUFLOW architecture: the server, builder and runner agents and the private registry; the UFP/2 frame and envelopes; the deployment flow; and the components on each side">
+    <img src="assets/uruflow-arch.png" alt="URUFLOW architecture: the server, builder and runner agents and the private registry; the UFP frame and envelopes; the deployment flow; and the components on each side">
   </a>
 </p>
 
 <p align="center">
   <sub>Click to enlarge. The release lifecycle is detailed in
   <a href="docs/deployments.md">Deployments</a>, the wire format in
-  <a href="docs/protocol.md">UFP/2 Protocol</a>.</sub>
+  <a href="docs/protocol.md">UFP Protocol</a>.</sub>
 </p>
 
 ## Why URUFLOW
@@ -43,7 +43,7 @@ URUFLOW builds once and ships the artifact:
 | :--- | :--- | :--- |
 | Source code | On every machine | On the builder only |
 | Build toolchain | On every machine | On the builder only |
-| Identical bytes everywhere | Not guaranteed | Guaranteed — one image, released by tag |
+| Identical bytes everywhere | Not guaranteed | Guaranteed — one image, released by digest |
 | Rollback | Rebuild an old commit | Re-release a stored image |
 | Cost of adding a machine | Another full build | One pull |
 
@@ -53,9 +53,9 @@ A release runs in two stages.
 
 **Build.** The server sends `build.run` to the project's builder. The builder clones the repository,
 checks out the commit, runs `docker build`, tags the image with the 12-character commit SHA and with
-`latest`, and pushes both to the registry. Build output streams back as it happens.
+`latest`, pushes both to the registry, and records the resulting immutable digest. Build output streams back as it happens.
 
-**Release.** The server sends `release.run` to every runner. Each pulls that exact image and replaces
+**Release.** The server validates the registry digest and sends `release.run` to every runner. Each pulls that exact image and replaces
 its container under the safety procedure below. A release completes when every runner has reported.
 
 Rollback skips the build stage entirely and re-releases the image recorded on an earlier successful
@@ -215,14 +215,12 @@ Projects can equally be created in the interface without writing files. See [Pro
 | [Troubleshooting](docs/troubleshooting.md) | Symptoms, causes and fixes |
 | [Security](docs/security.md) | Trust model, authentication and assumptions |
 | [Architecture](docs/architecture.md) | System model, boundaries and invariants |
-| [UFP/2 Protocol](docs/protocol.md) | Framing, envelopes and the handshake |
+| [UFP Protocol](docs/protocol.md) | Framing, envelopes and the handshake |
 | [Upgrading](docs/upgrading.md) | Within 2.x, and migrating from 1.x |
 
 ## Status
 
-Version 2.0.0. The wire protocol, the file format and the database schema are settled for the 2.x
-line: additions are backward compatible, and anything that changes the meaning of an existing method,
-topic or field requires a version bump.
+Server and agent binaries must use the same UFP wire format.
 
 ## Supported Platforms
 

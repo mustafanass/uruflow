@@ -35,7 +35,7 @@ func TestReconcileClosesOutInterruptedWork(t *testing.T) {
 	started := time.Now().Add(-90 * time.Second)
 	store.CreateRelease(&models.Release{ID: "r1", Project: "api", Status: models.StatusBuilding,
 		Builder: "a1", StartedAt: started})
-	store.CreateRelease(&models.Release{ID: "r2", Project: "api", Status: models.StatusReleasing,
+	store.CreateRelease(&models.Release{ID: "r2", Project: "api-2", Status: models.StatusReleasing,
 		Builder: "a1", StartedAt: started})
 	finishedAt := started.Add(time.Second)
 	store.CreateRelease(&models.Release{ID: "r3", Project: "api", Status: models.StatusSucceeded,

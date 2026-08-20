@@ -25,6 +25,7 @@ import (
 
 	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/services"
 	"github.com/mustafanass/uruflow/internal/storage"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 	"github.com/mustafanass/uruflow/pkg/helper"
@@ -70,6 +71,9 @@ func openStore() (*config.Config, storage.Store, error) {
 }
 
 func addAgent(_ *cobra.Command, args []string) error {
+	if !models.ValidResourceName(args[0]) {
+		return fmt.Errorf("invalid agent name %q", args[0])
+	}
 	cfg, store, err := openStore()
 	if err != nil {
 		return err
@@ -144,7 +148,7 @@ func removeAgent(_ *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("no agent named %s", args[0])
 	}
-	if err := store.DeleteAgent(agent.ID); err != nil {
+	if err := services.DeleteAgent(store, nil, agent.ID); err != nil {
 		return err
 	}
 

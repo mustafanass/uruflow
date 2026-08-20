@@ -56,7 +56,7 @@ func stream(ctx context.Context, dir string, log LogFunc, name string, args ...s
 	wait.Wait()
 
 	if err := command.Wait(); err != nil {
-		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+		return fmt.Errorf("%s failed: %w", name, err)
 	}
 	return nil
 }
@@ -67,7 +67,7 @@ func capture(ctx context.Context, dir string, name string, args ...string) (stri
 
 	output, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+		return "", fmt.Errorf("%s failed: %w", name, err)
 	}
 	return strings.TrimSpace(string(output)), nil
 }

@@ -122,7 +122,7 @@ func (s *WebhookService) match(push *Push) ([]models.Project, error) {
 		if !project.AutoDeploy || project.Branch != push.Branch {
 			continue
 		}
-		if sameRepository(project.GitURL, push.Identities) || project.Name == push.Repository {
+		if sameRepository(project.GitURL, push.Identities) {
 			matches = append(matches, project)
 		}
 	}
@@ -132,7 +132,7 @@ func (s *WebhookService) match(push *Push) ([]models.Project, error) {
 
 func (s *WebhookService) VerifyGitHub(payload []byte, signature string) bool {
 	if s.cfg.Webhook.Secret == "" {
-		return true
+		return false
 	}
 	if !strings.HasPrefix(signature, signaturePrefix) {
 		return false
@@ -147,9 +147,13 @@ func (s *WebhookService) VerifyGitHub(payload []byte, signature string) bool {
 
 func (s *WebhookService) VerifyGitLab(token string) bool {
 	if s.cfg.Webhook.Secret == "" {
-		return true
+		return false
 	}
 	return hmac.Equal([]byte(token), []byte(s.cfg.Webhook.Secret))
+}
+
+func (s *WebhookService) ClaimDelivery(provider, deliveryID string) (bool, error) {
+	return s.store.ClaimWebhookDelivery(provider, deliveryID)
 }
 
 func parsePush(provider string, payload []byte) (*Push, error) {
@@ -207,6 +211,9 @@ func newPush(repository, ref, commit string, identities []string) (*Push, error)
 	}
 	if repository == "" {
 		return nil, errors.New("webhook payload carries no repository name")
+	}
+	if !models.ValidGitCommit(commit) {
+		return nil, errors.New("webhook payload carries no valid commit")
 	}
 
 	kept := make([]string, 0, len(identities))

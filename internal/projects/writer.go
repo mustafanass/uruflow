@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mustafanass/uruflow/internal/models"
 	"gopkg.in/yaml.v3"
 )
 
@@ -165,15 +166,8 @@ func mergeEnvironment(path string, incoming Environment) Environment {
 }
 
 func validName(value string) error {
-	if value != filepath.Base(value) || value == "." || value == ".." {
-		return fmt.Errorf("%q is not a valid name", value)
-	}
-	for _, symbol := range value {
-		switch {
-		case symbol >= 'a' && symbol <= 'z', symbol >= '0' && symbol <= '9', symbol == '-', symbol == '_':
-		default:
-			return fmt.Errorf("%q may only contain lowercase letters, digits, - and _", value)
-		}
+	if !models.ValidResourceName(value) {
+		return fmt.Errorf("%q must start with a lowercase letter or digit, contain only lowercase letters, digits, ., - and _, and be at most 63 characters", value)
 	}
 	return nil
 }

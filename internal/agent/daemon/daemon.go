@@ -52,8 +52,12 @@ type Daemon struct {
 	builder *builder.Builder
 	runner  *runner.Runner
 
-	conn   *ufp.Conn
-	connMu sync.RWMutex
+	conn       *ufp.Conn
+	connMu     sync.RWMutex
+	sessionCtx context.Context
+
+	jobs  map[string]*activeJob
+	jobMu sync.Mutex
 
 	registry   ufp.RegistryConfig
 	registryMu sync.RWMutex
@@ -88,6 +92,7 @@ func New(cfg *config.Config) (*Daemon, error) {
 		docker:  engine,
 		metrics: metrics.NewCollector(),
 		streams: make(map[string]context.CancelFunc),
+		jobs:    make(map[string]*activeJob),
 		stop:    make(chan struct{}),
 	}
 	daemon.runner = runner.New(engine, daemon.registryAuth)
@@ -157,21 +162,23 @@ func (d *Daemon) session() error {
 		return fmt.Errorf("handshake: %w", err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	d.connMu.Lock()
 	d.conn = conn
+	d.sessionCtx = ctx
 	d.connMu.Unlock()
 
 	logger.Info("[AGENT] connected as %s (%s)", welcome.Name, welcome.ServerVersion)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go d.watchShutdown(ctx, conn)
 	go d.reportMetrics(ctx)
 
 	err = conn.Serve(ctx, d)
+	cancel()
 
 	d.connMu.Lock()
 	d.conn = nil
+	d.sessionCtx = nil
 	d.connMu.Unlock()
 	d.cancelStreams()
 
@@ -196,7 +203,7 @@ func (d *Daemon) dial() (net.Conn, error) {
 	conn, err := tls.DialWithDialer(dialer, "tcp", address, &tls.Config{
 		RootCAs:    pool,
 		ServerName: ufp.ServerName,
-		MinVersion: tls.VersionTLS12,
+		MinVersion: tls.VersionTLS13,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", address, err)
