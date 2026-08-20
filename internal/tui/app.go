@@ -25,33 +25,56 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/urustack/uruflow/internal/api"
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/storage"
+	"github.com/urustack/uruflow/internal/tui/components"
+	"github.com/urustack/uruflow/internal/tui/views"
 )
 
-func Run(store storage.Store, cfg *config.Config, server *api.Server) error {
+func Run(server *api.Server) error {
 	log.SetOutput(io.Discard)
 
-	cfgPath := config.DefaultConfigPath
-	model := NewModel(store, cfg, cfgPath, server)
-	p := tea.NewProgram(&model, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("tui error: %w", err)
+	program := tea.NewProgram(NewModel(server), tea.WithAltScreen())
+	if _, err := program.Run(); err != nil {
+		return fmt.Errorf("tui: %w", err)
 	}
-
 	return nil
 }
 
-func RunInit() error {
+func RunSetup(path string) error {
 	log.SetOutput(io.Discard)
 
-	model := NewInitModel()
-	p := tea.NewProgram(&model, tea.WithAltScreen())
+	program := tea.NewProgram(&setupModel{page: views.NewSetup(path)}, tea.WithAltScreen())
+	if _, err := program.Run(); err != nil {
+		return fmt.Errorf("tui: %w", err)
+	}
+	return nil
+}
 
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("tui error: %w", err)
+type setupModel struct {
+	page   *views.Setup
+	width  int
+	height int
+	ready  bool
+}
+
+func (s *setupModel) Init() tea.Cmd { return s.page.Init() }
+
+func (s *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		s.width = size.Width
+		s.height = size.Height
+		s.ready = true
+		s.page.Resize(size.Width, size.Height-4)
+		return s, nil
+	}
+	return s, s.page.Update(msg)
+}
+
+func (s *setupModel) View() string {
+	if !s.ready {
+		return ""
 	}
 
-	return nil
+	header := components.Header(s.width, nil, -1, "")
+	footer := components.Footer(s.width, s.page.Hints())
+	return components.Screen(s.width, s.height, header, s.page.Render(), footer)
 }

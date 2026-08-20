@@ -19,101 +19,129 @@
 package sqlite
 
 const schema = `
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
 CREATE TABLE IF NOT EXISTS agents (
-	id TEXT PRIMARY KEY,
-	name TEXT NOT NULL UNIQUE,
-	token TEXT NOT NULL,
-	host TEXT DEFAULT '',
-	hostname TEXT DEFAULT '',
-	version TEXT DEFAULT '',
-	status TEXT DEFAULT 'offline',
-	cpu_percent REAL DEFAULT 0,
-	memory_percent REAL DEFAULT 0,
-	disk_percent REAL DEFAULT 0,
-	memory_used INTEGER DEFAULT 0,
-	memory_total INTEGER DEFAULT 0,
-	disk_used INTEGER DEFAULT 0,
-	disk_total INTEGER DEFAULT 0,
-	uptime INTEGER DEFAULT 0,
-	last_heartbeat DATETIME,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	id             TEXT PRIMARY KEY,
+	name           TEXT NOT NULL UNIQUE,
+	auth_key       TEXT NOT NULL,
+	roles          TEXT NOT NULL DEFAULT '[]',
+	host           TEXT NOT NULL DEFAULT '',
+	hostname       TEXT NOT NULL DEFAULT '',
+	version        TEXT NOT NULL DEFAULT '',
+	platform       TEXT NOT NULL DEFAULT '',
+	status         TEXT NOT NULL DEFAULT 'offline',
+	cpu_percent    REAL NOT NULL DEFAULT 0,
+	memory_percent REAL NOT NULL DEFAULT 0,
+	memory_used    INTEGER NOT NULL DEFAULT 0,
+	memory_total   INTEGER NOT NULL DEFAULT 0,
+	disk_percent   REAL NOT NULL DEFAULT 0,
+	disk_used      INTEGER NOT NULL DEFAULT 0,
+	disk_total     INTEGER NOT NULL DEFAULT 0,
+	uptime         INTEGER NOT NULL DEFAULT 0,
+	last_seen      DATETIME,
+	registered_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+	name        TEXT PRIMARY KEY,
+	git_url     TEXT NOT NULL,
+	branch      TEXT NOT NULL DEFAULT 'main',
+	dockerfile  TEXT NOT NULL DEFAULT '',
+	context     TEXT NOT NULL DEFAULT '',
+	build_args  TEXT NOT NULL DEFAULT '{}',
+	builder     TEXT NOT NULL DEFAULT '',
+	runners     TEXT NOT NULL DEFAULT '[]',
+	auto_deploy INTEGER NOT NULL DEFAULT 1,
+	runtime     TEXT NOT NULL DEFAULT '{}',
+	env         TEXT NOT NULL DEFAULT '',
+	source      TEXT NOT NULL DEFAULT '',
+	created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS releases (
+	id           TEXT PRIMARY KEY,
+	project      TEXT NOT NULL,
+	branch       TEXT NOT NULL DEFAULT '',
+	commit_sha   TEXT NOT NULL DEFAULT '',
+	image        TEXT NOT NULL DEFAULT '',
+	images       TEXT NOT NULL DEFAULT '{}',
+	digest       TEXT NOT NULL DEFAULT '',
+	status       TEXT NOT NULL DEFAULT 'pending',
+	builder      TEXT NOT NULL DEFAULT '',
+	builder_name TEXT NOT NULL DEFAULT '',
+	trigger_type TEXT NOT NULL DEFAULT 'manual',
+	message      TEXT NOT NULL DEFAULT '',
+	started_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	ended_at     DATETIME,
+	duration_ms  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS release_targets (
+	release_id TEXT NOT NULL,
+	agent_id   TEXT NOT NULL,
+	agent_name TEXT NOT NULL DEFAULT '',
+	status     TEXT NOT NULL DEFAULT 'pending',
+	message    TEXT NOT NULL DEFAULT '',
+	ended_at   DATETIME,
+	PRIMARY KEY (release_id, agent_id),
+	FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS release_logs (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	release_id TEXT NOT NULL,
+	stage      TEXT NOT NULL DEFAULT 'build',
+	agent_name TEXT NOT NULL DEFAULT '',
+	stream     TEXT NOT NULL DEFAULT 'stdout',
+	line       TEXT NOT NULL,
+	timestamp  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS containers (
-	id TEXT PRIMARY KEY,
-	agent_id TEXT NOT NULL,
-	name TEXT NOT NULL,
-	image TEXT DEFAULT '',
-	status TEXT DEFAULT 'unknown',
-	health TEXT DEFAULT 'unknown',
-	cpu_percent REAL DEFAULT 0,
-	memory_usage INTEGER DEFAULT 0,
-	memory_limit INTEGER DEFAULT 0,
-	network_rx INTEGER DEFAULT 0,
-	network_tx INTEGER DEFAULT 0,
-	restart_count INTEGER DEFAULT 0,
-	started_at DATETIME,
+	id            TEXT NOT NULL,
+	agent_id      TEXT NOT NULL,
+	name          TEXT NOT NULL DEFAULT '',
+	project       TEXT NOT NULL DEFAULT '',
+	service       TEXT NOT NULL DEFAULT '',
+	image         TEXT NOT NULL DEFAULT '',
+	state         TEXT NOT NULL DEFAULT '',
+	health        TEXT NOT NULL DEFAULT '',
+	cpu_percent   REAL NOT NULL DEFAULT 0,
+	memory_usage  INTEGER NOT NULL DEFAULT 0,
+	memory_limit  INTEGER NOT NULL DEFAULT 0,
+	network_rx    INTEGER NOT NULL DEFAULT 0,
+	network_tx    INTEGER NOT NULL DEFAULT 0,
+	restart_count INTEGER NOT NULL DEFAULT 0,
+	started_at    DATETIME,
+	PRIMARY KEY (agent_id, id),
 	FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS repositories (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	name TEXT NOT NULL UNIQUE,
-	url TEXT NOT NULL,
-	branch TEXT DEFAULT 'main',
-	agent_id TEXT NOT NULL,
-	path TEXT DEFAULT '',
-	auto_deploy INTEGER DEFAULT 1,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	FOREIGN KEY (agent_id) REFERENCES agents(id)
-);
-
-CREATE TABLE IF NOT EXISTS deployments (
-	id TEXT PRIMARY KEY,
-	repo_name TEXT NOT NULL,
-	branch TEXT NOT NULL,
-	commit_hash TEXT DEFAULT '',
-	agent_id TEXT NOT NULL,
-	agent_name TEXT DEFAULT '',
-	status TEXT DEFAULT 'pending',
-	trigger_type TEXT DEFAULT 'manual',
-	output TEXT DEFAULT '',
-	started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	finished_at DATETIME,
-	duration_ms INTEGER DEFAULT 0,
-	FOREIGN KEY (agent_id) REFERENCES agents(id)
-);
-
-CREATE TABLE IF NOT EXISTS deployment_logs (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	deployment_id TEXT NOT NULL,
-	timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-	stream TEXT DEFAULT 'stdout',
-	content TEXT NOT NULL,
-	FOREIGN KEY (deployment_id) REFERENCES deployments(id) ON DELETE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS alerts (
-	id TEXT PRIMARY KEY,
-	type TEXT NOT NULL,
-	severity TEXT DEFAULT 'warning',
-	agent_id TEXT NOT NULL,
-	agent_name TEXT NOT NULL,
-	message TEXT NOT NULL,
-	resolved INTEGER DEFAULT 0,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	resolved_at DATETIME,
-	FOREIGN KEY (agent_id) REFERENCES agents(id)
+	id          TEXT PRIMARY KEY,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	agent_name  TEXT NOT NULL DEFAULT '',
+	type        TEXT NOT NULL DEFAULT '',
+	message     TEXT NOT NULL,
+	severity    TEXT NOT NULL DEFAULT 'warning',
+	resolved    INTEGER NOT NULL DEFAULT 0,
+	created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	resolved_at DATETIME
 );
 
-CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
-CREATE INDEX IF NOT EXISTS idx_agents_token ON agents(token);
+CREATE TABLE IF NOT EXISTS secrets (
+	name       TEXT PRIMARY KEY,
+	value      BLOB NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project);
+CREATE INDEX IF NOT EXISTS idx_releases_started ON releases(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_release_logs_release ON release_logs(release_id, id);
 CREATE INDEX IF NOT EXISTS idx_containers_agent ON containers(agent_id);
-CREATE INDEX IF NOT EXISTS idx_deployments_repo ON deployments(repo_name);
-CREATE INDEX IF NOT EXISTS idx_deployments_agent ON deployments(agent_id);
-CREATE INDEX IF NOT EXISTS idx_deployments_started ON deployments(started_at DESC);
-CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts(resolved);
-CREATE INDEX IF NOT EXISTS idx_alerts_agent ON alerts(agent_id);
-CREATE INDEX IF NOT EXISTS idx_deployment_logs_deployment ON deployment_logs(deployment_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts(resolved, created_at DESC);
 `

@@ -18,54 +18,72 @@
 
 package storage
 
-import "github.com/urustack/uruflow/internal/models"
+import (
+	"errors"
+
+	"github.com/urustack/uruflow/internal/models"
+)
+
+var ErrNotFound = errors.New("not found")
 
 type Store interface {
 	CreateAgent(agent *models.Agent) error
 	UpdateAgent(agent *models.Agent) error
-	UpdateAgentMetrics(id string, metrics *models.AgentMetrics) error
-	UpdateAgentStatus(id string, status models.AgentStatus) error
+	SetAgentStatus(id string, status models.AgentStatus) error
+	SetAgentMetrics(id string, metrics *models.Metrics) error
 	GetAgent(id string) (*models.Agent, error)
-	GetAgentByToken(token string) (*models.Agent, error)
-	GetAllAgents() ([]models.Agent, error)
+	GetAgentByName(name string) (*models.Agent, error)
+	ListAgents() ([]models.Agent, error)
 	DeleteAgent(id string) error
 
-	UpsertContainer(c *models.Container) error
-	GetContainersByAgent(agentID string) ([]models.Container, error)
-	DeleteContainersByAgent(agentID string) error
+	SaveProject(project *models.Project) error
+	GetProject(name string) (*models.Project, error)
+	ListProjects() ([]models.Project, error)
+	DeleteProject(name string) error
 
-	CreateRepository(repo *models.Repository) error
-	UpdateRepository(repo *models.Repository) error
-	GetRepository(name string) (*models.Repository, error)
-	GetAllRepositories() ([]models.Repository, error)
-	DeleteRepository(name string) error
+	CreateRelease(release *models.Release) error
+	UpdateRelease(release *models.Release) error
+	GetRelease(id string) (*models.Release, error)
+	ListReleases(limit int) ([]models.Release, error)
+	ListReleasesByProject(project string, limit int) ([]models.Release, error)
+	LastSuccessfulRelease(project string) (*models.Release, error)
 
-	CreateDeployment(d *models.Deployment) error
-	UpdateDeployment(d *models.Deployment) error
-	GetDeployment(id string) (*models.Deployment, error)
-	GetRecentDeployments(limit int) ([]models.Deployment, error)
-	GetDeploymentsByAgent(agentID string, limit int) ([]models.Deployment, error)
-	GetDeploymentsByRepo(repoName string, limit int) ([]models.Deployment, error)
+	SaveReleaseTarget(target *models.ReleaseTarget) error
+	ListReleaseTargets(releaseID string) ([]models.ReleaseTarget, error)
 
-	AddDeploymentLog(log *models.DeploymentLog) error
-	GetDeploymentLogs(deploymentID string) ([]models.DeploymentLog, error)
+	AppendLog(line *models.LogLine) error
+	ListLogs(releaseID string) ([]models.LogLine, error)
 
-	CreateAlert(a *models.Alert) error
+	UpsertContainer(container *models.Container) error
+	ListContainers() ([]models.Container, error)
+	ListContainersByAgent(agentID string) ([]models.Container, error)
+	ReplaceContainers(agentID string, containers []models.Container) error
+
+	CreateAlert(alert *models.Alert) error
 	ResolveAlert(id string) error
-	GetActiveAlerts() ([]models.Alert, error)
-	GetRecentAlerts(hours int) ([]models.Alert, error)
-	GetAlertsByAgent(agentID string) ([]models.Alert, error)
+	ListActiveAlerts() ([]models.Alert, error)
+	ListRecentAlerts(limit int) ([]models.Alert, error)
 
-	GetStats() (*Stats, error)
+	SetSecret(name string, value []byte) error
+	GetSecret(name string) ([]byte, error)
+	ListSecrets() ([]models.Secret, error)
+	DeleteSecret(name string) error
+
+	SetAllAgentsOffline() error
+	FailUnfinishedReleases(message string) error
+
+	Stats() (*Stats, error)
 	Close() error
 }
 
 type Stats struct {
 	AgentsTotal       int
 	AgentsOnline      int
-	ReposTotal        int
-	DeploymentsTotal  int
-	DeploymentsToday  int
+	BuildersOnline    int
+	RunnersOnline     int
+	ProjectsTotal     int
+	ReleasesTotal     int
+	ReleasesToday     int
 	SuccessRate       float64
 	ContainersRunning int
 	ContainersStopped int
