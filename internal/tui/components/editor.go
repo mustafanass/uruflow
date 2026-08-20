@@ -21,7 +21,7 @@ package components
 import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 type Sheet struct {

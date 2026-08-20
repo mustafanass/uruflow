@@ -1,4 +1,4 @@
-module github.com/urustack/uruflow
+module github.com/mustafanass/uruflow
 
 go 1.25
 

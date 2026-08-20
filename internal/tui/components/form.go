@@ -23,7 +23,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 const (

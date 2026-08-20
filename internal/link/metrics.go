@@ -21,9 +21,9 @@ package link
 import (
 	"time"
 
-	"github.com/urustack/uruflow/internal/logic"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/logic"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 func (s *Server) applyMetrics(identity *ufp.Identity, metrics ufp.Metrics) {

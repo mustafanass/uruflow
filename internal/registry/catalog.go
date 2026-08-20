@@ -30,7 +30,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/models"
 )
 
 const (

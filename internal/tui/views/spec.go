@@ -21,7 +21,7 @@ package views
 import (
 	"strings"
 
-	"github.com/urustack/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/models"
 )
 
 func parsePorts(value string) ([]models.Port, error) {

@@ -20,8 +20,8 @@ package components
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 func AgentBadge(status models.AgentStatus) Cell {

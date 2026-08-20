@@ -186,14 +186,3 @@ State these plainly, because the model depends on them:
 4. Anyone permitted to define a project is permitted to run arbitrary code on the runners assigned to
    it, because a Dockerfile is arbitrary code.
 5. Environment variables are not secrets.
-
-## 11. What Is Not Provided
-
-| Not provided | Consequence |
-| :--- | :--- |
-| Human authentication or RBAC | Server shell access is full authority |
-| Audit log | No record of who triggered a release |
-| Secret management beyond storage | No rotation, no versioning, no per-project access control |
-| Approval gates | Any auto-deploy project deploys on push |
-| Agent sandboxing | An agent is root-equivalent on its host |
-| Image signing or verification | Runners trust the registry, which trusts the builder |

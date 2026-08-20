@@ -23,8 +23,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/urustack/uruflow/internal/docker"
-	"github.com/urustack/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/docker"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 const (

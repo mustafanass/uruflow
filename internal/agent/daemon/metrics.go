@@ -23,9 +23,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/urustack/uruflow/internal/agent/runner"
-	"github.com/urustack/uruflow/internal/ufp"
-	"github.com/urustack/uruflow/pkg/logger"
+	"github.com/mustafanass/uruflow/internal/agent/runner"
+	"github.com/mustafanass/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/pkg/logger"
 )
 
 const (

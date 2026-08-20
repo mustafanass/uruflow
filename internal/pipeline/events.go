@@ -21,11 +21,11 @@ package pipeline
 import (
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/ufp"
-	"github.com/urustack/uruflow/pkg/logger"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/pkg/logger"
 
-	"github.com/urustack/uruflow/internal/link"
+	"github.com/mustafanass/uruflow/internal/link"
 )
 
 var _ link.Events = (*Pipeline)(nil)

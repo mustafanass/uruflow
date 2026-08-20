@@ -21,7 +21,7 @@ package link
 import (
 	"fmt"
 
-	"github.com/urustack/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 type Session struct {

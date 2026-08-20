@@ -22,8 +22,8 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 const releaseColumns = `id, project, branch, commit_sha, image, images, digest, status,

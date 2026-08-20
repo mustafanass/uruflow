@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage/sqlite"
-	"github.com/urustack/uruflow/internal/tui/components"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage/sqlite"
+	"github.com/mustafanass/uruflow/internal/tui/components"
 )
 
 const (

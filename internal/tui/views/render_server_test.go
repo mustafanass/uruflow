@@ -23,10 +23,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/urustack/uruflow/internal/api"
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage/sqlite"
+	"github.com/mustafanass/uruflow/internal/api"
+	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 )
 
 func liveServer(t *testing.T) *api.Server {

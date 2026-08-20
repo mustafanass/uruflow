@@ -21,7 +21,7 @@ package runner
 import (
 	"testing"
 
-	"github.com/urustack/uruflow/internal/docker"
+	"github.com/mustafanass/uruflow/internal/docker"
 )
 
 func TestCredentialsOnlyGoToTheUruflowRegistry(t *testing.T) {

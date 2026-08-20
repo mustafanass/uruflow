@@ -26,7 +26,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/urustack/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 var _ storage.Store = (*Store)(nil)

@@ -24,9 +24,9 @@ import (
 	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/urustack/uruflow/internal/api"
-	"github.com/urustack/uruflow/internal/tui/components"
-	"github.com/urustack/uruflow/internal/tui/views"
+	"github.com/mustafanass/uruflow/internal/api"
+	"github.com/mustafanass/uruflow/internal/tui/components"
+	"github.com/mustafanass/uruflow/internal/tui/views"
 )
 
 func Run(server *api.Server) error {

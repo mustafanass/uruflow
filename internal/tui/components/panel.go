@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 func Panel(title, body string, width int, active bool) string {

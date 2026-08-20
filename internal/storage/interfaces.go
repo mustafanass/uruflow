@@ -21,7 +21,7 @@ package storage
 import (
 	"errors"
 
-	"github.com/urustack/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/models"
 )
 
 var ErrNotFound = errors.New("not found")

@@ -27,12 +27,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/logic"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
-	"github.com/urustack/uruflow/internal/ufp"
-	"github.com/urustack/uruflow/pkg/logger"
+	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/logic"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/pkg/logger"
 )
 
 var ErrAgentOffline = errors.New("agent is not connected")

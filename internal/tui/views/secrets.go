@@ -22,11 +22,11 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/urustack/uruflow/internal/api"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/secrets"
-	"github.com/urustack/uruflow/internal/tui/components"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/api"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/secrets"
+	"github.com/mustafanass/uruflow/internal/tui/components"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 type secretMode int

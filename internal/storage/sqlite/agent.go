@@ -23,8 +23,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 const agentColumns = `id, name, auth_key, roles, host, hostname, version, platform, status,
