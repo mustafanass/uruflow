@@ -20,8 +20,8 @@ package sqlite
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -29,63 +29,106 @@ import (
 	"github.com/urustack/uruflow/internal/storage"
 )
 
+var _ storage.Store = (*Store)(nil)
+
 type Store struct {
 	db *sql.DB
 }
 
-func New(dataDir string) (storage.Store, error) {
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return nil, fmt.Errorf("create data dir: %w", err)
-	}
+type column struct {
+	table string
+	name  string
+	spec  string
+}
 
-	dbPath := filepath.Join(dataDir, "uruflow-server.db")
-	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
+var addedColumns = []column{
+	{table: "projects", name: "env", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "projects", name: "source", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "projects", name: "services", spec: "TEXT NOT NULL DEFAULT '[]'"},
+	{table: "releases", name: "images", spec: "TEXT NOT NULL DEFAULT '{}'"},
+	{table: "containers", name: "service", spec: "TEXT NOT NULL DEFAULT ''"},
+}
+
+func New(path string) (*Store, error) {
+	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_foreign_keys=on", path)
+
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+		return nil, fmt.Errorf("open database %s: %w", filepath.Base(path), err)
 	}
 
-	conn.SetMaxOpenConns(5)
-	conn.SetMaxIdleConns(2)
-	conn.SetConnMaxLifetime(time.Hour)
+	db.SetMaxOpenConns(1)
 
-	store := &Store{db: conn}
-	if err := store.migrate(); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
+	if _, err := db.Exec(schema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+
+	store := &Store{db: db}
+	if err := store.addMissingColumns(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("upgrade schema: %w", err)
 	}
 
 	return store, nil
+}
+
+func (s *Store) addMissingColumns() error {
+	for _, column := range addedColumns {
+		var present int
+		row := s.db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, column.table, column.name)
+		if err := row.Scan(&present); err != nil {
+			return err
+		}
+		if present > 0 {
+			continue
+		}
+		if _, err := s.db.Exec(
+			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, column.table, column.name, column.spec)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) migrate() error {
-	_, err := s.db.Exec(schema)
-	return err
+func encodeJSON(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "null"
+	}
+	return string(data)
 }
 
-func (s *Store) GetStats() (*storage.Stats, error) {
-	stats := &storage.Stats{}
-
-	s.db.QueryRow(`SELECT COUNT(*) FROM agents`).Scan(&stats.AgentsTotal)
-	s.db.QueryRow(`SELECT COUNT(*) FROM agents WHERE status = 'online'`).Scan(&stats.AgentsOnline)
-	s.db.QueryRow(`SELECT COUNT(*) FROM repositories`).Scan(&stats.ReposTotal)
-	s.db.QueryRow(`SELECT COUNT(*) FROM deployments`).Scan(&stats.DeploymentsTotal)
-
-	today := time.Now().Truncate(24 * time.Hour)
-	s.db.QueryRow(`SELECT COUNT(*) FROM deployments WHERE started_at >= ?`, today).Scan(&stats.DeploymentsToday)
-
-	var success, total int
-	s.db.QueryRow(`SELECT COUNT(*) FROM deployments WHERE status = 'success'`).Scan(&success)
-	s.db.QueryRow(`SELECT COUNT(*) FROM deployments WHERE status IN ('success', 'failed')`).Scan(&total)
-	if total > 0 {
-		stats.SuccessRate = float64(success) / float64(total) * 100
+func decodeJSON(data string, target any) {
+	if data == "" {
+		return
 	}
+	json.Unmarshal([]byte(data), target)
+}
 
-	s.db.QueryRow(`SELECT COUNT(*) FROM containers WHERE status = 'running'`).Scan(&stats.ContainersRunning)
-	s.db.QueryRow(`SELECT COUNT(*) FROM containers WHERE status != 'running'`).Scan(&stats.ContainersStopped)
-	s.db.QueryRow(`SELECT COUNT(*) FROM alerts WHERE resolved = 0`).Scan(&stats.AlertsActive)
+func nullTime(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
 
-	return stats, nil
+func timeValue(value sql.NullTime) time.Time {
+	if value.Valid {
+		return value.Time
+	}
+	return time.Time{}
+}
+
+func timePointer(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	moment := value.Time
+	return &moment
 }

@@ -24,7 +24,15 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/urustack/uruflow/internal/docker"
+	"github.com/urustack/uruflow/internal/ufp"
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	Version              = "2.0.0"
+	DefaultReconnectSecs = 5
+	DefaultMetricsSecs   = 10
 )
 
 var (
@@ -32,33 +40,31 @@ var (
 	DefaultDataDir    string
 	DefaultPidFile    string
 	DefaultLogFile    string
+	DefaultCACert     string
 )
 
 func init() {
-	if runtime.GOOS == "windows" {
-		homeDir, _ := os.UserHomeDir()
-		DefaultConfigPath = filepath.Join(homeDir, ".uruflow", "agent.yaml")
-		DefaultDataDir = filepath.Join(homeDir, ".uruflow", "data")
-		DefaultPidFile = filepath.Join(homeDir, ".uruflow", "agent.pid")
-		DefaultLogFile = filepath.Join(homeDir, ".uruflow", "agent.log")
-	} else {
-		if os.Geteuid() == 0 {
-			DefaultConfigPath = "/etc/uruflow/agent.yaml"
-			DefaultDataDir = "/var/lib/uruflow-agent"
-			DefaultPidFile = "/var/run/uruflow-agent.pid"
-			DefaultLogFile = "/var/log/uruflow-agent.log"
-		} else {
-			homeDir, _ := os.UserHomeDir()
-			DefaultConfigPath = filepath.Join(homeDir, ".config", "uruflow", "agent.yaml")
-			DefaultDataDir = filepath.Join(homeDir, ".local", "share", "uruflow-agent")
-			DefaultPidFile = filepath.Join(homeDir, ".local", "share", "uruflow-agent", "agent.pid")
-			DefaultLogFile = filepath.Join(homeDir, ".local", "share", "uruflow-agent", "agent.log")
-		}
+	if runtime.GOOS == "windows" || os.Geteuid() != 0 {
+		home, _ := os.UserHomeDir()
+		DefaultConfigPath = filepath.Join(home, ".config", "uruflow", "agent.yaml")
+		DefaultDataDir = filepath.Join(home, ".local", "share", "uruflow-agent")
+		DefaultPidFile = filepath.Join(DefaultDataDir, "agent.pid")
+		DefaultLogFile = filepath.Join(DefaultDataDir, "agent.log")
+		DefaultCACert = filepath.Join(home, ".config", "uruflow", "ca.crt")
+		return
 	}
+
+	DefaultConfigPath = "/etc/uruflow/agent.yaml"
+	DefaultDataDir = "/var/lib/uruflow-agent"
+	DefaultPidFile = "/var/run/uruflow-agent.pid"
+	DefaultLogFile = "/var/log/uruflow-agent.log"
+	DefaultCACert = "/etc/uruflow/ca.crt"
 }
 
 type Config struct {
-	Token   string       `yaml:"token"`
+	AgentID string       `yaml:"agent_id"`
+	Key     string       `yaml:"key"`
+	Roles   []ufp.Role   `yaml:"roles"`
 	DataDir string       `yaml:"data_dir"`
 	PidFile string       `yaml:"pid_file"`
 	LogFile string       `yaml:"log_file"`
@@ -67,37 +73,30 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host          string `yaml:"host"`
-	Port          int    `yaml:"port"`
-	TLS           bool   `yaml:"tls"`
-	TLSSkipVerify bool   `yaml:"tls_skip_verify"`
-	ReconnectSec  int    `yaml:"reconnect_sec"`
-	MetricsSec    int    `yaml:"metrics_sec"`
+	Host         string `yaml:"host"`
+	Port         int    `yaml:"port"`
+	CACert       string `yaml:"ca_cert"`
+	ReconnectSec int    `yaml:"reconnect_sec"`
+	MetricsSec   int    `yaml:"metrics_sec"`
 }
 
 type DockerConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Socket  string `yaml:"socket"`
+	Socket string `yaml:"socket"`
 }
 
 func Default() *Config {
 	return &Config{
-		Token:   "",
+		Roles:   []ufp.Role{ufp.RoleRunner},
 		DataDir: DefaultDataDir,
 		PidFile: DefaultPidFile,
 		LogFile: DefaultLogFile,
 		Server: ServerConfig{
-			Host:          "",
-			Port:          9001,
-			TLS:           false,
-			TLSSkipVerify: false,
-			ReconnectSec:  5,
-			MetricsSec:    10,
+			Port:         9001,
+			CACert:       DefaultCACert,
+			ReconnectSec: DefaultReconnectSecs,
+			MetricsSec:   DefaultMetricsSecs,
 		},
-		Docker: DockerConfig{
-			Enabled: true,
-			Socket:  "/var/run/docker.sock",
-		},
+		Docker: DockerConfig{Socket: docker.DefaultSocket},
 	}
 }
 
@@ -106,18 +105,14 @@ func Load(path string) (*Config, error) {
 		path = DefaultConfigPath
 	}
 
-	if !Exists(path) {
-		return nil, &ConfigError{Path: path, Err: os.ErrNotExist}
-	}
-
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, &ConfigError{Path: path, Err: err}
+		return nil, &Error{Path: path, Err: err}
 	}
 
 	cfg := Default()
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, &ConfigError{Path: path, Err: err}
+		return nil, &Error{Path: path, Err: err}
 	}
 
 	return cfg, nil
@@ -128,9 +123,8 @@ func (c *Config) Save(path string) error {
 		path = DefaultConfigPath
 	}
 
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return &ConfigError{Path: path, Err: err}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return &Error{Path: path, Err: err}
 	}
 
 	data, err := yaml.Marshal(c)
@@ -138,17 +132,36 @@ func (c *Config) Save(path string) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0600)
+	return os.WriteFile(path, data, 0o600)
 }
 
 func (c *Config) Validate() error {
-	if c.Token == "" {
-		return errors.New("token is required")
+	if c.AgentID == "" {
+		return errors.New("agent_id is required")
+	}
+	if c.Key == "" {
+		return errors.New("key is required")
 	}
 	if c.Server.Host == "" {
 		return errors.New("server.host is required")
 	}
+	if len(c.Roles) == 0 {
+		return errors.New("at least one role is required (builder, runner)")
+	}
+	for _, role := range c.Roles {
+		if !role.Valid() {
+			return errors.New("unknown role: " + string(role))
+		}
+	}
 	return nil
+}
+
+func (c *Config) HasRole(role ufp.Role) bool {
+	return ufp.HasRole(c.Roles, role)
+}
+
+func (c *Config) WorkDir() string {
+	return filepath.Join(c.DataDir, "sources")
 }
 
 func Exists(path string) bool {
@@ -159,21 +172,20 @@ func Exists(path string) bool {
 	return err == nil
 }
 
-type ConfigError struct {
+type Error struct {
 	Path string
 	Err  error
 }
 
-func (e *ConfigError) Error() string {
-	if os.IsNotExist(e.Err) {
-		return "config not found at " + e.Path
-	}
-	if os.IsPermission(e.Err) {
+func (e *Error) Error() string {
+	switch {
+	case os.IsNotExist(e.Err):
+		return "agent config not found at " + e.Path
+	case os.IsPermission(e.Err):
 		return "permission denied reading " + e.Path
+	default:
+		return "agent config error: " + e.Err.Error()
 	}
-	return "config error: " + e.Err.Error()
 }
 
-func (e *ConfigError) Unwrap() error {
-	return e.Err
-}
+func (e *Error) Unwrap() error { return e.Err }

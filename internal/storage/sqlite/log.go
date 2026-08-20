@@ -18,41 +18,33 @@
 
 package sqlite
 
-import (
-	"github.com/urustack/uruflow/internal/models"
-)
+import "github.com/urustack/uruflow/internal/models"
 
-func (s *Store) AddDeploymentLog(log *models.DeploymentLog) error {
+func (s *Store) AppendLog(line *models.LogLine) error {
 	_, err := s.db.Exec(`
-		INSERT INTO deployment_logs (deployment_id, timestamp, stream, content)
-		VALUES (?, ?, ?, ?)
-	`, log.DeploymentID, log.Timestamp, log.Stream, log.Line)
+		INSERT INTO release_logs (release_id, stage, agent_name, stream, line, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		line.ReleaseID, line.Stage, line.AgentName, line.Stream, line.Line, line.Timestamp)
 	return err
 }
 
-func (s *Store) GetDeploymentLogs(deploymentID string) ([]models.DeploymentLog, error) {
+func (s *Store) ListLogs(releaseID string) ([]models.LogLine, error) {
 	rows, err := s.db.Query(`
-		SELECT id, deployment_id, timestamp, stream, content
-		FROM deployment_logs WHERE deployment_id = ? ORDER BY id
-	`, deploymentID)
+		SELECT id, release_id, stage, agent_name, stream, line, timestamp
+		FROM release_logs WHERE release_id = ? ORDER BY id`, releaseID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var logs []models.DeploymentLog
+	lines := make([]models.LogLine, 0)
 	for rows.Next() {
-		var l models.DeploymentLog
-		err := rows.Scan(&l.ID, &l.DeploymentID, &l.Timestamp, &l.Stream, &l.Line)
-		if err != nil {
+		var line models.LogLine
+		if err := rows.Scan(&line.ID, &line.ReleaseID, &line.Stage, &line.AgentName,
+			&line.Stream, &line.Line, &line.Timestamp); err != nil {
 			return nil, err
 		}
-		logs = append(logs, l)
+		lines = append(lines, line)
 	}
-	return logs, nil
-}
-
-func (s *Store) DeleteDeploymentLogs(deploymentID string) error {
-	_, err := s.db.Exec(`DELETE FROM deployment_logs WHERE deployment_id = ?`, deploymentID)
-	return err
+	return lines, rows.Err()
 }

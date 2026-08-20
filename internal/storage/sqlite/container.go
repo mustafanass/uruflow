@@ -24,50 +24,96 @@ import (
 	"github.com/urustack/uruflow/internal/models"
 )
 
-func (s *Store) UpsertContainer(c *models.Container) error {
+const containerColumns = `id, agent_id, name, project, service, image, state, health,
+	cpu_percent, memory_usage, memory_limit, network_rx, network_tx, restart_count, started_at`
+
+func (s *Store) UpsertContainer(container *models.Container) error {
 	_, err := s.db.Exec(`
-		INSERT INTO containers (id, agent_id, name, image, status, health, cpu_percent, memory_usage, memory_limit, network_rx, network_tx, restart_count, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			status = excluded.status,
+		INSERT INTO containers (id, agent_id, name, project, service, image, state, health,
+		                        cpu_percent, memory_usage, memory_limit,
+		                        network_rx, network_tx, restart_count, started_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(agent_id, id) DO UPDATE SET
+			name = excluded.name,
+			project = excluded.project,
+			service = excluded.service,
+			image = excluded.image,
+			state = excluded.state,
 			health = excluded.health,
 			cpu_percent = excluded.cpu_percent,
 			memory_usage = excluded.memory_usage,
 			memory_limit = excluded.memory_limit,
 			network_rx = excluded.network_rx,
 			network_tx = excluded.network_tx,
-			restart_count = excluded.restart_count
-	`, c.ID, c.AgentID, c.Name, c.Image, c.Status, c.Health, c.CPUPercent, c.MemoryUsage, c.MemoryLimit, c.NetworkRx, c.NetworkTx, c.RestartCount, c.StartedAt)
+			restart_count = excluded.restart_count,
+			started_at = excluded.started_at`,
+		container.ID, container.AgentID, container.Name, container.Project, container.Service,
+		container.Image, container.State, container.Health, container.CPUPercent, container.MemoryUsage,
+		container.MemoryLimit, container.NetworkRx, container.NetworkTx,
+		container.RestartCount, container.StartedAt)
 	return err
 }
 
-func (s *Store) GetContainersByAgent(agentID string) ([]models.Container, error) {
-	rows, err := s.db.Query(`
-		SELECT id, agent_id, name, image, status, health, cpu_percent, memory_usage, memory_limit, network_rx, network_tx, restart_count, started_at
-		FROM containers WHERE agent_id = ? ORDER BY name
-	`, agentID)
+func (s *Store) ReplaceContainers(agentID string, containers []models.Container) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM containers WHERE agent_id = ?`, agentID); err != nil {
+		return err
+	}
+
+	statement, err := tx.Prepare(`
+		INSERT INTO containers (` + containerColumns + `)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer statement.Close()
+
+	for _, container := range containers {
+		if _, err := statement.Exec(container.ID, agentID, container.Name, container.Project,
+			container.Service, container.Image, container.State, container.Health, container.CPUPercent,
+			container.MemoryUsage, container.MemoryLimit, container.NetworkRx,
+			container.NetworkTx, container.RestartCount, container.StartedAt); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) ListContainers() ([]models.Container, error) {
+	return s.queryContainers(`SELECT ` + containerColumns + ` FROM containers ORDER BY name`)
+}
+
+func (s *Store) ListContainersByAgent(agentID string) ([]models.Container, error) {
+	return s.queryContainers(`SELECT `+containerColumns+`
+		FROM containers WHERE agent_id = ? ORDER BY name`, agentID)
+}
+
+func (s *Store) queryContainers(query string, args ...any) ([]models.Container, error) {
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var containers []models.Container
+	containers := make([]models.Container, 0)
 	for rows.Next() {
-		var c models.Container
+		var container models.Container
 		var startedAt sql.NullTime
-		err := rows.Scan(&c.ID, &c.AgentID, &c.Name, &c.Image, &c.Status, &c.Health, &c.CPUPercent, &c.MemoryUsage, &c.MemoryLimit, &c.NetworkRx, &c.NetworkTx, &c.RestartCount, &startedAt)
-		if err != nil {
+		if err := rows.Scan(&container.ID, &container.AgentID, &container.Name,
+			&container.Project, &container.Service, &container.Image, &container.State, &container.Health,
+			&container.CPUPercent, &container.MemoryUsage, &container.MemoryLimit,
+			&container.NetworkRx, &container.NetworkTx, &container.RestartCount,
+			&startedAt); err != nil {
 			return nil, err
 		}
-		if startedAt.Valid {
-			c.StartedAt = startedAt.Time
-		}
-		containers = append(containers, c)
+		container.StartedAt = timeValue(startedAt)
+		containers = append(containers, container)
 	}
-	return containers, nil
-}
-
-func (s *Store) DeleteContainersByAgent(agentID string) error {
-	_, err := s.db.Exec(`DELETE FROM containers WHERE agent_id = ?`, agentID)
-	return err
+	return containers, rows.Err()
 }

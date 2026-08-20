@@ -20,173 +20,118 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/urustack/uruflow/internal/models"
+	"github.com/urustack/uruflow/internal/storage"
 )
+
+const agentColumns = `id, name, auth_key, roles, host, hostname, version, platform, status,
+	cpu_percent, memory_percent, memory_used, memory_total,
+	disk_percent, disk_used, disk_total, uptime, last_seen, registered_at`
 
 func (s *Store) CreateAgent(agent *models.Agent) error {
 	_, err := s.db.Exec(`
-		INSERT INTO agents (id, name, token, host, hostname, version, status, last_heartbeat, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, agent.ID, agent.Name, agent.Token, agent.Host, agent.Hostname, agent.Version, agent.Status, agent.LastHeartbeat, time.Now())
+		INSERT INTO agents (id, name, auth_key, roles, status, registered_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		agent.ID, agent.Name, agent.Key, encodeJSON(agent.Roles),
+		models.AgentOffline, time.Now())
 	return err
 }
 
 func (s *Store) UpdateAgent(agent *models.Agent) error {
 	_, err := s.db.Exec(`
-		UPDATE agents SET
-			host = COALESCE(NULLIF(?, ''), host),
-			hostname = COALESCE(NULLIF(?, ''), hostname),
-			version = COALESCE(NULLIF(?, ''), version),
-			status = ?,
-			last_heartbeat = ?
-		WHERE id = ?
-	`, agent.Host, agent.Hostname, agent.Version, agent.Status, agent.LastHeartbeat, agent.ID)
+		UPDATE agents
+		SET name = ?, roles = ?, host = ?, hostname = ?, version = ?,
+		    platform = ?, status = ?, last_seen = ?
+		WHERE id = ?`,
+		agent.Name, encodeJSON(agent.Roles), agent.Host, agent.Hostname,
+		agent.Version, agent.Platform, agent.Status, agent.LastSeen, agent.ID)
 	return err
 }
 
-func (s *Store) UpdateAgentMetrics(id string, metrics *models.AgentMetrics) error {
+func (s *Store) SetAgentStatus(id string, status models.AgentStatus) error {
+	_, err := s.db.Exec(`UPDATE agents SET status = ?, last_seen = ? WHERE id = ?`,
+		status, time.Now(), id)
+	return err
+}
+
+func (s *Store) SetAgentMetrics(id string, metrics *models.Metrics) error {
 	_, err := s.db.Exec(`
-		UPDATE agents SET
-			cpu_percent = ?,
-			memory_percent = ?,
-			disk_percent = ?,
-			memory_used = ?,
-			memory_total = ?,
-			disk_used = ?,
-			disk_total = ?,
-			uptime = ?,
-			status = 'online',
-			last_heartbeat = ?
-		WHERE id = ?
-	`, metrics.CPUPercent, metrics.MemoryPercent, metrics.DiskPercent,
-		metrics.MemoryUsed, metrics.MemoryTotal, metrics.DiskUsed, metrics.DiskTotal,
-		metrics.Uptime, time.Now(), id)
-	return err
-}
-
-func (s *Store) UpdateAgentStatus(id string, status models.AgentStatus) error {
-	_, err := s.db.Exec(`UPDATE agents SET status = ?, last_heartbeat = ? WHERE id = ?`, status, time.Now(), id)
+		UPDATE agents
+		SET cpu_percent = ?, memory_percent = ?, memory_used = ?, memory_total = ?,
+		    disk_percent = ?, disk_used = ?, disk_total = ?, uptime = ?, last_seen = ?
+		WHERE id = ?`,
+		metrics.CPUPercent, metrics.MemoryPercent, metrics.MemoryUsed, metrics.MemoryTotal,
+		metrics.DiskPercent, metrics.DiskUsed, metrics.DiskTotal, metrics.Uptime,
+		time.Now(), id)
 	return err
 }
 
 func (s *Store) GetAgent(id string) (*models.Agent, error) {
-	agent := &models.Agent{}
-	var lastHeartbeat, createdAt sql.NullTime
-	var cpu, mem, disk float64
-	var memUsed, memTotal, diskUsed, diskTotal uint64
-	var uptime int64
-
-	err := s.db.QueryRow(`
-		SELECT id, name, token, host, hostname, version, status,
-			cpu_percent, memory_percent, disk_percent,
-			memory_used, memory_total, disk_used, disk_total, uptime,
-			last_heartbeat, created_at
-		FROM agents WHERE id = ?
-	`, id).Scan(
-		&agent.ID, &agent.Name, &agent.Token, &agent.Host, &agent.Hostname, &agent.Version, &agent.Status,
-		&cpu, &mem, &disk,
-		&memUsed, &memTotal, &diskUsed, &diskTotal, &uptime,
-		&lastHeartbeat, &createdAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if lastHeartbeat.Valid {
-		agent.LastHeartbeat = lastHeartbeat.Time
-	}
-	if createdAt.Valid {
-		agent.RegisteredAt = createdAt.Time
-	}
-
-	agent.Metrics = &models.AgentMetrics{
-		CPUPercent:    cpu,
-		MemoryPercent: mem,
-		DiskPercent:   disk,
-		MemoryUsed:    memUsed,
-		MemoryTotal:   memTotal,
-		DiskUsed:      diskUsed,
-		DiskTotal:     diskTotal,
-		Uptime:        uptime,
-	}
-
-	return agent, nil
+	return s.scanAgent(s.db.QueryRow(`SELECT `+agentColumns+` FROM agents WHERE id = ?`, id))
 }
 
-func (s *Store) GetAgentByToken(token string) (*models.Agent, error) {
-	agent := &models.Agent{}
-	err := s.db.QueryRow(`
-		SELECT id, name, token, host, hostname, version, status
-		FROM agents WHERE token = ?
-	`, token).Scan(&agent.ID, &agent.Name, &agent.Token, &agent.Host, &agent.Hostname, &agent.Version, &agent.Status)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	return agent, err
+func (s *Store) GetAgentByName(name string) (*models.Agent, error) {
+	return s.scanAgent(s.db.QueryRow(`SELECT `+agentColumns+` FROM agents WHERE name = ?`, name))
 }
 
-func (s *Store) GetAllAgents() ([]models.Agent, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, token, host, hostname, version, status,
-			cpu_percent, memory_percent, disk_percent,
-			memory_used, memory_total, disk_used, disk_total, uptime,
-			last_heartbeat, created_at
-		FROM agents ORDER BY name
-	`)
+func (s *Store) ListAgents() ([]models.Agent, error) {
+	rows, err := s.db.Query(`SELECT ` + agentColumns + ` FROM agents ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var agents []models.Agent
+	agents := make([]models.Agent, 0)
 	for rows.Next() {
-		var a models.Agent
-		var lastHeartbeat, createdAt sql.NullTime
-		var cpu, mem, disk float64
-		var memUsed, memTotal, diskUsed, diskTotal uint64
-		var uptime int64
-
-		err := rows.Scan(
-			&a.ID, &a.Name, &a.Token, &a.Host, &a.Hostname, &a.Version, &a.Status,
-			&cpu, &mem, &disk,
-			&memUsed, &memTotal, &diskUsed, &diskTotal, &uptime,
-			&lastHeartbeat, &createdAt,
-		)
+		agent, err := s.scanAgent(rows)
 		if err != nil {
 			return nil, err
 		}
-
-		if lastHeartbeat.Valid {
-			a.LastHeartbeat = lastHeartbeat.Time
-		}
-		if createdAt.Valid {
-			a.RegisteredAt = createdAt.Time
-		}
-
-		a.Metrics = &models.AgentMetrics{
-			CPUPercent:    cpu,
-			MemoryPercent: mem,
-			DiskPercent:   disk,
-			MemoryUsed:    memUsed,
-			MemoryTotal:   memTotal,
-			DiskUsed:      diskUsed,
-			DiskTotal:     diskTotal,
-			Uptime:        uptime,
-		}
-
-		agents = append(agents, a)
+		agents = append(agents, *agent)
 	}
-
-	return agents, nil
+	return agents, rows.Err()
 }
 
 func (s *Store) DeleteAgent(id string) error {
-	_, err := s.db.Exec(`DELETE FROM agents WHERE id = ?`, id)
-	return err
+	result, err := s.db.Exec(`DELETE FROM agents WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func (s *Store) scanAgent(row scanner) (*models.Agent, error) {
+	var agent models.Agent
+	var roles string
+	var metrics models.Metrics
+	var lastSeen sql.NullTime
+
+	err := row.Scan(
+		&agent.ID, &agent.Name, &agent.Key, &roles, &agent.Host, &agent.Hostname,
+		&agent.Version, &agent.Platform, &agent.Status,
+		&metrics.CPUPercent, &metrics.MemoryPercent, &metrics.MemoryUsed, &metrics.MemoryTotal,
+		&metrics.DiskPercent, &metrics.DiskUsed, &metrics.DiskTotal, &metrics.Uptime,
+		&lastSeen, &agent.RegisteredAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, storage.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	decodeJSON(roles, &agent.Roles)
+	agent.LastSeen = timeValue(lastSeen)
+	agent.Metrics = &metrics
+	return &agent, nil
 }

@@ -15,6 +15,7 @@
  * You should have received a copy of the MIT License
  * along with uruflow. If not, see the LICENSE file in the project root.
  */
+
 package main
 
 import (
@@ -22,20 +23,11 @@ import (
 	"os"
 
 	"github.com/urustack/uruflow/internal/cli"
-	"github.com/urustack/uruflow/pkg/logger"
 )
 
 func main() {
-	if err := logger.Init("/var/log/uruflow-server.log", "info"); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		os.Exit(1)
-	}
-
-	logger.Info("Starting UruFlow Server")
-
-	if err := cli.Execute(); err != nil {
-		logger.Error("Fatal error: %v", err)
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	if err := cli.ExecuteServer(); err != nil {
+		fmt.Fprintf(os.Stderr, "uruflow: %v\n", err)
 		os.Exit(1)
 	}
 }

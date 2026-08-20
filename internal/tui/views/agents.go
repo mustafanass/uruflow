@@ -19,419 +19,529 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/urustack/uruflow/internal/config"
+	"github.com/urustack/uruflow/internal/api"
 	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
 	"github.com/urustack/uruflow/internal/tui/components"
-	"github.com/urustack/uruflow/internal/tui/styles"
+	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/urustack/uruflow/internal/ufp"
 	"github.com/urustack/uruflow/pkg/helper"
 )
 
-type AgentMode int
+type agentMode int
 
 const (
-	AgentModeList AgentMode = iota
-	AgentModeAdd
-	AgentModeResult
-	AgentModeConfirmDelete
+	agentList agentMode = iota
+	agentCreate
+	agentEnrolled
+	agentConfirmDelete
+	agentContainers
+	agentLogs
 )
 
-type AgentResultMsg struct {
-	Success bool
-	Name    string
-	ID      string
-	Token   string
-	Error   error
+const (
+	logBuffer     = 400
+	requestWindow = 10 * time.Second
+	logTail       = 200
+)
+
+type ContainerLogMsg ufp.ContainerLog
+
+type Agents struct {
+	Base
+	server *api.Server
+	mode   agentMode
+	cursor int
+	agents []models.Agent
+
+	containerCursor int
+	containers      []models.Container
+	streaming       string
+	lines           []string
+
+	form     *components.Form
+	enrolled *models.Agent
 }
 
-type AgentsModel struct {
-	store        storage.Store
-	cfg          *config.Config
-	cfgPath      string
-	Width        int
-	Height       int
-	Agents       []AgentData
-	Cursor       int
-	Expanded     bool
-	Mode         AgentMode
-	Input        string
-	Result       AgentAddResult
-	Dialog       components.Dialog
-	Loading      bool
-	SpinnerFrame int
-	err          error
-}
-
-type AgentAddResult struct {
-	Name  string
-	ID    string
-	Token string
-}
-
-func NewAgentsModel(store storage.Store, cfg *config.Config, cfgPath string) AgentsModel {
-	return AgentsModel{store: store, cfg: cfg, cfgPath: cfgPath, Mode: AgentModeList}
-}
-
-func (m AgentsModel) Init() tea.Cmd {
-	return m.fetchAgents
-}
-
-func (m AgentsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch m.Mode {
-		case AgentModeList:
-			return m.updateList(msg)
-		case AgentModeAdd:
-			return m.updateAdd(msg)
-		case AgentModeResult:
-			return m.updateResult(msg)
-		case AgentModeConfirmDelete:
-			return m.updateConfirmDelete(msg)
-		}
-	case SpinnerTickMsg:
-		m.SpinnerFrame++
-		if m.Loading {
-			return m, m.spinnerTick
-		}
-	case AgentResultMsg:
-		if msg.Success {
-			m.Result = AgentAddResult{Name: msg.Name, ID: msg.ID, Token: msg.Token}
-			m.Mode = AgentModeResult
-			m.err = nil
-		} else {
-			m.err = msg.Error
-		}
-		m.Loading = false
-		return m, m.fetchAgents
-	case []AgentData:
-		m.Agents = msg
-		m.Loading = false
-		return m, nil
-	case error:
-		m.err = msg
-		m.Loading = false
-		return m, nil
+func NewAgents(server *api.Server) *Agents {
+	return &Agents{
+		server: server,
+		form: components.NewForm(
+			components.NewField("name", "builder-01", "unique name for this machine", false),
+			components.NewMulti("roles", "builder builds images, runner runs them", false),
+		),
 	}
-	return m, nil
 }
 
-func (m AgentsModel) spinnerTick() tea.Msg {
-	time.Sleep(80 * time.Millisecond)
-	return SpinnerTickMsg{}
+func (a *Agents) Init() tea.Cmd {
+	a.mode = agentList
+	a.reload()
+	return nil
 }
 
-func (m AgentsModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *Agents) Capturing() bool { return a.mode != agentList }
+
+func (a *Agents) reload() {
+	a.agents, _ = a.server.Store().ListAgents()
+	if a.cursor >= len(a.agents) {
+		a.cursor = 0
+	}
+	if a.mode == agentContainers || a.mode == agentLogs {
+		a.loadContainers()
+	}
+}
+
+func (a *Agents) loadContainers() {
+	if agent := a.selected(); agent != nil {
+		a.containers, _ = a.server.Store().ListContainersByAgent(agent.ID)
+		if a.containerCursor >= len(a.containers) {
+			a.containerCursor = 0
+		}
+	}
+}
+
+func (a *Agents) selected() *models.Agent {
+	if a.cursor < 0 || a.cursor >= len(a.agents) {
+		return nil
+	}
+	return &a.agents[a.cursor]
+}
+
+func (a *Agents) selectedContainer() *models.Container {
+	if a.containerCursor < 0 || a.containerCursor >= len(a.containers) {
+		return nil
+	}
+	return &a.containers[a.containerCursor]
+}
+
+func (a *Agents) Update(msg tea.Msg) tea.Cmd {
+	switch message := msg.(type) {
+	case ContainerLogMsg:
+		if a.mode == agentLogs && message.ContainerID == a.streaming {
+			a.appendLog(message)
+		}
+		return nil
+
+	case tea.KeyMsg:
+		return a.key(message)
+	}
+
+	a.reload()
+	return nil
+}
+
+func (a *Agents) key(msg tea.KeyMsg) tea.Cmd {
+	switch a.mode {
+	case agentCreate:
+		return a.createKey(msg)
+	case agentEnrolled:
+		if msg.String() == "esc" || msg.String() == "enter" {
+			a.mode = agentList
+			a.reload()
+		}
+		return nil
+	case agentConfirmDelete:
+		return a.deleteKey(msg)
+	case agentContainers:
+		return a.containerKey(msg)
+	case agentLogs:
+		return a.logKey(msg)
+	}
+
 	switch msg.String() {
 	case "up", "k":
-		if m.Cursor > 0 {
-			m.Cursor--
-		}
+		a.cursor = move(a.cursor, -1, len(a.agents))
 	case "down", "j":
-		if m.Cursor < len(m.Agents)-1 {
-			m.Cursor++
+		a.cursor = move(a.cursor, 1, len(a.agents))
+	case "n":
+		a.Clear()
+		a.form.Reset()
+		a.form.Field(1).SetOptions([]components.Option{
+			{Value: string(models.RoleBuilder), Label: string(models.RoleBuilder)},
+			{Value: string(models.RoleRunner), Label: string(models.RoleRunner)},
+		})
+		a.mode = agentCreate
+	case "d":
+		if a.selected() != nil {
+			a.mode = agentConfirmDelete
 		}
 	case "enter":
-		m.Expanded = !m.Expanded
-	case "+", "n":
-		m.Mode = AgentModeAdd
-		m.Input = ""
-		m.err = nil
-	case "-", "delete", "backspace":
-		if len(m.Agents) > 0 {
-			m.Dialog = components.DeleteAgentDialog(m.Agents[m.Cursor].Name)
-			m.Mode = AgentModeConfirmDelete
+		if a.selected() != nil {
+			a.containerCursor = 0
+			a.mode = agentContainers
+			a.loadContainers()
 		}
-	case "r":
-		m.Loading = true
-		return m, tea.Batch(m.fetchAgents, m.spinnerTick)
 	}
-	return m, nil
+	return nil
 }
 
-func (m AgentsModel) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "n":
-		m.Mode = AgentModeList
-		m.Dialog.Visible = false
-	case "left", "right", "h", "l", "tab":
-		m.Dialog.ToggleSelection()
-	case "enter":
-		if m.Dialog.IsConfirmed() {
-			m.Dialog.Visible = false
-			m.Mode = AgentModeList
-			m.Loading = true
-			return m, tea.Batch(m.deleteAgent(m.Agents[m.Cursor].ID), m.spinnerTick)
-		} else {
-			m.Mode = AgentModeList
-			m.Dialog.Visible = false
-		}
-	case "y":
-		m.Dialog.Visible = false
-		m.Mode = AgentModeList
-		m.Loading = true
-		return m, tea.Batch(m.deleteAgent(m.Agents[m.Cursor].ID), m.spinnerTick)
-	}
-	return m, nil
-}
-
-func (m AgentsModel) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *Agents) createKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
-		m.Mode = AgentModeList
-		m.Input = ""
-		m.err = nil
+		a.mode = agentList
+		return nil
+	case "tab", "down":
+		a.form.Next()
+		return nil
+	case "shift+tab", "up":
+		a.form.Previous()
+		return nil
 	case "enter":
-		if m.Input != "" {
-			return m, m.addAgent(m.Input)
-		}
-	case "backspace":
-		if len(m.Input) > 0 {
-			m.Input = m.Input[:len(m.Input)-1]
-		}
-	default:
-		inputStr := msg.String()
-		if len(m.Input)+len(inputStr) <= 30 {
-			m.Input += inputStr
-		}
+		a.create()
+		return nil
 	}
-	return m, nil
+	return a.form.Update(msg)
 }
 
-func (m AgentsModel) updateResult(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *Agents) create() {
+	if missing := a.form.Missing(); missing != "" {
+		a.Notify(missing+" is required", "error")
+		return
+	}
+
+	roles := make([]models.Role, 0, 2)
+	for _, value := range a.form.Values(1) {
+		roles = append(roles, models.Role(value))
+	}
+
+	agent := &models.Agent{
+		ID:    helper.GenerateID(),
+		Name:  a.form.Value(0),
+		Key:   helper.GenerateToken(),
+		Roles: roles,
+	}
+
+	if err := a.server.Store().CreateAgent(agent); err != nil {
+		a.Notify("an agent named "+agent.Name+" already exists", "error")
+		return
+	}
+
+	a.enrolled = agent
+	a.mode = agentEnrolled
+	a.reload()
+}
+
+func (a *Agents) deleteKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
-	case "esc", "enter":
-		m.Mode = AgentModeList
-		return m, m.fetchAgents
+	case "y":
+		if agent := a.selected(); agent != nil {
+			a.Fail(a.server.Store().DeleteAgent(agent.ID))
+		}
+		a.mode = agentList
+		a.reload()
+	case "n", "esc":
+		a.mode = agentList
 	}
-	return m, nil
+	return nil
 }
 
-func (m AgentsModel) addAgent(name string) tea.Cmd {
-	return func() tea.Msg {
-		id, token, err := m.cfg.AddAgent(name)
-		if err != nil {
-			return AgentResultMsg{Success: false, Error: err}
-		}
-		if err := m.cfg.Save(m.cfgPath); err != nil {
-			return AgentResultMsg{Success: false, Error: err}
-		}
-		agent := &models.Agent{
-			ID: id, Name: name, Token: token, Status: models.AgentOffline, RegisteredAt: time.Now(),
-		}
-		m.store.CreateAgent(agent)
-		return AgentResultMsg{Success: true, Name: name, ID: id, Token: token}
+func (a *Agents) containerKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		a.mode = agentList
+	case "up", "k":
+		a.containerCursor = move(a.containerCursor, -1, len(a.containers))
+	case "down", "j":
+		a.containerCursor = move(a.containerCursor, 1, len(a.containers))
+	case "enter":
+		a.follow()
 	}
+	return nil
 }
 
-func (m AgentsModel) deleteAgent(id string) tea.Cmd {
-	return func() tea.Msg {
-		m.cfg.RemoveAgent(id)
-		m.cfg.Save(m.cfgPath)
-		m.store.DeleteAgent(id)
-		return m.fetchAgents()
+func (a *Agents) logKey(msg tea.KeyMsg) tea.Cmd {
+	if msg.String() == "esc" {
+		a.unfollow()
+		a.mode = agentContainers
 	}
+	return nil
 }
 
-func (m AgentsModel) fetchAgents() tea.Msg {
-	agents, err := m.store.GetAllAgents()
+func (a *Agents) follow() {
+	agent := a.selected()
+	container := a.selectedContainer()
+	if agent == nil || container == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), requestWindow)
+	defer cancel()
+
+	_, err := a.server.Link().Request(ctx, agent.ID, ufp.MethodLogsFollow,
+		ufp.LogsFollow{ContainerID: container.ID, Tail: logTail})
 	if err != nil {
-		return err
+		a.Fail(err)
+		return
 	}
-	var data []AgentData
-	for _, a := range agents {
-		containers, _ := m.store.GetContainersByAgent(a.ID)
-		containerData := make([]ContainerData, len(containers))
-		for i, c := range containers {
-			containerData[i] = ContainerData{
-				Name: c.Name, Running: c.Status == "running", Healthy: c.Health == "healthy",
-				CPU: c.CPUPercent, Memory: fmt.Sprintf("%dMB", c.MemoryUsage/1024/1024),
-			}
+
+	a.streaming = container.ID
+	a.lines = nil
+	a.mode = agentLogs
+}
+
+func (a *Agents) unfollow() {
+	agent := a.selected()
+	if agent == nil || a.streaming == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), requestWindow)
+	defer cancel()
+
+	a.server.Link().Request(ctx, agent.ID, ufp.MethodLogsStop, ufp.LogsStop{ContainerID: a.streaming})
+	a.streaming = ""
+}
+
+func (a *Agents) appendLog(entry ContainerLogMsg) {
+	style := theme.Body
+	if entry.Stream == ufp.StreamStderr {
+		style = theme.Bad
+	}
+
+	a.lines = append(a.lines, theme.Ghost.Render(time.Unix(entry.Timestamp, 0).Format("15:04:05"))+" "+
+		style.Render(theme.Sanitize(entry.Line)))
+
+	if len(a.lines) > logBuffer {
+		a.lines = a.lines[len(a.lines)-logBuffer:]
+	}
+}
+
+func (a *Agents) Hints() []components.Hint {
+	switch a.mode {
+	case agentCreate:
+		return []components.Hint{{Key: "tab", Label: "next field"}, {Key: "enter", Label: "enrol"}, {Key: "esc", Label: "cancel"}}
+	case agentEnrolled:
+		return []components.Hint{{Key: "enter", Label: "done"}}
+	case agentConfirmDelete:
+		return []components.Hint{{Key: "y", Label: "remove"}, {Key: "n", Label: "keep"}}
+	case agentContainers:
+		return []components.Hint{{Key: "↑↓", Label: "select"}, {Key: "enter", Label: "logs"}, {Key: "esc", Label: "back"}}
+	case agentLogs:
+		return []components.Hint{{Key: "esc", Label: "stop following"}}
+	default:
+		return []components.Hint{
+			{Key: "↑↓", Label: "select"},
+			{Key: "enter", Label: "containers"},
+			{Key: "n", Label: "enrol agent"},
+			{Key: "d", Label: "remove"},
 		}
-		uptime := time.Since(a.LastHeartbeat).Round(time.Second).String()
-		if a.Status == "offline" {
-			uptime = a.LastHeartbeat.Format("2006-01-02 15:04")
+	}
+}
+
+func (a *Agents) Render() string {
+	switch a.mode {
+	case agentCreate:
+		return a.renderCreate()
+	case agentEnrolled:
+		return a.renderEnrolled()
+	case agentConfirmDelete:
+		return a.renderDelete()
+	case agentContainers:
+		return a.renderContainers()
+	case agentLogs:
+		return a.renderLogs()
+	default:
+		return a.renderList()
+	}
+}
+
+func (a *Agents) renderList() string {
+	table := components.Table{
+		Columns: []components.Column{
+			{Title: "agent", Width: 18},
+			{Title: "roles", Width: 20},
+			{Title: "state", Width: 11},
+			{Title: "host", Width: 16},
+			{Title: "platform", Width: 14},
+			{Title: "version", Width: 9},
+			{Flex: true},
+			{Title: "uptime", Width: 9, Right: true},
+			{Title: "seen", Width: 10, Right: true},
+		},
+		Cursor: a.cursor,
+		Height: a.TableHeight(16),
+		Empty:  "no agents enrolled yet — press n to add one",
+	}
+
+	for index := range a.agents {
+		agent := &a.agents[index]
+		metrics := agent.Metrics
+		if metrics == nil {
+			metrics = &models.Metrics{}
 		}
-		cpu, mem, disk := 0.0, 0.0, 0.0
-		if a.Metrics != nil {
-			cpu = a.Metrics.CPUPercent
-			mem = a.Metrics.MemoryPercent
-			disk = a.Metrics.DiskPercent
-		}
-		data = append(data, AgentData{
-			ID: a.ID, Name: a.Name, Host: a.Host, Version: a.Version, Uptime: uptime,
-			Online: a.Status == "online", CPU: cpu, Memory: mem, Disk: disk, Containers: containerData,
+
+		table.Rows = append(table.Rows, components.Row{
+			components.Text(agent.Name),
+			components.Roles(agent.Roles),
+			components.AgentBadge(agent.Status),
+			components.Styled(agent.Host, theme.Ghost),
+			components.Styled(agent.Platform, theme.Ghost),
+			components.Styled(agent.Version, theme.Ghost),
+			components.Text(""),
+			components.Styled(theme.Uptime(metrics.Uptime), theme.Ghost),
+			components.Styled(theme.Since(agent.LastSeen), theme.Ghost),
 		})
 	}
-	return data
+
+	body := components.Card("agents", table.Render(components.CardWidth(a.Width)), a.Width, false)
+
+	if agent := a.selected(); agent != nil && agent.Metrics != nil {
+		body = components.Stack(body,
+			components.Card(agent.Name, a.resources(agent), a.Width, true))
+	}
+
+	return components.Stack(body, a.Notice())
 }
 
-func (m AgentsModel) View() string {
-	if m.Width == 0 {
+func (a *Agents) resources(agent *models.Agent) string {
+	metrics := agent.Metrics
+	return strings.Join([]string{
+		components.KeyValue("cpu", meter(metrics.CPUPercent), 10),
+		components.KeyValue("memory", meter(metrics.MemoryPercent)+theme.Ghost.Render(
+			fmt.Sprintf("  %s / %s", theme.Bytes(metrics.MemoryUsed), theme.Bytes(metrics.MemoryTotal))), 10),
+		components.KeyValue("disk", meter(metrics.DiskPercent)+theme.Ghost.Render(
+			fmt.Sprintf("  %s / %s", theme.Bytes(metrics.DiskUsed), theme.Bytes(metrics.DiskTotal))), 10),
+	}, "\n")
+}
+
+func (a *Agents) renderCreate() string {
+	body := strings.Join([]string{
+		theme.Ghost.Render("uruflow generates the id and key; you copy them onto the machine."),
+		"",
+		a.form.Render(components.CardWidth(a.Width)),
+	}, "\n")
+
+	return components.Stack(
+		components.Card("enrol an agent", body, a.Width, true),
+		a.Notice(),
+	)
+}
+
+func (a *Agents) renderEnrolled() string {
+	agent := a.enrolled
+	if agent == nil {
 		return ""
 	}
-	switch m.Mode {
-	case AgentModeAdd:
-		return m.viewAdd()
-	case AgentModeResult:
-		return m.viewResult()
-	case AgentModeConfirmDelete:
-		return m.viewList() + components.ConfirmDialog(m.Dialog, m.Width, m.Height)
-	default:
-		return m.viewList()
+
+	cfg := a.server.Config()
+	advertise := cfg.Server.Advertise
+	if advertise == "" {
+		advertise = "<server-host>"
 	}
+
+	roles := make([]string, 0, len(agent.Roles))
+	for _, role := range agent.Roles {
+		roles = append(roles, string(role))
+	}
+
+	snippet := strings.Join([]string{
+		"agent_id: " + agent.ID,
+		"key: " + agent.Key,
+		"roles: [" + strings.Join(roles, ", ") + "]",
+		"server:",
+		fmt.Sprintf("  host: %s", advertise),
+		fmt.Sprintf("  port: %d", cfg.Server.UFPPort),
+		"  ca_cert: /etc/uruflow/ca.crt",
+	}, "\n")
+
+	return strings.Join([]string{
+		"",
+		theme.Good.Render(theme.IconSuccess + " agent " + agent.Name + " enrolled"),
+		"",
+		theme.Heading.Render("WRITE TO /etc/uruflow/agent.yaml ON THE TARGET"),
+		components.Panel("", theme.Body.Render(snippet), a.Width, false),
+		"",
+		theme.Heading.Render("COPY THE TRUST ROOT"),
+		theme.Ghost.Render("  scp " + cfg.CACertPath() + "  <host>:/etc/uruflow/ca.crt"),
+		"",
+		theme.Ghost.Render("  the agent verifies both the uruflow link and the registry against this CA"),
+	}, "\n")
 }
 
-func (m AgentsModel) viewList() string {
-	var b strings.Builder
-	w := m.Width
-
-	b.WriteString("\n")
-	b.WriteString(components.ViewHeader(w, "Dashboard", "Agents") + "\n\n")
-
-	online, offline := 0, 0
-	for _, a := range m.Agents {
-		if a.Online {
-			online++
-		} else {
-			offline++
-		}
+func (a *Agents) renderDelete() string {
+	agent := a.selected()
+	if agent == nil {
+		return ""
 	}
 
-	b.WriteString(components.Section("OVERVIEW", w) + "\n\n")
-
-	var statsContent strings.Builder
-	statsContent.WriteString(components.Stats(online, offline, len(m.Agents)))
-	b.WriteString(components.Wrap(statsContent.String(), w) + "\n\n")
-
-	if m.err != nil {
-		b.WriteString(components.MsgError(m.err.Error(), w) + "\n\n")
+	dialog := components.Dialog{
+		Title:   "Remove agent",
+		Message: "Remove " + agent.Name + " from uruflow?",
+		Detail:  "Its containers keep running; only uruflow forgets it.",
+		Confirm: "remove",
+		Danger:  true,
 	}
-
-	b.WriteString(components.Section("AGENT LIST", w) + "\n\n")
-
-	if m.Loading {
-		b.WriteString(components.Loading(m.SpinnerFrame, "Loading agents...") + "\n\n")
-	}
-
-	var listContent strings.Builder
-	if len(m.Agents) == 0 && !m.Loading {
-		listContent.WriteString("  " + styles.MutedStyle.Render("No agents registered") + "\n")
-		listContent.WriteString("  " + styles.SubtleStyle.Render("Press '+' to add your first agent"))
-	} else if len(m.Agents) > 0 {
-		for i, a := range m.Agents {
-			selected := i == m.Cursor
-			if selected && m.Expanded {
-				card := components.AgentCardData{
-					Name: a.Name, Host: a.Host, Version: a.Version, Online: a.Online,
-					CPU: a.CPU, Memory: a.Memory, Disk: a.Disk, Selected: true,
-					Containers: make([]components.ContainerInfo, len(a.Containers)),
-				}
-				for j, c := range a.Containers {
-					card.Containers[j] = components.ContainerInfo{
-						Name: c.Name, Running: c.Running, Healthy: c.Healthy, CPU: c.CPU, Memory: c.Memory,
-					}
-				}
-				listContent.WriteString(components.AgentCard(card, w-8) + "\n")
-			} else {
-				row := components.AgentRow(a.Name, a.Online, a.CPU, a.Memory, a.Disk, a.Uptime, selected, w)
-				if selected {
-					listContent.WriteString(components.SelectedRow(row, true) + "\n")
-				} else {
-					listContent.WriteString(row + "\n")
-				}
-			}
-		}
-	}
-	if listContent.Len() > 0 {
-		b.WriteString(components.Wrap(listContent.String(), w) + "\n")
-	}
-
-	content := b.String()
-	lines := helper.CountLines(content)
-	for i := 0; i < m.Height-lines-3; i++ {
-		content += "\n"
-	}
-
-	content += "\n" + styles.Line(w) + "\n"
-	content += components.Help([][]string{
-		{"↑↓", "navigate"}, {"enter", "expand"}, {"l", "logs"}, {"+", "add"}, {"-", "remove"}, {"r", "refresh"}, {"esc", "back"},
-	})
-
-	return content
+	return dialog.Render(a.Width, a.Height)
 }
 
-func (m AgentsModel) viewAdd() string {
-	var b strings.Builder
-	w := m.Width
-
-	b.WriteString("\n")
-	b.WriteString(components.ViewHeader(w, "Dashboard", "Agents", "Add Agent") + "\n\n")
-
-	b.WriteString(components.Section("AGENT NAME", w) + "\n\n")
-
-	var formContent strings.Builder
-	formContent.WriteString(components.Input("Enter a name to identify this agent", m.Input, true, w-8))
-	if m.err != nil {
-		formContent.WriteString("\n\n" + styles.ErrorStyle.Render(styles.IconError) + "  " + styles.ErrorStyle.Render(m.err.Error()))
-	}
-	b.WriteString(components.Wrap(formContent.String(), w) + "\n")
-
-	content := b.String()
-	lines := helper.CountLines(content)
-	for i := 0; i < m.Height-lines-3; i++ {
-		content += "\n"
+func (a *Agents) renderContainers() string {
+	agent := a.selected()
+	if agent == nil {
+		return ""
 	}
 
-	content += "\n" + styles.Line(w) + "\n"
-	content += components.Help([][]string{{"enter", "create"}, {"esc", "cancel"}})
+	table := components.Table{
+		Columns: []components.Column{
+			{Title: "container", Width: 22},
+			{Title: "project", Width: 16},
+			{Title: "service", Width: 12},
+			{Title: "state", Width: 12},
+			{Title: "health", Width: 10},
+			{Flex: true},
+			{Title: "cpu", Width: 8, Right: true},
+			{Title: "memory", Width: 12, Right: true},
+			{Title: "restarts", Width: 9, Right: true},
+			{Title: "up", Width: 10, Right: true},
+		},
+		Cursor: a.containerCursor,
+		Height: a.TableHeight(10),
+		Empty:  "no uruflow containers on this agent",
+	}
 
-	return content
+	for index := range a.containers {
+		container := &a.containers[index]
+		table.Rows = append(table.Rows, components.Row{
+			components.Text(container.Name),
+			components.Styled(container.Project, theme.Note),
+			components.Styled(orDash(container.Service), theme.Mark),
+			components.ContainerBadge(container.State),
+			components.Health(container.Health),
+			components.Text(""),
+			components.Styled(fmt.Sprintf("%.1f%%", container.CPUPercent), theme.Ghost),
+			components.Styled(theme.Bytes(container.MemoryUsage), theme.Ghost),
+			components.Styled(fmt.Sprint(container.RestartCount), theme.Ghost),
+			components.Styled(theme.Since(container.StartedAt), theme.Ghost),
+		})
+	}
+
+	return components.Stack(
+		components.Card(agent.Name+" containers",
+			table.Render(components.CardWidth(a.Width)), a.Width, true),
+		a.Notice(),
+	)
 }
 
-func (m AgentsModel) viewResult() string {
-	var b strings.Builder
-	w := m.Width
-
-	b.WriteString("\n")
-	b.WriteString(components.ViewHeader(w, "Dashboard", "Agents", "Agent Created") + "\n\n")
-
-	b.WriteString(components.MsgSuccess("Agent created successfully", w) + "\n\n")
-
-	b.WriteString(components.Section("AGENT DETAILS", w) + "\n\n")
-	b.WriteString(components.Card(m.Result.Name, []components.CardLine{
-		{Label: "ID", Value: styles.MutedStyle.Render(m.Result.ID)},
-	}, false, w) + "\n\n")
-
-	b.WriteString(components.Section("TOKEN", w) + "\n\n")
-	b.WriteString(components.Token(m.Result.Token, w) + "\n\n")
-	b.WriteString(components.MsgWarning("Save this token! It won't be shown again.", w) + "\n\n")
-
-	b.WriteString(components.Section("NEXT STEPS", w) + "\n\n")
-	var stepsContent strings.Builder
-	stepsContent.WriteString("  1. Install agent on your server:\n")
-	stepsContent.WriteString("     " + styles.PrimaryStyle.Render("curl -sSL https://uruflow.io/install | sh") + "\n\n")
-	stepsContent.WriteString("  2. Connect with:\n")
-	tok := m.Result.Token
-	if len(tok) > 16 {
-		tok = tok[:16] + "..."
-	}
-	stepsContent.WriteString("     " + styles.PrimaryStyle.Render(fmt.Sprintf("uruflow-server-agent connect --token %s", tok)))
-	b.WriteString(components.Wrap(stepsContent.String(), w) + "\n")
-
-	content := b.String()
-	lines := helper.CountLines(content)
-	for i := 0; i < m.Height-lines-3; i++ {
-		content += "\n"
+func (a *Agents) renderLogs() string {
+	container := a.selectedContainer()
+	name := a.streaming
+	if container != nil {
+		name = container.Name
 	}
 
-	content += "\n" + styles.Line(w) + "\n"
-	content += components.Help([][]string{{"enter", "done"}, {"esc", "back"}})
+	visible := a.TableHeight(6)
+	lines := a.lines
+	if len(lines) > visible {
+		lines = lines[len(lines)-visible:]
+	}
+	if len(lines) == 0 {
+		lines = []string{theme.Ghost.Render("attached — this container has not written anything to stdout yet")}
+	}
 
-	return content
+	title := name + "  " + theme.Frame(a.Frame) + theme.Ghost.Render(" streaming")
+	return components.Card(title, strings.Join(lines, "\n"), a.Width, true)
 }

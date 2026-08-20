@@ -22,25 +22,49 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/urustack/uruflow/internal/models"
 	"github.com/urustack/uruflow/pkg/helper"
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	DefaultConfigPath = "/etc/uruflow/config.yaml"
+	DefaultDataDir    = "/var/lib/uruflow"
+	DefaultUFPPort    = 9001
+	DefaultHTTPPort   = 9000
+	DefaultRegistry   = 5000
+	DefaultNamespace  = "uruflow"
+	DefaultRegistryID = "uruflow-registry"
+	RegistryImage     = "registry:2"
+	DatabaseFile      = "uruflow.db"
+	LogFile           = "uruflow.log"
+)
+
 type Config struct {
-	Server       ServerConfig        `yaml:"server"`
-	Webhook      WebhookConfig       `yaml:"webhook"`
-	TLS          TLSConfig           `yaml:"tls"`
-	Agents       []AgentConfig       `yaml:"agents"`
-	Repositories []models.Repository `yaml:"repositories"`
+	path string
+
+	Server   ServerConfig   `yaml:"server"`
+	Registry RegistryConfig `yaml:"registry"`
+	Webhook  WebhookConfig  `yaml:"webhook"`
 }
 
 type ServerConfig struct {
-	HTTPPort int    `yaml:"http_port"`
-	TCPPort  int    `yaml:"tcp_port"`
-	Host     string `yaml:"host"`
-	DataDir  string `yaml:"data_dir"`
+	Host      string `yaml:"host"`
+	UFPPort   int    `yaml:"ufp_port"`
+	HTTPPort  int    `yaml:"http_port"`
+	DataDir   string `yaml:"data_dir"`
+	Advertise string `yaml:"advertise"`
+}
+
+type RegistryConfig struct {
+	Host      string `yaml:"host"`
+	Port      int    `yaml:"port"`
+	Namespace string `yaml:"namespace"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	Image     string `yaml:"image"`
+	Socket    string `yaml:"socket"`
 }
 
 type WebhookConfig struct {
@@ -48,23 +72,28 @@ type WebhookConfig struct {
 	Secret string `yaml:"secret"`
 }
 
-type TLSConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
-	AutoCert bool   `yaml:"auto_cert"`
+func Default() *Config {
+	return &Config{
+		Server: ServerConfig{
+			Host:     "0.0.0.0",
+			UFPPort:  DefaultUFPPort,
+			HTTPPort: DefaultHTTPPort,
+			DataDir:  DefaultDataDir,
+		},
+		Registry: RegistryConfig{
+			Port:      DefaultRegistry,
+			Namespace: DefaultNamespace,
+			Username:  DefaultNamespace,
+			Password:  helper.GenerateToken(),
+			Image:     RegistryImage,
+			Socket:    "/var/run/docker.sock",
+		},
+		Webhook: WebhookConfig{
+			Path:   "/webhook",
+			Secret: helper.GenerateSecret(),
+		},
+	}
 }
-
-type AgentConfig struct {
-	ID    string `yaml:"id"`
-	Name  string `yaml:"name"`
-	Token string `yaml:"token"`
-}
-
-var (
-	DefaultConfigPath = "/etc/uruflow/config.yaml"
-	DefaultDataDir    = "/var/lib/uruflow"
-)
 
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -72,37 +101,24 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	cfg := Default()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	cfg.setDefaults()
-	return &cfg, nil
-}
-
-func (c *Config) setDefaults() {
-	if c.Server.HTTPPort == 0 {
-		c.Server.HTTPPort = 9000
-	}
-	if c.Server.TCPPort == 0 {
-		c.Server.TCPPort = 9001
-	}
-	if c.Server.Host == "" {
-		c.Server.Host = "0.0.0.0"
-	}
-	if c.Server.DataDir == "" {
-		c.Server.DataDir = DefaultDataDir
-	}
-	if c.Webhook.Path == "" {
-		c.Webhook.Path = "/webhook"
-	}
+	cfg.normalize()
+	cfg.path = path
+	return cfg, nil
 }
 
 func (c *Config) Save(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	c.path = path
+	if err := os.MkdirAll(c.ProjectsDir(), 0o755); err != nil {
+		return fmt.Errorf("create projects dir: %w", err)
 	}
 
 	data, err := yaml.Marshal(c)
@@ -110,115 +126,117 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
+	return os.WriteFile(path, data, 0o600)
+}
 
+func (c *Config) Validate() error {
+	if c.Registry.Host == "" {
+		return fmt.Errorf("registry.host is required: agents must be able to reach the registry by this name")
+	}
+	if c.Server.Advertise == "" {
+		return fmt.Errorf("server.advertise is required: agents dial the server by this name")
+	}
 	return nil
 }
 
-func Default() *Config {
-	return &Config{
-		Server: ServerConfig{
-			HTTPPort: 9000,
-			TCPPort:  9001,
-			Host:     "0.0.0.0",
-			DataDir:  DefaultDataDir,
-		},
-		Webhook: WebhookConfig{
-			Path:   "/webhook",
-			Secret: helper.GenerateSecret(),
-		},
-		TLS: TLSConfig{
-			Enabled:  false,
-			AutoCert: false,
-		},
-		Agents:       []AgentConfig{},
-		Repositories: []models.Repository{},
-	}
-}
-
-func (c *Config) AddAgent(name string) (string, string, error) {
-	for _, a := range c.Agents {
-		if a.Name == name {
-			return "", "", fmt.Errorf("agent %s already exists", name)
-		}
-	}
-
-	id := helper.GenerateID()
-	token := helper.GenerateToken()
-
-	c.Agents = append(c.Agents, AgentConfig{
-		ID:    id,
-		Name:  name,
-		Token: token,
-	})
-
-	return id, token, nil
-}
-
-func (c *Config) GetAgent(id string) *AgentConfig {
-	for i := range c.Agents {
-		if c.Agents[i].ID == id {
-			return &c.Agents[i]
+func (c *Config) EnsureDirs() error {
+	for _, dir := range []string{c.Server.DataDir, c.PKIDir(), c.RegistryDataDir()} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
 	return nil
 }
 
-func (c *Config) GetAgentByToken(token string) *AgentConfig {
-	for i := range c.Agents {
-		if c.Agents[i].Token == token {
-			return &c.Agents[i]
-		}
-	}
-	return nil
+func (c *Config) UFPAddr() string {
+	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.UFPPort)
 }
 
-func (c *Config) GetAgentByName(name string) *AgentConfig {
-	for i := range c.Agents {
-		if c.Agents[i].Name == name {
-			return &c.Agents[i]
-		}
-	}
-	return nil
+func (c *Config) HTTPAddr() string {
+	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.HTTPPort)
 }
 
-func (c *Config) RemoveAgent(id string) bool {
-	for i := range c.Agents {
-		if c.Agents[i].ID == id {
-			c.Agents = append(c.Agents[:i], c.Agents[i+1:]...)
-			return true
-		}
-	}
-	return false
+func (c *Config) DatabasePath() string {
+	return filepath.Join(c.Server.DataDir, DatabaseFile)
 }
 
-func (c *Config) AddRepository(repo models.Repository) error {
-	for _, r := range c.Repositories {
-		if r.Name == repo.Name {
-			return fmt.Errorf("repository %s already exists", repo.Name)
-		}
+func (c *Config) ConfigDir() string {
+	if c.path == "" {
+		return filepath.Dir(DefaultConfigPath)
 	}
-	c.Repositories = append(c.Repositories, repo)
-	return nil
+	return filepath.Dir(c.path)
 }
 
-func (c *Config) GetRepository(name string) *models.Repository {
-	for i := range c.Repositories {
-		if c.Repositories[i].Name == name {
-			return &c.Repositories[i]
-		}
-	}
-	return nil
+func (c *Config) ProjectsDir() string {
+	return filepath.Join(c.ConfigDir(), "projects")
 }
 
-func (c *Config) RemoveRepository(name string) bool {
-	for i := range c.Repositories {
-		if c.Repositories[i].Name == name {
-			c.Repositories = append(c.Repositories[:i], c.Repositories[i+1:]...)
-			return true
-		}
+func (c *Config) LogPath() string {
+	return filepath.Join(c.Server.DataDir, LogFile)
+}
+
+func (c *Config) PKIDir() string {
+	return filepath.Join(c.Server.DataDir, "pki")
+}
+
+func (c *Config) RegistryDataDir() string {
+	return filepath.Join(c.Server.DataDir, "registry")
+}
+
+func (c *Config) CACertPath() string       { return filepath.Join(c.PKIDir(), "ca.crt") }
+func (c *Config) CAKeyPath() string        { return filepath.Join(c.PKIDir(), "ca.key") }
+func (c *Config) ServerCertPath() string   { return filepath.Join(c.PKIDir(), "server.crt") }
+func (c *Config) ServerKeyPath() string    { return filepath.Join(c.PKIDir(), "server.key") }
+func (c *Config) RegistryCertPath() string { return filepath.Join(c.PKIDir(), "registry.crt") }
+func (c *Config) RegistryKeyPath() string  { return filepath.Join(c.PKIDir(), "registry.key") }
+func (c *Config) HtpasswdPath() string     { return filepath.Join(c.PKIDir(), "htpasswd") }
+func (c *Config) SecretKeyPath() string    { return filepath.Join(c.PKIDir(), "secrets.key") }
+
+func (c *RegistryConfig) Address() string {
+	if strings.Contains(c.Host, ":") {
+		return c.Host
 	}
-	return false
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+func (c *RegistryConfig) Hostname() string {
+	if host, _, found := strings.Cut(c.Host, ":"); found {
+		return host
+	}
+	return c.Host
+}
+
+func (c *RegistryConfig) Repository(project string) string {
+	return fmt.Sprintf("%s/%s/%s", c.Address(), c.Namespace, project)
+}
+
+func (c *Config) normalize() {
+	base := Default()
+	if c.Server.Host == "" {
+		c.Server.Host = base.Server.Host
+	}
+	if c.Server.UFPPort == 0 {
+		c.Server.UFPPort = base.Server.UFPPort
+	}
+	if c.Server.HTTPPort == 0 {
+		c.Server.HTTPPort = base.Server.HTTPPort
+	}
+	if c.Server.DataDir == "" {
+		c.Server.DataDir = base.Server.DataDir
+	}
+	if c.Registry.Port == 0 {
+		c.Registry.Port = base.Registry.Port
+	}
+	if c.Registry.Namespace == "" {
+		c.Registry.Namespace = base.Registry.Namespace
+	}
+	if c.Registry.Image == "" {
+		c.Registry.Image = base.Registry.Image
+	}
+	if c.Registry.Socket == "" {
+		c.Registry.Socket = base.Registry.Socket
+	}
+	if c.Webhook.Path == "" {
+		c.Webhook.Path = base.Webhook.Path
+	}
 }

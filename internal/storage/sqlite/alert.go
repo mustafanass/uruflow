@@ -25,74 +25,51 @@ import (
 	"github.com/urustack/uruflow/internal/models"
 )
 
-func (s *Store) CreateAlert(a *models.Alert) error {
+const alertColumns = `id, agent_id, agent_name, type, message, severity, resolved, created_at, resolved_at`
+
+func (s *Store) CreateAlert(alert *models.Alert) error {
 	_, err := s.db.Exec(`
-		INSERT INTO alerts (id, type, severity, agent_id, agent_name, message, resolved, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, a.ID, a.Type, a.Severity, a.AgentID, a.AgentName, a.Message, a.Resolved, a.CreatedAt)
+		INSERT INTO alerts (id, agent_id, agent_name, type, message, severity, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		alert.ID, alert.AgentID, alert.AgentName, alert.Type,
+		alert.Message, alert.Severity, alert.CreatedAt)
 	return err
 }
 
 func (s *Store) ResolveAlert(id string) error {
-	_, err := s.db.Exec(`
-		UPDATE alerts SET resolved = 1, resolved_at = ? WHERE id = ?
-	`, time.Now(), id)
+	_, err := s.db.Exec(`UPDATE alerts SET resolved = 1, resolved_at = ? WHERE id = ?`,
+		time.Now(), id)
 	return err
 }
 
-func (s *Store) GetActiveAlerts() ([]models.Alert, error) {
-	rows, err := s.db.Query(`
-		SELECT id, type, severity, agent_id, agent_name, message, resolved, created_at, resolved_at
-		FROM alerts WHERE resolved = 0 ORDER BY created_at DESC
-	`)
+func (s *Store) ListActiveAlerts() ([]models.Alert, error) {
+	return s.queryAlerts(`SELECT ` + alertColumns + `
+		FROM alerts WHERE resolved = 0 ORDER BY created_at DESC`)
+}
+
+func (s *Store) ListRecentAlerts(limit int) ([]models.Alert, error) {
+	return s.queryAlerts(`SELECT `+alertColumns+`
+		FROM alerts ORDER BY created_at DESC LIMIT ?`, limit)
+}
+
+func (s *Store) queryAlerts(query string, args ...any) ([]models.Alert, error) {
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	return scanAlerts(rows)
-}
-
-func (s *Store) GetRecentAlerts(hours int) ([]models.Alert, error) {
-	since := time.Now().Add(-time.Duration(hours) * time.Hour)
-	rows, err := s.db.Query(`
-		SELECT id, type, severity, agent_id, agent_name, message, resolved, created_at, resolved_at
-		FROM alerts WHERE created_at > ? ORDER BY created_at DESC
-	`, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanAlerts(rows)
-}
-
-func (s *Store) GetAlertsByAgent(agentID string) ([]models.Alert, error) {
-	rows, err := s.db.Query(`
-		SELECT id, type, severity, agent_id, agent_name, message, resolved, created_at, resolved_at
-		FROM alerts WHERE agent_id = ? ORDER BY created_at DESC
-	`, agentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanAlerts(rows)
-}
-
-func scanAlerts(rows *sql.Rows) ([]models.Alert, error) {
-	var alerts []models.Alert
+	alerts := make([]models.Alert, 0)
 	for rows.Next() {
-		var a models.Alert
+		var alert models.Alert
 		var resolvedAt sql.NullTime
-		err := rows.Scan(&a.ID, &a.Type, &a.Severity, &a.AgentID, &a.AgentName, &a.Message, &a.Resolved, &a.CreatedAt, &resolvedAt)
-		if err != nil {
+		if err := rows.Scan(&alert.ID, &alert.AgentID, &alert.AgentName, &alert.Type,
+			&alert.Message, &alert.Severity, &alert.Resolved,
+			&alert.CreatedAt, &resolvedAt); err != nil {
 			return nil, err
 		}
-		if resolvedAt.Valid {
-			a.ResolvedAt = &resolvedAt.Time
-		}
-		alerts = append(alerts, a)
+		alert.ResolvedAt = timePointer(resolvedAt)
+		alerts = append(alerts, alert)
 	}
-	return alerts, nil
+	return alerts, rows.Err()
 }

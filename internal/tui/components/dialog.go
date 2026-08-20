@@ -22,132 +22,54 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/urustack/uruflow/internal/tui/styles"
+	"github.com/urustack/uruflow/internal/tui/theme"
 )
 
-type DialogButton struct {
-	Label    string
-	Selected bool
-	Primary  bool
-}
+const dialogWidth = 54
 
 type Dialog struct {
-	Title    string
-	Message  string
-	Warning  string
-	Selected int
-	Visible  bool
+	Title   string
+	Message string
+	Detail  string
+	Confirm string
+	Cancel  string
+	Danger  bool
 }
 
-func NewDialog(title, message, warning string) Dialog {
-	return Dialog{
-		Title:    title,
-		Message:  message,
-		Warning:  warning,
-		Selected: 0,
-		Visible:  true,
-	}
-}
-
-func (d *Dialog) ToggleSelection() {
-	if d.Selected == 0 {
-		d.Selected = 1
-	} else {
-		d.Selected = 0
-	}
-}
-
-func (d Dialog) IsConfirmed() bool {
-	return d.Selected == 1
-}
-
-func ConfirmDialog(d Dialog, screenWidth, screenHeight int) string {
-	if !d.Visible {
-		return ""
+func (d Dialog) Render(width, height int) string {
+	tone := theme.Lead
+	if d.Danger {
+		tone = theme.Bad
 	}
 
-	dialogWidth := 44
-	if dialogWidth > screenWidth-4 {
-		dialogWidth = screenWidth - 4
-	}
-
-	var content strings.Builder
-
-	content.WriteString(styles.TitleStyle.Render(d.Title) + "\n\n")
-
-	content.WriteString(d.Message + "\n")
-
-	if d.Warning != "" {
-		content.WriteString(styles.MutedStyle.Render(d.Warning) + "\n")
-	}
-
-	content.WriteString("\n")
-
-	noBtn := styles.MutedStyle.Render("[No]")
-	yesBtn := styles.MutedStyle.Render("[Yes]")
-
-	if d.Selected == 0 {
-		noBtn = styles.PrimaryStyle.Bold(true).Render("[No]")
-	} else {
-		yesBtn = styles.ErrorStyle.Bold(true).Render("[Yes]")
-	}
-
-	content.WriteString(noBtn + "    " + yesBtn)
-
-	dialogStyle := lipgloss.NewStyle().
-		Border(lipgloss.DoubleBorder()).
-		BorderForeground(styles.Primary).
-		Padding(1, 2).
-		Width(dialogWidth)
-
-	dialogBox := dialogStyle.Render(content.String())
-
-	dialogLines := strings.Split(dialogBox, "\n")
-	dialogHeight := len(dialogLines)
-
-	topPad := (screenHeight - dialogHeight) / 2
-	if topPad < 0 {
-		topPad = 0
-	}
-
-	leftPad := (screenWidth - lipgloss.Width(dialogLines[0])) / 2
-	if leftPad < 0 {
-		leftPad = 0
-	}
-
-	var b strings.Builder
-
-	for i := 0; i < topPad; i++ {
-		b.WriteString("\n")
-	}
-
-	for _, line := range dialogLines {
-		b.WriteString(strings.Repeat(" ", leftPad) + line + "\n")
-	}
-
-	return b.String()
-}
-
-func DeleteAgentDialog(agentName string) Dialog {
-	return NewDialog(
-		"Delete Agent",
-		"Remove agent '"+agentName+"'?",
-		"This cannot be undone.",
-	)
-}
-
-func DeleteRepoDialog(repoName string) Dialog {
-	return NewDialog(
-		"Delete Repository",
-		"Remove repository '"+repoName+"'?",
-		"This cannot be undone.",
-	)
-}
-
-func ResolveAlertDialog(alertType string) Dialog {
-	return NewDialog(
-		"Resolve Alert",
-		"Mark this "+alertType+" alert as resolved?",
+	body := []string{
+		tone.Bold(true).Render(d.Title),
 		"",
-	)
+		theme.Body.Render(theme.Truncate(d.Message, dialogWidth)),
+	}
+	if d.Detail != "" {
+		body = append(body, theme.Ghost.Render(theme.Truncate(d.Detail, dialogWidth)))
+	}
+
+	confirm := d.Confirm
+	if confirm == "" {
+		confirm = "confirm"
+	}
+	cancel := d.Cancel
+	if cancel == "" {
+		cancel = "cancel"
+	}
+
+	body = append(body, "",
+		theme.Key.Render("y")+" "+theme.Hint.Render(confirm)+
+			theme.Hint.Render("    ")+
+			theme.Key.Render("n")+" "+theme.Hint.Render(cancel))
+
+	box := theme.Panel.
+		BorderForeground(tone.GetForeground()).
+		Padding(1, 2).
+		Width(dialogWidth).
+		Render(strings.Join(body, "\n"))
+
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }

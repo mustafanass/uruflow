@@ -19,283 +19,121 @@
 package views
 
 import (
-	"fmt"
-	"strings"
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/urustack/uruflow/internal/models"
 	"github.com/urustack/uruflow/internal/storage"
 	"github.com/urustack/uruflow/internal/tui/components"
-	"github.com/urustack/uruflow/internal/tui/styles"
-	"github.com/urustack/uruflow/pkg/helper"
+	"github.com/urustack/uruflow/internal/tui/theme"
 )
 
-type AlertsMode int
+const alertHistory = 80
 
-const (
-	AlertsModeList AlertsMode = iota
-	AlertsModeConfirmResolve
-)
-
-type AlertsModel struct {
-	store        storage.Store
-	Width        int
-	Height       int
-	Active       []AlertData
-	Recent       []AlertData
-	Cursor       int
-	Expanded     bool
-	Mode         AlertsMode
-	Dialog       components.Dialog
-	Loading      bool
-	SpinnerFrame int
-	err          error
+type Alerts struct {
+	Base
+	store    storage.Store
+	cursor   int
+	alerts   []models.Alert
+	resolved bool
 }
 
-func NewAlertsModel(store storage.Store) AlertsModel {
-	return AlertsModel{store: store}
+func NewAlerts(store storage.Store) *Alerts {
+	return &Alerts{store: store}
 }
 
-func (m AlertsModel) Init() tea.Cmd {
-	return m.fetchAlerts
+func (a *Alerts) Init() tea.Cmd {
+	a.reload()
+	return nil
 }
 
-func (m AlertsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if m.Mode == AlertsModeConfirmResolve {
-			return m.updateConfirmResolve(msg)
-		}
-		switch msg.String() {
+func (a *Alerts) Capturing() bool { return false }
+
+func (a *Alerts) reload() {
+	if a.resolved {
+		a.alerts, _ = a.store.ListRecentAlerts(alertHistory)
+	} else {
+		a.alerts, _ = a.store.ListActiveAlerts()
+	}
+	if a.cursor >= len(a.alerts) {
+		a.cursor = 0
+	}
+}
+
+func (a *Alerts) Update(msg tea.Msg) tea.Cmd {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
 		case "up", "k":
-			if m.Cursor > 0 {
-				m.Cursor--
-			}
+			a.cursor = move(a.cursor, -1, len(a.alerts))
 		case "down", "j":
-			total := len(m.Active) + len(m.Recent)
-			if m.Cursor < total-1 {
-				m.Cursor++
-			}
-		case "x":
-			if m.Cursor < len(m.Active) {
-				m.Dialog = components.ResolveAlertDialog(m.Active[m.Cursor].Type)
-				m.Mode = AlertsModeConfirmResolve
-			}
-		case "e":
-			m.Expanded = !m.Expanded
+			a.cursor = move(a.cursor, 1, len(a.alerts))
+		case "a":
+			a.resolved = !a.resolved
+			a.cursor = 0
+			a.reload()
 		case "r":
-			m.Loading = true
-			return m, tea.Batch(m.fetchAlerts, m.spinnerTick)
+			if a.cursor < len(a.alerts) {
+				a.Fail(a.store.ResolveAlert(a.alerts[a.cursor].ID))
+				a.reload()
+			}
 		}
-	case SpinnerTickMsg:
-		m.SpinnerFrame++
-		if m.Loading {
-			return m, m.spinnerTick
+		return nil
+	}
+
+	a.reload()
+	return nil
+}
+
+func (a *Alerts) Hints() []components.Hint {
+	scope := "show all"
+	if a.resolved {
+		scope = "show active only"
+	}
+	return []components.Hint{
+		{Key: "↑↓", Label: "select"},
+		{Key: "r", Label: "resolve"},
+		{Key: "a", Label: scope},
+	}
+}
+
+func (a *Alerts) Render() string {
+	table := components.Table{
+		Columns: []components.Column{
+			{Title: "severity", Width: 12},
+			{Title: "agent", Width: 18},
+			{Title: "type", Width: 16},
+			{Title: "message", Width: 30, Flex: true},
+			{Title: "state", Width: 10},
+			{Title: "raised", Width: 10, Right: true},
+		},
+		Cursor: a.cursor,
+		Height: a.TableHeight(8),
+		Empty:  "nothing is wrong right now",
+	}
+
+	for index := range a.alerts {
+		alert := &a.alerts[index]
+
+		state := components.Styled("active", theme.Warn)
+		if alert.Resolved {
+			state = components.Styled("resolved", theme.Ghost)
 		}
-	case alertsMsg:
-		m.Active = msg.Active
-		m.Recent = msg.Recent
-		m.Loading = false
-		return m, nil
-	case error:
-		m.err = msg
-		m.Loading = false
-		return m, nil
-	}
-	return m, nil
-}
 
-func (m AlertsModel) spinnerTick() tea.Msg {
-	time.Sleep(80 * time.Millisecond)
-	return SpinnerTickMsg{}
-}
-
-func (m AlertsModel) updateConfirmResolve(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "n":
-		m.Mode = AlertsModeList
-		m.Dialog.Visible = false
-	case "left", "right", "h", "l", "tab":
-		m.Dialog.ToggleSelection()
-	case "enter":
-		if m.Dialog.IsConfirmed() {
-			m.Dialog.Visible = false
-			m.Mode = AlertsModeList
-			m.Loading = true
-			return m, tea.Batch(m.resolveAlert(m.Active[m.Cursor].ID), m.spinnerTick)
-		} else {
-			m.Mode = AlertsModeList
-			m.Dialog.Visible = false
-		}
-	case "y":
-		m.Dialog.Visible = false
-		m.Mode = AlertsModeList
-		m.Loading = true
-		return m, tea.Batch(m.resolveAlert(m.Active[m.Cursor].ID), m.spinnerTick)
-	}
-	return m, nil
-}
-
-type alertsMsg struct {
-	Active []AlertData
-	Recent []AlertData
-}
-
-func (m AlertsModel) resolveAlert(id string) tea.Cmd {
-	return func() tea.Msg {
-		if err := m.store.ResolveAlert(id); err != nil {
-			return err
-		}
-		return m.fetchAlerts()
-	}
-}
-
-func (m AlertsModel) fetchAlerts() tea.Msg {
-	active, err := m.store.GetActiveAlerts()
-	if err != nil {
-		return err
-	}
-	recent, err := m.store.GetRecentAlerts(24)
-	if err != nil {
-		return err
-	}
-
-	var activeData []AlertData
-	for _, a := range active {
-		activeData = append(activeData, AlertData{
-			ID: a.ID, Type: a.Type, Agent: a.AgentName, Message: a.Message,
-			Time:   time.Since(a.CreatedAt).Round(time.Second).String() + " ago",
-			Active: true, Severity: string(a.Severity),
+		table.Rows = append(table.Rows, components.Row{
+			components.SeverityBadge(alert.Severity),
+			components.Text(alert.AgentName),
+			components.Styled(alert.Type, theme.Ghost),
+			components.Text(alert.Message),
+			state,
+			components.Styled(theme.Since(alert.CreatedAt), theme.Ghost),
 		})
 	}
 
-	var recentData []AlertData
-	for _, a := range recent {
-		if a.Resolved {
-			recentData = append(recentData, AlertData{
-				ID: a.ID, Type: a.Type, Agent: a.AgentName, Message: a.Message,
-				Time: a.CreatedAt.Format("15:04"), Active: false, Severity: string(a.Severity),
-			})
-		}
+	scope := "active alerts"
+	if a.resolved {
+		scope = "all alerts"
 	}
 
-	return alertsMsg{Active: activeData, Recent: recentData}
-}
-
-func (m AlertsModel) View() string {
-	if m.Width == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-	w := m.Width
-
-	b.WriteString("\n")
-	b.WriteString(components.ViewHeader(w, "Dashboard", "Alerts") + "\n\n")
-
-	b.WriteString(components.Section("STATUS", w) + "\n\n")
-	var statusContent strings.Builder
-	if len(m.Active) > 0 {
-		statusContent.WriteString(fmt.Sprintf("  %s %s",
-			styles.WarningStyle.Render(fmt.Sprintf("%d", len(m.Active))),
-			styles.WarningStyle.Render("active alerts")))
-	} else {
-		statusContent.WriteString("  " + styles.SuccessStyle.Render(styles.IconSuccess) + "  " +
-			styles.SuccessStyle.Render("All systems operational"))
-	}
-	b.WriteString(components.Wrap(statusContent.String(), w) + "\n\n")
-
-	if m.err != nil {
-		b.WriteString(components.MsgError(m.err.Error(), w) + "\n\n")
-	}
-
-	b.WriteString(components.Section("ACTIVE ALERTS", w) + "\n\n")
-	var activeContent strings.Builder
-	if len(m.Active) == 0 {
-		activeContent.WriteString("  " + styles.MutedStyle.Render("No active alerts"))
-	} else {
-		for i, a := range m.Active {
-			selected := i == m.Cursor
-			if selected && m.Expanded {
-				card := components.AlertCardData{
-					Type: a.Type, Agent: a.Agent, Message: a.Message,
-					Time: a.Time, Severity: a.Severity, Selected: true,
-				}
-				activeContent.WriteString(components.AlertCard(card, w-8) + "\n")
-			} else {
-				ptr := "   "
-				if selected {
-					ptr = " " + styles.Pointer() + " "
-				}
-				icon := styles.WarningStyle.Render(styles.IconWarning)
-				if a.Severity == "critical" {
-					icon = styles.ErrorStyle.Render(styles.IconError)
-				}
-
-				typeStyle := styles.BrightStyle
-				if selected {
-					typeStyle = styles.PrimaryStyle
-				}
-
-				activeContent.WriteString(fmt.Sprintf("%s%s  %s  %s  %s  %s\n",
-					ptr,
-					icon,
-					typeStyle.Render(styles.Pad(styles.Trunc(a.Type, 12), 12)),
-					styles.Pad(styles.Trunc(a.Agent, 14), 14),
-					styles.MutedStyle.Render(styles.Pad(styles.Trunc(a.Message, 24), 24)),
-					styles.MutedStyle.Render(a.Time)))
-			}
-		}
-	}
-	b.WriteString(components.Wrap(activeContent.String(), w) + "\n\n")
-
-	b.WriteString(components.Section("RESOLVED (LAST 24H)", w) + "\n\n")
-	var recentContent strings.Builder
-	if len(m.Recent) == 0 {
-		recentContent.WriteString("  " + styles.MutedStyle.Render("No recent alerts"))
-	} else {
-		for i, a := range m.Recent {
-			selected := (i + len(m.Active)) == m.Cursor
-			ptr := "   "
-			if selected {
-				ptr = " " + styles.Pointer() + " "
-			}
-			icon := styles.SuccessStyle.Render(styles.IconSuccess)
-
-			typeStyle := styles.MutedStyle
-			if selected {
-				typeStyle = styles.PrimaryStyle
-			}
-
-			recentContent.WriteString(fmt.Sprintf("%s%s  %s  %s  %s  %s\n",
-				ptr,
-				icon,
-				typeStyle.Render(styles.Pad(styles.Trunc(a.Type, 12), 12)),
-				styles.MutedStyle.Render(styles.Pad(styles.Trunc(a.Agent, 14), 14)),
-				styles.MutedStyle.Render(styles.Pad(styles.Trunc(a.Message, 24), 24)),
-				styles.MutedStyle.Render(a.Time)))
-		}
-	}
-	b.WriteString(components.Wrap(recentContent.String(), w) + "\n")
-
-	content := b.String()
-	lines := helper.CountLines(content)
-	for i := 0; i < m.Height-lines-3; i++ {
-		content += "\n"
-	}
-
-	content += "\n" + styles.Line(w) + "\n"
-	content += components.Help([][]string{
-		{"↑↓", "navigate"}, {"e", "expand"}, {"x", "resolve"}, {"r", "refresh"}, {"esc", "back"},
-	})
-
-	if m.Loading {
-		content += "  " + components.LoadingInline(m.SpinnerFrame)
-	}
-
-	if m.Mode == AlertsModeConfirmResolve {
-		content += components.ConfirmDialog(m.Dialog, m.Width, m.Height)
-	}
-
-	return content
+	return components.Stack(
+		components.Card(scope, table.Render(components.CardWidth(a.Width)), a.Width, false),
+		a.Notice(),
+	)
 }

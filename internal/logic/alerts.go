@@ -19,71 +19,77 @@
 package logic
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/urustack/uruflow/internal/models"
 	"github.com/urustack/uruflow/pkg/helper"
 )
 
-func CheckCPU(agentID, agentName string, cpuPercent float64) *models.Alert {
-	if cpuPercent > 90 {
-		return newAlert(agentID, agentName, "high_cpu", "CPU usage above 90%", models.SeverityCritical)
+const (
+	KindCPU           = "high_cpu"
+	KindMemory        = "high_memory"
+	KindDisk          = "high_disk"
+	KindContainerDown = "container_down"
+	KindAgentOffline  = "agent_offline"
+)
+
+const (
+	CPUWarning     = 80.0
+	CPUCritical    = 90.0
+	MemoryWarning  = 90.0
+	MemoryCritical = 95.0
+	DiskWarning    = 85.0
+	DiskCritical   = 95.0
+)
+
+type threshold struct {
+	label    string
+	warning  float64
+	critical float64
+}
+
+var resourceThresholds = map[string]threshold{
+	KindCPU:    {label: "CPU", warning: CPUWarning, critical: CPUCritical},
+	KindMemory: {label: "Memory", warning: MemoryWarning, critical: MemoryCritical},
+	KindDisk:   {label: "Disk", warning: DiskWarning, critical: DiskCritical},
+}
+
+func CheckResource(agentID, agentName, kind string, percent float64) *models.Alert {
+	limits, known := resourceThresholds[kind]
+	if !known {
+		return nil
 	}
-	if cpuPercent > 80 {
-		return newAlert(agentID, agentName, "high_cpu", "CPU usage above 80%", models.SeverityWarning)
+
+	switch {
+	case percent >= limits.critical:
+		return newAlert(agentID, agentName, kind,
+			fmt.Sprintf("%s usage above %.0f%%", limits.label, limits.critical), models.SeverityCritical)
+	case percent >= limits.warning:
+		return newAlert(agentID, agentName, kind,
+			fmt.Sprintf("%s usage above %.0f%%", limits.label, limits.warning), models.SeverityWarning)
 	}
 	return nil
 }
 
-func CheckMemory(agentID, agentName string, memPercent float64) *models.Alert {
-	if memPercent > 95 {
-		return newAlert(agentID, agentName, "high_memory", "Memory usage above 95%", models.SeverityCritical)
-	}
-	if memPercent > 90 {
-		return newAlert(agentID, agentName, "high_memory", "Memory usage above 90%", models.SeverityWarning)
-	}
-	return nil
+func CheckContainerDown(agentID, agentName, container string) *models.Alert {
+	return newAlert(agentID, agentName, KindContainerDown,
+		fmt.Sprintf("Container %s is not running", container), models.SeverityCritical)
 }
 
-func CheckDisk(agentID, agentName string, diskPercent float64) *models.Alert {
-	if diskPercent > 95 {
-		return newAlert(agentID, agentName, "high_disk", "Disk usage above 95%", models.SeverityCritical)
-	}
-	if diskPercent > 85 {
-		return newAlert(agentID, agentName, "high_disk", "Disk usage above 85%", models.SeverityWarning)
-	}
-	return nil
+func CheckAgentOffline(agentID, agentName string) *models.Alert {
+	return newAlert(agentID, agentName, KindAgentOffline,
+		fmt.Sprintf("Agent %s went offline", agentName), models.SeverityCritical)
 }
 
-func CheckContainerDown(agentID, agentName, containerName string) *models.Alert {
-	return newAlert(
-		agentID,
-		agentName,
-		"container_down",
-		"Container "+containerName+" is not running",
-		models.SeverityCritical,
-	)
-}
-
-func CheckOffline(agentID, agentName string) *models.Alert {
-	return newAlert(
-		agentID,
-		agentName,
-		"agent_offline",
-		"Agent "+agentName+" is offline",
-		models.SeverityCritical,
-	)
-}
-
-func newAlert(agentID, agentName, alertType, msg string, severity models.AlertSeverity) *models.Alert {
+func newAlert(agentID, agentName, kind, message string, severity models.Severity) *models.Alert {
 	return &models.Alert{
 		ID:        helper.GenerateID(),
 		AgentID:   agentID,
 		AgentName: agentName,
-		Type:      alertType,
-		Message:   msg,
+		Type:      kind,
+		Message:   message,
 		Severity:  severity,
-		Resolved:  false,
 		CreatedAt: time.Now(),
 	}
 }

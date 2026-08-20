@@ -1,337 +1,265 @@
 /*
  * Copyright (C) 2026 Mustafa Naseer (Mustafa Gaeed)
- * ... (License Header)
+ *
+ * This file is part of uruflow.
+ *
+ * uruflow is free software: you can redistribute it and/or modify
+ * it under the terms of the MIT License as described in the
+ * LICENSE file distributed with this project.
+ *
+ * uruflow is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * MIT License for more details.
+ *
+ * You should have received a copy of the MIT License
+ * along with uruflow. If not, see the LICENSE file in the project root.
  */
 
 package tui
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/urustack/uruflow/internal/api"
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/storage"
-	"github.com/urustack/uruflow/internal/tcp/protocol"
+	"github.com/urustack/uruflow/internal/models"
+	"github.com/urustack/uruflow/internal/tui/components"
+	"github.com/urustack/uruflow/internal/tui/theme"
 	"github.com/urustack/uruflow/internal/tui/views"
+	"github.com/urustack/uruflow/internal/ufp"
 )
-
-type ViewState int
-type TickMsg time.Time
 
 const (
-	ViewDashboard ViewState = iota
-	ViewAgents
-	ViewRepos
-	ViewAlerts
-	ViewDeploy
-	ViewLogs
-	ViewInit
-	ViewContainerLogs
+	refreshInterval = 700 * time.Millisecond
+	frameInterval   = 90 * time.Millisecond
+	logQueue        = 256
 )
 
-var globalLogChannel = make(chan views.ContainerLogsMsg, 100)
-
-func waitForContainerLogs() tea.Msg {
-	return <-globalLogChannel
-}
+type refreshMsg struct{}
+type frameMsg struct{}
 
 type Model struct {
-	ActiveView    ViewState
-	Width         int
-	Height        int
-	Ready         bool
-	ShowHelp      bool
-	SpinnerFrame  int
-	Store         storage.Store
-	Config        *config.Config
-	CfgPath       string
-	Server        *api.Server
-	Dashboard     views.DashboardModel
-	Agents        views.AgentsModel
-	Repos         views.ReposModel
-	Alerts        views.AlertsModel
-	Deploy        views.DeployModel
-	Logs          views.LogsModel
-	ContainerLogs views.ContainerLogsModel
-	InitState     views.InitModel
+	server *api.Server
+	pages  []views.Page
+	tabs   []components.Tab
+	active int
+	width  int
+	height int
+	ready  bool
+	frame  int
+	help   bool
+	logs   chan views.ContainerLogMsg
 }
 
-type SpinnerTickMsg struct{}
+func NewModel(server *api.Server) *Model {
+	logs := make(chan views.ContainerLogMsg, logQueue)
+	server.Link().Subscribe(&bridge{logs: logs})
 
-func NewModel(store storage.Store, cfg *config.Config, cfgPath string, server *api.Server) Model {
-	deployService := server.GetDeployService()
-
-	server.GetTCPServer().SetContainerLogHandler(func(agentID string, data protocol.ContainerLogsDataPayload) {
-		select {
-		case globalLogChannel <- views.ContainerLogsMsg(data):
-		default:
-		}
-	})
-
-	return Model{
-		ActiveView:    ViewDashboard,
-		Store:         store,
-		Config:        cfg,
-		CfgPath:       cfgPath,
-		Server:        server,
-		Dashboard:     views.NewDashboardModel(store),
-		Agents:        views.NewAgentsModel(store, cfg, cfgPath),
-		Repos:         views.NewReposModel(store, cfg, cfgPath, deployService),
-		Alerts:        views.NewAlertsModel(store),
-		Deploy:        views.NewDeployModel(store),
-		Logs:          views.NewLogsModel(store),
-		ContainerLogs: views.NewContainerLogsModel(server),
-		InitState:     views.NewInitModel(),
+	return &Model{
+		server: server,
+		logs:   logs,
+		pages: []views.Page{
+			views.NewOverview(server.Store()),
+			views.NewProjects(server),
+			views.NewAgents(server),
+			views.NewReleases(server),
+			views.NewRegistry(server),
+			views.NewAlerts(server.Store()),
+			views.NewSecrets(server),
+		},
+		tabs: []components.Tab{
+			{Key: "1", Label: "overview"},
+			{Key: "2", Label: "projects"},
+			{Key: "3", Label: "agents"},
+			{Key: "4", Label: "releases"},
+			{Key: "5", Label: "registry"},
+			{Key: "6", Label: "alerts"},
+			{Key: "7", Label: "secrets"},
+		},
 	}
-}
-
-func NewInitModel() Model {
-	return Model{ActiveView: ViewInit, InitState: views.NewInitModel(), Ready: true}
 }
 
 func (m *Model) Init() tea.Cmd {
-	if m.ActiveView == ViewInit {
-		return m.InitState.Init()
-	}
-	return tea.Batch(m.Dashboard.Init(), waitForContainerLogs, m.spinnerTick)
+	return tea.Batch(m.pages[m.active].Init(), tick(), frame(), m.listen())
 }
 
-func (m Model) spinnerTick() tea.Msg {
-	time.Sleep(80 * time.Millisecond)
-	return SpinnerTickMsg{}
-}
-
-func (m Model) isInputActive() bool {
-	if m.ActiveView == ViewAgents && m.Agents.Mode == views.AgentModeAdd {
-		return true
-	}
-	if m.ActiveView == ViewRepos && (m.Repos.Mode == views.RepoModeAdd || m.Repos.Mode == views.RepoModeSelectAgent) {
-		return true
-	}
-	if m.ActiveView == ViewInit {
-		return true
-	}
-	return false
-}
+func (m *Model) page() views.Page { return m.pages[m.active] }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	var cmds []tea.Cmd
-
-	switch msg := msg.(type) {
-	case SpinnerTickMsg:
-		m.SpinnerFrame++
-		cmds = append(cmds, m.spinnerTick)
-		return m, tea.Batch(cmds...)
-
-	case views.ContainerLogsMsg:
-		cmds = append(cmds, waitForContainerLogs)
-		if m.ActiveView == ViewContainerLogs {
-			var newModel tea.Model
-			newModel, cmd = m.ContainerLogs.Update(msg)
-			m.ContainerLogs = newModel.(views.ContainerLogsModel)
-			cmds = append(cmds, cmd)
+	switch message := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = message.Width
+		m.height = message.Height
+		m.ready = true
+		for _, page := range m.pages {
+			page.Resize(message.Width, m.bodyHeight())
 		}
-		return m, tea.Batch(cmds...)
+		return m, nil
+
+	case frameMsg:
+		m.frame++
+		m.page().Tick(m.frame)
+		return m, frame()
+
+	case refreshMsg:
+		return m, tea.Batch(m.page().Update(message), tick())
+
+	case views.ContainerLogMsg:
+		cmd := m.pages[2].Update(message)
+		return m, tea.Batch(cmd, m.listen())
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "?":
-			m.ShowHelp = !m.ShowHelp
-		case "esc":
-			if m.ActiveView != ViewDashboard && m.ActiveView != ViewInit {
-				if m.ActiveView == ViewAgents && m.Agents.Mode != views.AgentModeList {
-					break
-				}
-				if m.ActiveView == ViewRepos && m.Repos.Mode != views.RepoModeList {
-					break
-				}
-				if m.ActiveView == ViewLogs && m.Logs.Mode == views.LogsModeView {
-					break
-				}
-				if m.ActiveView == ViewContainerLogs && m.ContainerLogs.Mode == 1 {
-					break
-				}
-				m.ActiveView = ViewDashboard
-				m.Dashboard.ClearMessage()
-				return m, m.Dashboard.Init()
-			}
-		}
-
-		if !m.isInputActive() {
-			switch msg.String() {
-			case "q":
-				if m.ActiveView != ViewInit && m.ActiveView != ViewDeploy && m.ActiveView != ViewContainerLogs {
-					return m, tea.Quit
-				}
-			case "tab":
-				if m.ActiveView != ViewInit {
-					switch m.ActiveView {
-					case ViewDashboard:
-						m.ActiveView = ViewAgents
-						cmd = m.Agents.Init()
-					case ViewAgents:
-						m.ActiveView = ViewRepos
-						cmd = m.Repos.Init()
-					case ViewRepos:
-						m.ActiveView = ViewAlerts
-						cmd = m.Alerts.Init()
-					case ViewAlerts:
-						m.ActiveView = ViewLogs
-						cmd = m.Logs.Init()
-					case ViewLogs:
-						m.ActiveView = ViewDashboard
-						m.Dashboard.ClearMessage()
-						cmd = m.Dashboard.Init()
-					case ViewContainerLogs:
-						m.ActiveView = ViewDashboard
-						cmd = m.Dashboard.Init()
-					default:
-						m.ActiveView = ViewDashboard
-						m.Dashboard.ClearMessage()
-						cmd = m.Dashboard.Init()
-					}
-					return m, cmd
-				}
-			case "a":
-				if m.ActiveView == ViewDashboard {
-					m.ActiveView = ViewAgents
-					return m, m.Agents.Init()
-				}
-			case "r":
-				if m.ActiveView == ViewDashboard {
-					m.ActiveView = ViewRepos
-					return m, m.Repos.Init()
-				}
-			case "x":
-				if m.ActiveView == ViewDashboard {
-					m.ActiveView = ViewAlerts
-					return m, m.Alerts.Init()
-				}
-			case "d":
-				if m.ActiveView == ViewDashboard || m.ActiveView == ViewRepos {
-					m.ActiveView = ViewDeploy
-					return m, m.Deploy.Init()
-				}
-			case "l":
-				if m.ActiveView == ViewDashboard || m.ActiveView == ViewDeploy || m.ActiveView == ViewRepos {
-					m.ActiveView = ViewLogs
-					return m, m.Logs.Init()
-				}
-				if m.ActiveView == ViewAgents {
-					if len(m.Agents.Agents) > 0 {
-						agent := m.Agents.Agents[m.Agents.Cursor]
-						m.ContainerLogs.SetAgent(agent)
-						m.ActiveView = ViewContainerLogs
-						return m, m.ContainerLogs.Init()
-					}
-				}
-			}
-		}
-
-	case views.AgentResultMsg:
-		if msg.Success {
-			m.Dashboard.SetMessage("Agent '"+msg.Name+"' created successfully", "success")
-		}
-
-	case views.RepoResultMsg:
-		if msg.Success {
-			m.Dashboard.SetMessage("Repository '"+msg.Name+"' added successfully", "success")
-		}
-
-	case tea.WindowSizeMsg:
-		m.Width = msg.Width
-		m.Height = msg.Height
-		m.Ready = true
-		m.Dashboard.Width = msg.Width
-		m.Dashboard.Height = msg.Height
-		m.Agents.Width = msg.Width
-		m.Agents.Height = msg.Height
-		m.Repos.Width = msg.Width
-		m.Repos.Height = msg.Height
-		m.Alerts.Width = msg.Width
-		m.Alerts.Height = msg.Height
-		m.Deploy.Width = msg.Width
-		m.Deploy.Height = msg.Height
-		m.Logs.Width = msg.Width
-		m.Logs.Height = msg.Height
-		m.ContainerLogs.Width = msg.Width
-		m.ContainerLogs.Height = msg.Height
-		m.InitState.Width = msg.Width
-		m.InitState.Height = msg.Height
+		return m.key(message)
 	}
 
-	switch m.ActiveView {
-	case ViewDashboard:
-		var newModel tea.Model
-		newModel, cmd = m.Dashboard.Update(msg)
-		m.Dashboard = newModel.(views.DashboardModel)
-		cmds = append(cmds, cmd)
-	case ViewAgents:
-		var newModel tea.Model
-		newModel, cmd = m.Agents.Update(msg)
-		m.Agents = newModel.(views.AgentsModel)
-		cmds = append(cmds, cmd)
-	case ViewRepos:
-		var newModel tea.Model
-		newModel, cmd = m.Repos.Update(msg)
-		m.Repos = newModel.(views.ReposModel)
-		cmds = append(cmds, cmd)
-	case ViewAlerts:
-		var newModel tea.Model
-		newModel, cmd = m.Alerts.Update(msg)
-		m.Alerts = newModel.(views.AlertsModel)
-		cmds = append(cmds, cmd)
-	case ViewDeploy:
-		var newModel tea.Model
-		newModel, cmd = m.Deploy.Update(msg)
-		m.Deploy = newModel.(views.DeployModel)
-		cmds = append(cmds, cmd)
-	case ViewLogs:
-		var newModel tea.Model
-		newModel, cmd = m.Logs.Update(msg)
-		m.Logs = newModel.(views.LogsModel)
-		cmds = append(cmds, cmd)
-	case ViewContainerLogs:
-		var newModel tea.Model
-		newModel, cmd = m.ContainerLogs.Update(msg)
-		m.ContainerLogs = newModel.(views.ContainerLogsModel)
-		cmds = append(cmds, cmd)
-	case ViewInit:
-		var newModel tea.Model
-		newModel, cmd = m.InitState.Update(msg)
-		m.InitState = newModel.(views.InitModel)
-		cmds = append(cmds, cmd)
+	return m, m.page().Update(msg)
+}
+
+func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
 	}
 
-	return m, tea.Batch(cmds...)
+	if m.page().Capturing() {
+		return m, m.page().Update(msg)
+	}
+
+	switch msg.String() {
+	case "q":
+		return m, tea.Quit
+	case "?":
+		m.help = !m.help
+		return m, nil
+	case "tab":
+		return m, m.switchTo(m.active + 1)
+	case "shift+tab":
+		return m, m.switchTo(m.active - 1)
+	case "1", "2", "3", "4", "5", "6", "7":
+		return m, m.switchTo(int(msg.String()[0] - '1'))
+	}
+
+	if m.help {
+		m.help = false
+	}
+	return m, m.page().Update(msg)
+}
+
+func (m *Model) switchTo(index int) tea.Cmd {
+	m.help = false
+	m.active = (index + len(m.pages)) % len(m.pages)
+	m.page().Resize(m.width, m.bodyHeight())
+	return m.page().Init()
 }
 
 func (m *Model) View() string {
-	if !m.Ready {
+	if !m.ready {
 		return ""
 	}
-	switch m.ActiveView {
-	case ViewDashboard:
-		return m.Dashboard.View()
-	case ViewAgents:
-		return m.Agents.View()
-	case ViewRepos:
-		return m.Repos.View()
-	case ViewAlerts:
-		return m.Alerts.View()
-	case ViewDeploy:
-		return m.Deploy.View()
-	case ViewLogs:
-		return m.Logs.View()
-	case ViewContainerLogs:
-		return m.ContainerLogs.View()
-	case ViewInit:
-		return m.InitState.View()
+
+	header := components.Header(m.width, m.tabs, m.active, m.status())
+	footer := components.Footer(m.width, m.page().Hints())
+
+	body := m.page().Render()
+	if m.help {
+		body = m.renderHelp()
+	}
+
+	return components.Screen(m.width, m.height, header, body, footer)
+}
+
+func (m *Model) bodyHeight() int {
+	height := m.height - 5
+	if height < 6 {
+		return 6
+	}
+	return height
+}
+
+func (m *Model) status() string {
+	agents, err := m.server.Store().ListAgents()
+	if err != nil {
+		return ""
+	}
+
+	online := 0
+	for _, agent := range agents {
+		if agent.Status == models.AgentOnline {
+			online++
+		}
+	}
+
+	tone := theme.Good
+	switch {
+	case len(agents) == 0 || online == 0:
+		tone = theme.Bad
+	case online < len(agents):
+		tone = theme.Warn
+	}
+
+	fleet := tone.Render(theme.IconOnline) +
+		theme.Faint.Render(fmt.Sprintf(" %d/%d agents", online, len(agents)))
+
+	registry := theme.Note.Render(theme.IconImage) +
+		theme.Faint.Render(" "+m.server.Config().Registry.Address())
+
+	return fleet + theme.Ghost.Render("   ") + registry
+}
+
+func (m *Model) renderHelp() string {
+	rows := [][2]string{
+		{"1 – 7", "jump straight to a view"},
+		{"tab / shift+tab", "cycle through views"},
+		{"↑ ↓ or k j", "move the selection"},
+		{"enter", "open the selected item"},
+		{"esc", "leave a form or drill-down"},
+		{"?", "toggle this help"},
+		{"q", "quit uruflow"},
+	}
+
+	lines := []string{"", theme.Title.Render("Keys"), ""}
+	for _, row := range rows {
+		lines = append(lines, "  "+theme.Key.Render(theme.Cell(row[0], 18))+theme.Faint.Render(row[1]))
+	}
+
+	lines = append(lines, "", theme.Title.Render("How a release flows"), "",
+		"  "+theme.Faint.Render("webhook or manual deploy")+theme.Ghost.Render("  "+theme.IconArrow+"  ")+
+			theme.Mark.Render("builder clones, builds, pushes")+theme.Ghost.Render("  "+theme.IconArrow+"  ")+
+			theme.Note.Render("registry")+theme.Ghost.Render("  "+theme.IconArrow+"  ")+
+			theme.Lead.Render("runners pull and run"),
+		"",
+		"  "+theme.Ghost.Render("runners never see your source; they only ever pull a tagged image"),
+	)
+
+	return strings.Join(lines, "\n")
+}
+
+func tick() tea.Cmd {
+	return tea.Tick(refreshInterval, func(time.Time) tea.Msg { return refreshMsg{} })
+}
+
+func frame() tea.Cmd {
+	return tea.Tick(frameInterval, func(time.Time) tea.Msg { return frameMsg{} })
+}
+
+func (m *Model) listen() tea.Cmd {
+	return func() tea.Msg { return <-m.logs }
+}
+
+type bridge struct {
+	logs chan views.ContainerLogMsg
+}
+
+func (b *bridge) AgentConnected(agent *models.Agent)             {}
+func (b *bridge) AgentDisconnected(agentID string)               {}
+func (b *bridge) JobLog(agentID string, entry ufp.JobLog)        {}
+func (b *bridge) JobStatus(agentID string, status ufp.JobStatus) {}
+
+func (b *bridge) ContainerLog(agentID string, entry ufp.ContainerLog) {
+	select {
+	case b.logs <- views.ContainerLogMsg(entry):
 	default:
-		return m.Dashboard.View()
 	}
 }

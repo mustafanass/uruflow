@@ -15,6 +15,7 @@
  * You should have received a copy of the MIT License
  * along with uruflow. If not, see the LICENSE file in the project root.
  */
+
 package services
 
 import (
@@ -22,174 +23,205 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/urustack/uruflow/internal/config"
 	"github.com/urustack/uruflow/internal/models"
+	"github.com/urustack/uruflow/internal/pipeline"
+	"github.com/urustack/uruflow/internal/storage"
 	"github.com/urustack/uruflow/pkg/logger"
 )
 
+const (
+	ProviderGitHub = "github"
+	ProviderGitLab = "gitlab"
+
+	signaturePrefix = "sha256="
+	branchPrefix    = "refs/heads/"
+	shortCommitSize = 7
+)
+
+var (
+	ErrUnknownProvider = errors.New("unrecognised webhook provider")
+	ErrNoMatch         = errors.New("no project is wired to this repository and branch")
+)
+
 type WebhookService struct {
-	cfg           *config.Config
-	deployService *DeploymentService
+	cfg      *config.Config
+	store    storage.Store
+	pipeline *pipeline.Pipeline
 }
 
-func NewWebhookService(cfg *config.Config, ds *DeploymentService) *WebhookService {
-	return &WebhookService{
-		cfg:           cfg,
-		deployService: ds,
-	}
-}
-
-type WebhookResult struct {
+type Push struct {
 	Repository string
+	Identities []string
 	Branch     string
 	Commit     string
-	Deployment *models.Deployment
 }
 
-type GitHubPushPayload struct {
-	Ref        string `json:"ref"`
-	Repository struct {
-		Name string `json:"name"`
-	} `json:"repository"`
-	HeadCommit struct {
-		ID string `json:"id"`
-	} `json:"head_commit"`
+type Outcome struct {
+	Project string
+	Release string
+	Err     error
 }
 
-type GitLabPushPayload struct {
-	Ref     string `json:"ref"`
-	Project struct {
-		Name string `json:"name"`
-	} `json:"project"`
-	Commits []struct {
-		ID string `json:"id"`
-	} `json:"commits"`
+type Result struct {
+	Push
+	Outcomes []Outcome
 }
 
-func (s *WebhookService) ValidateGitHubSignature(payload []byte, signature string) bool {
+func NewWebhookService(cfg *config.Config, store storage.Store, releases *pipeline.Pipeline) *WebhookService {
+	return &WebhookService{cfg: cfg, store: store, pipeline: releases}
+}
+
+func (s *WebhookService) Handle(provider string, payload []byte) (*Result, error) {
+	push, err := parsePush(provider, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	matches, err := s.match(push)
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("%s on %s: %w", push.Repository, push.Branch, ErrNoMatch)
+	}
+
+	logger.Info("[WEBHOOK] %s pushed %s@%s on %s, matching %d project(s)",
+		provider, push.Repository, shortCommit(push.Commit), push.Branch, len(matches))
+
+	result := &Result{Push: *push}
+	for _, project := range matches {
+		outcome := Outcome{Project: project.Name}
+
+		release, err := s.pipeline.Trigger(project.Name, push.Commit, models.TriggerWebhook)
+		if err != nil {
+			outcome.Err = err
+			logger.Warn("[WEBHOOK] %s: %v", project.Name, err)
+		} else {
+			outcome.Release = release.ID
+		}
+
+		result.Outcomes = append(result.Outcomes, outcome)
+	}
+
+	return result, nil
+}
+
+func (s *WebhookService) match(push *Push) ([]models.Project, error) {
+	projects, err := s.store.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make([]models.Project, 0, 1)
+	for _, project := range projects {
+		if !project.AutoDeploy || project.Branch != push.Branch {
+			continue
+		}
+		if sameRepository(project.GitURL, push.Identities) || project.Name == push.Repository {
+			matches = append(matches, project)
+		}
+	}
+
+	return matches, nil
+}
+
+func (s *WebhookService) VerifyGitHub(payload []byte, signature string) bool {
 	if s.cfg.Webhook.Secret == "" {
-		logger.Warn("[WEBHOOK] No webhook secret configured, accepting unsigned requests")
 		return true
 	}
-	if !strings.HasPrefix(signature, "sha256=") {
+	if !strings.HasPrefix(signature, signaturePrefix) {
 		return false
 	}
-	sig := strings.TrimPrefix(signature, "sha256=")
+
 	mac := hmac.New(sha256.New, []byte(s.cfg.Webhook.Secret))
 	mac.Write(payload)
 	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(sig), []byte(expected))
+
+	return hmac.Equal([]byte(strings.TrimPrefix(signature, signaturePrefix)), []byte(expected))
 }
 
-func (s *WebhookService) ValidateGitLabToken(token string) bool {
+func (s *WebhookService) VerifyGitLab(token string) bool {
 	if s.cfg.Webhook.Secret == "" {
-		logger.Warn("[WEBHOOK] No webhook secret configured, accepting unsigned requests")
 		return true
 	}
-	return token == s.cfg.Webhook.Secret
+	return hmac.Equal([]byte(token), []byte(s.cfg.Webhook.Secret))
 }
 
-func (s *WebhookService) ProcessGitHubPush(payload []byte) (*WebhookResult, error) {
-	var data GitHubPushPayload
-	if err := json.Unmarshal(payload, &data); err != nil {
-		return nil, fmt.Errorf("failed to parse GitHub payload: %w", err)
+func parsePush(provider string, payload []byte) (*Push, error) {
+	switch provider {
+	case ProviderGitHub:
+		var body struct {
+			Ref        string `json:"ref"`
+			Repository struct {
+				Name     string `json:"name"`
+				FullName string `json:"full_name"`
+				CloneURL string `json:"clone_url"`
+				SSHURL   string `json:"ssh_url"`
+				HTMLURL  string `json:"html_url"`
+			} `json:"repository"`
+			HeadCommit struct {
+				ID string `json:"id"`
+			} `json:"head_commit"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return nil, fmt.Errorf("parse github payload: %w", err)
+		}
+		return newPush(body.Repository.Name, body.Ref, body.HeadCommit.ID, []string{
+			body.Repository.CloneURL, body.Repository.SSHURL,
+			body.Repository.HTMLURL, body.Repository.FullName,
+		})
+
+	case ProviderGitLab:
+		var body struct {
+			Ref     string `json:"ref"`
+			Project struct {
+				Name              string `json:"name"`
+				PathWithNamespace string `json:"path_with_namespace"`
+				GitSSHURL         string `json:"git_ssh_url"`
+				GitHTTPURL        string `json:"git_http_url"`
+				WebURL            string `json:"web_url"`
+			} `json:"project"`
+			CheckoutSHA string `json:"checkout_sha"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return nil, fmt.Errorf("parse gitlab payload: %w", err)
+		}
+		return newPush(body.Project.Name, body.Ref, body.CheckoutSHA, []string{
+			body.Project.GitSSHURL, body.Project.GitHTTPURL,
+			body.Project.WebURL, body.Project.PathWithNamespace,
+		})
 	}
 
-	branch := extractBranch(data.Ref)
-	if branch == "" {
-		return nil, fmt.Errorf("invalid git ref format: %s", data.Ref)
-	}
-
-	repoName := data.Repository.Name
-	logger.Debug("[WEBHOOK] GitHub push: repo=%s branch=%s commit=%s",
-		repoName, branch, data.HeadCommit.ID[:7])
-
-	repo := s.cfg.GetRepository(repoName)
-	if repo == nil {
-		return nil, fmt.Errorf("repository '%s' not configured in uruflow - add it first", repoName)
-	}
-
-	if repo.Branch != branch {
-		return nil, fmt.Errorf("branch '%s' not configured for auto-deploy (configured branch: '%s')",
-			branch, repo.Branch)
-	}
-
-	if !repo.AutoDeploy {
-		return nil, fmt.Errorf("auto-deploy is disabled for repository '%s'", repoName)
-	}
-
-	logger.Info("[WEBHOOK] Triggering deployment: repo=%s branch=%s agent=%s",
-		repoName, branch, repo.AgentID)
-
-	deploy, err := s.deployService.TriggerDeploy(repo.AgentID, repoName, branch, data.HeadCommit.ID, "webhook")
-	if err != nil {
-		return nil, fmt.Errorf("trigger deployment failed: %w", err)
-	}
-
-	return &WebhookResult{
-		Repository: repoName,
-		Branch:     branch,
-		Commit:     data.HeadCommit.ID[:7],
-		Deployment: deploy,
-	}, nil
+	return nil, ErrUnknownProvider
 }
 
-func (s *WebhookService) ProcessGitLabPush(payload []byte) (*WebhookResult, error) {
-	var data GitLabPushPayload
-	if err := json.Unmarshal(payload, &data); err != nil {
-		return nil, fmt.Errorf("failed to parse GitLab payload: %w", err)
+func newPush(repository, ref, commit string, identities []string) (*Push, error) {
+	branch := strings.TrimPrefix(ref, branchPrefix)
+	if branch == ref || branch == "" {
+		return nil, fmt.Errorf("unsupported git ref %q", ref)
+	}
+	if repository == "" {
+		return nil, errors.New("webhook payload carries no repository name")
 	}
 
-	branch := extractBranch(data.Ref)
-	if branch == "" {
-		return nil, fmt.Errorf("invalid git ref format: %s", data.Ref)
+	kept := make([]string, 0, len(identities))
+	for _, identity := range identities {
+		if identity != "" {
+			kept = append(kept, identity)
+		}
 	}
 
-	repoName := data.Project.Name
-	commitID := ""
-	if len(data.Commits) > 0 {
-		commitID = data.Commits[0].ID
-	}
-
-	logger.Debug("[WEBHOOK] GitLab push: repo=%s branch=%s commit=%s",
-		repoName, branch, commitID[:7])
-
-	repo := s.cfg.GetRepository(repoName)
-	if repo == nil {
-		return nil, fmt.Errorf("repository '%s' not configured in uruflow - add it first", repoName)
-	}
-
-	if repo.Branch != branch {
-		return nil, fmt.Errorf("branch '%s' not configured for auto-deploy (configured branch: '%s')",
-			branch, repo.Branch)
-	}
-
-	if !repo.AutoDeploy {
-		return nil, fmt.Errorf("auto-deploy is disabled for repository '%s'", repoName)
-	}
-
-	logger.Info("[WEBHOOK] Triggering deployment: repo=%s branch=%s agent=%s",
-		repoName, branch, repo.AgentID)
-
-	deploy, err := s.deployService.TriggerDeploy(repo.AgentID, repoName, branch, commitID, "webhook")
-	if err != nil {
-		return nil, fmt.Errorf("trigger deployment failed: %w", err)
-	}
-
-	return &WebhookResult{
-		Repository: repoName,
-		Branch:     branch,
-		Commit:     commitID,
-		Deployment: deploy,
-	}, nil
+	return &Push{Repository: repository, Identities: kept, Branch: branch, Commit: commit}, nil
 }
 
-func extractBranch(ref string) string {
-	if strings.HasPrefix(ref, "refs/heads/") {
-		return strings.TrimPrefix(ref, "refs/heads/")
+func shortCommit(commit string) string {
+	if len(commit) <= shortCommitSize {
+		return commit
 	}
-	return ""
+	return commit[:shortCommitSize]
 }
