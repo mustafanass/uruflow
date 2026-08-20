@@ -20,6 +20,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -29,27 +30,44 @@ import (
 )
 
 const (
-	NamePrefix     = "uruflow-"
-	PreviousSuffix = "-previous"
-	stopTimeout    = 15 * time.Second
-	settleWindow   = 5 * time.Second
-	readyTimeout   = 2 * time.Minute
-	shortIDSize    = 12
+	NamePrefix      = "uruflow-"
+	PreviousSuffix  = "-previous"
+	stopTimeout     = 15 * time.Second
+	inspectTimeout  = 15 * time.Second
+	settleWindow    = 5 * time.Second
+	readyTimeout    = 2 * time.Minute
+	rollbackTimeout = 2 * time.Minute
+	shortIDSize     = 12
 )
 
 type Runner struct {
-	docker *docker.Client
+	docker engine
 	auth   func() *docker.Auth
 }
 
-type replacement struct {
-	name     string
-	previous string
-	replaced bool
+type engine interface {
+	Pull(context.Context, string, *docker.Auth, func(string)) error
+	ContainerOwnership(context.Context, string, string) (bool, bool, error)
+	Stop(context.Context, string, time.Duration) error
+	Rename(context.Context, string, string) error
+	Run(context.Context, docker.Spec) (string, error)
+	WaitReady(context.Context, string, time.Duration, time.Duration) error
+	Remove(context.Context, string, bool) error
+	Start(context.Context, string) error
+	ListContainers(context.Context, bool) ([]docker.Container, error)
 }
 
-func New(engine *docker.Client, auth func() *docker.Auth) *Runner {
-	return &Runner{docker: engine, auth: auth}
+type replacement struct {
+	project       string
+	name          string
+	previous      string
+	hadCurrent    bool
+	previousMoved bool
+	newRunning    bool
+}
+
+func New(dockerEngine engine, auth func() *docker.Auth) *Runner {
+	return &Runner{docker: dockerEngine, auth: auth}
 }
 
 func ContainerName(project, service string) string {
@@ -74,14 +92,21 @@ func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log uf
 		done = append(done, state)
 
 		if err != nil {
-			r.rollback(ctx, done, log)
+			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+			restoreErr := r.rollback(restoreCtx, done, log)
+			cancel()
+			if restoreErr != nil {
+				return errors.Join(err, fmt.Errorf("restore previous containers: %w", restoreErr))
+			}
 			return err
 		}
 	}
 
 	for _, state := range done {
-		if state.replaced {
-			r.docker.Remove(ctx, state.previous, true)
+		if state.previousMoved {
+			if err := r.removeOwnedIfExists(ctx, state.previous, state.project); err != nil {
+				log(ufp.StreamStderr, "could not remove "+state.previous+": "+err.Error())
+			}
 		}
 	}
 
@@ -91,28 +116,50 @@ func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log uf
 
 func (r *Runner) replace(ctx context.Context, request ufp.ReleaseRequest, service ufp.ServiceSpec, log ufp.LogFunc) (replacement, error) {
 	name := ContainerName(request.Project, service.Name)
-	state := replacement{name: name, previous: name + PreviousSuffix}
+	state := replacement{project: request.Project, name: name, previous: name + PreviousSuffix}
 
-	r.docker.Remove(ctx, state.previous, true)
+	if err := r.removeOwnedIfExists(ctx, state.previous, request.Project); err != nil {
+		return state, fmt.Errorf("remove stale %s: %w", state.previous, err)
+	}
 
-	if r.docker.Exists(ctx, name) {
+	exists, owned, err := r.docker.ContainerOwnership(ctx, name, request.Project)
+	if err != nil {
+		return state, fmt.Errorf("inspect %s: %w", name, err)
+	}
+	if exists && !owned {
+		return state, fmt.Errorf("container name %s is owned outside uruflow project %s", name, request.Project)
+	}
+	state.hadCurrent = exists
+	if exists {
 		log(ufp.StreamStdout, "setting "+name+" aside")
-		r.docker.Stop(ctx, name, stopTimeout)
-		if err := r.docker.Rename(ctx, name, state.previous); err != nil {
-			return state, fmt.Errorf("set aside %s: %w", name, err)
+		if err := r.docker.Stop(ctx, name, stopTimeout); err != nil {
+			return state, fmt.Errorf("stop %s: %w", name, err)
 		}
-		state.replaced = true
+		if err := r.docker.Rename(ctx, name, state.previous); err != nil {
+			failure := fmt.Errorf("set aside %s: %w", name, err)
+			currentExists, _, currentErr := r.docker.ContainerOwnership(ctx, name, request.Project)
+			previousExists, _, previousErr := r.docker.ContainerOwnership(ctx, state.previous, request.Project)
+			if previousExists && !currentExists {
+				state.previousMoved = true
+			}
+			return state, errors.Join(failure, currentErr, previousErr)
+		}
+		state.previousMoved = true
 	}
 
 	log(ufp.StreamStdout, "starting "+name)
 	id, err := r.docker.Run(ctx, spec(name, request, service))
 	if err != nil {
-		return state, err
+		inspectCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), inspectTimeout)
+		present, owned, inspectErr := r.docker.ContainerOwnership(inspectCtx, name, request.Project)
+		cancel()
+		state.newRunning = present && owned
+		return state, errors.Join(err, inspectErr)
 	}
+	state.newRunning = true
 
 	log(ufp.StreamStdout, "waiting for "+name+" to come up")
 	if err := r.docker.WaitReady(ctx, id, settleWindow, readyTimeout); err != nil {
-		r.docker.Remove(ctx, name, true)
 		return state, fmt.Errorf("%s: %w", name, err)
 	}
 
@@ -120,69 +167,101 @@ func (r *Runner) replace(ctx context.Context, request ufp.ReleaseRequest, servic
 	return state, nil
 }
 
-func (r *Runner) rollback(ctx context.Context, done []replacement, log ufp.LogFunc) {
-	ctx = context.WithoutCancel(ctx)
+func (r *Runner) rollback(ctx context.Context, done []replacement, log ufp.LogFunc) error {
 	log(ufp.StreamStderr, "release failed, restoring the previous containers")
+	var failures []error
 
 	for index := len(done) - 1; index >= 0; index-- {
 		state := done[index]
-		if !state.replaced {
-			r.docker.Remove(ctx, state.name, true)
+		if state.newRunning {
+			if err := r.removeOwnedIfExists(ctx, state.name, state.project); err != nil {
+				failures = append(failures, fmt.Errorf("remove replacement %s: %w", state.name, err))
+				continue
+			}
+		}
+		if !state.previousMoved {
+			if state.hadCurrent {
+				if err := r.docker.Start(ctx, state.name); err != nil {
+					failures = append(failures, fmt.Errorf("restart %s: %w", state.name, err))
+					continue
+				}
+				log(ufp.StreamStdout, "restored "+state.name)
+			}
 			continue
 		}
 
-		r.docker.Remove(ctx, state.name, true)
 		if err := r.docker.Rename(ctx, state.previous, state.name); err != nil {
 			log(ufp.StreamStderr, "could not restore "+state.name+": "+err.Error())
+			failures = append(failures, fmt.Errorf("rename %s: %w", state.previous, err))
 			continue
 		}
 		if err := r.docker.Start(ctx, state.name); err != nil {
 			log(ufp.StreamStderr, "could not restart "+state.name+": "+err.Error())
+			failures = append(failures, fmt.Errorf("restart %s: %w", state.name, err))
 			continue
 		}
 		log(ufp.StreamStdout, "restored "+state.name)
 	}
+	return errors.Join(failures...)
+}
+
+func (r *Runner) removeOwnedIfExists(ctx context.Context, name, project string) error {
+	exists, owned, err := r.docker.ContainerOwnership(ctx, name, project)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if !owned {
+		return fmt.Errorf("container %s is not owned by uruflow project %s", name, project)
+	}
+	return r.docker.Remove(ctx, name, true)
 }
 
 func (r *Runner) Stop(ctx context.Context, project string) error {
-	return r.each(ctx, project, func(name string) error {
-		return r.docker.Stop(ctx, name, stopTimeout)
-	})
-}
-
-func (r *Runner) Remove(ctx context.Context, project string) error {
-	return r.each(ctx, project, func(name string) error {
-		r.docker.Remove(ctx, name+PreviousSuffix, true)
-		return r.docker.Remove(ctx, name, true)
-	})
-}
-
-func (r *Runner) each(ctx context.Context, project string, action func(string) error) error {
 	containers, err := r.docker.ListContainers(ctx, true)
 	if err != nil {
 		return err
 	}
+	var failures []error
+	for _, container := range containers {
+		if container.Project != project || strings.HasSuffix(container.Name, PreviousSuffix) {
+			continue
+		}
+		if err := r.docker.Stop(ctx, container.Name, stopTimeout); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
 
-	var failure error
+func (r *Runner) Remove(ctx context.Context, project string) error {
+	containers, err := r.docker.ListContainers(ctx, true)
+	if err != nil {
+		return err
+	}
+	var failures []error
 	found := false
-
 	for _, container := range containers {
 		if container.Project != project {
 			continue
 		}
 		found = true
-		if err := action(container.Name); err != nil {
-			failure = err
+		if err := r.docker.Remove(ctx, container.Name, true); err != nil {
+			failures = append(failures, err)
 		}
 	}
-
 	if !found {
-		return action(ContainerName(project, ""))
+		return nil
 	}
-	return failure
+	return errors.Join(failures...)
 }
 
 func (r *Runner) authFor(image string) *docker.Auth {
+	if r.auth == nil {
+		return nil
+	}
 	auth := r.auth()
 	if auth == nil || auth.ServerAddress == "" {
 		return nil

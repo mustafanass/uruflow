@@ -1,28 +1,33 @@
 # Upgrading
 
-How to move between URUFLOW versions. Upgrades within version 2 are routine; moving from 1.x is a
-rebuild, because the two versions do not describe the same system.
+How to move between URUFLOW versions. Version 2.2 updates the UFP wire format and requires coordinated server
+and agent replacement. Moving from 1.x remains a rebuild.
 
-## Within Version 2
+## From 2.0 or 2.1 to 2.2
 
-1. **[server]** stop the service
-2. replace `/usr/local/bin/uruflow`
-3. start the service
-4. **[target]** replace `/usr/local/bin/uruflow-agent` on each machine and restart the agent
+1. wait for every release to finish
+2. stop the server and all agents
+3. replace `/usr/local/bin/uruflow` and every `/usr/local/bin/uruflow-agent`
+4. replace mutable prebuilt image tags in project files with `repository@sha256:digest` references
+5. start the server
+6. start every agent
+7. change git-host webhook URLs from `http://` to `https://`, unless a local reverse proxy terminates TLS
 
 Database schema changes are applied automatically when the database is opened — missing columns are
 added in place, so no migration step is needed and existing data is preserved.
 
-A running process keeps the code it started with. Replacing a binary changes nothing until you restart
-the process.
+The current UFP wire format uses protocol byte `0x03` and TLS 1.3. A 2.0 or 2.1 agent cannot connect to a 2.2 server, and a
+2.2 agent cannot connect to an older server. Running containers are unaffected during the coordinated
+upgrade.
 
-### Order
+Version 2.2 also binds roles to enrollment, deploys images by digest, snapshots project configuration
+per release, rejects webhook replays, and serves webhooks over HTTPS by default.
 
-Upgrade the server first. Agents reconnect on their own and tolerate a brief outage; their containers
-keep running throughout.
+## Within One Protocol Generation
 
-Do not upgrade during a release. Wait for in-flight releases to settle, or expect them to be closed as
-failed by the reconciliation that runs at startup.
+Patch upgrades that retain the UFP wire format can use the normal server-first order: stop and replace the server,
+then replace and restart each agent. A running process keeps the code it started with, and workloads
+continue under Docker while the control plane is unavailable.
 
 ## From 1.x to 2.0
 

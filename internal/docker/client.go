@@ -22,12 +22,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"time"
 )
+
+var ErrNotFound = errors.New("docker object not found")
 
 const (
 	DefaultSocket = "/var/run/docker.sock"
@@ -141,6 +144,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, headers 
 		json.NewDecoder(response.Body).Decode(&failure)
 		if failure.Message == "" {
 			failure.Message = response.Status
+		}
+		if response.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: docker: %s", ErrNotFound, failure.Message)
 		}
 		return nil, fmt.Errorf("docker: %s", failure.Message)
 	}

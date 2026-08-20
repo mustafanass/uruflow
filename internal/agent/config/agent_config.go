@@ -26,11 +26,12 @@ import (
 
 	"github.com/mustafanass/uruflow/internal/docker"
 	"github.com/mustafanass/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	Version              = "2.1.6"
+	Version              = version.Current
 	DefaultReconnectSecs = 5
 	DefaultMetricsSecs   = 10
 )
@@ -139,19 +140,33 @@ func (c *Config) Validate() error {
 	if c.AgentID == "" {
 		return errors.New("agent_id is required")
 	}
-	if c.Key == "" {
-		return errors.New("key is required")
+	if len(c.Key) < 32 {
+		return errors.New("key must contain at least 32 characters")
 	}
 	if c.Server.Host == "" {
 		return errors.New("server.host is required")
 	}
+	if c.Server.Port < 1 || c.Server.Port > 65535 {
+		return errors.New("server.port is outside the valid range")
+	}
+	if c.Server.ReconnectSec < 1 {
+		return errors.New("server.reconnect_sec must be positive")
+	}
+	if c.Server.MetricsSec < 1 {
+		return errors.New("server.metrics_sec must be positive")
+	}
 	if len(c.Roles) == 0 {
 		return errors.New("at least one role is required (builder, runner)")
 	}
+	seen := make(map[ufp.Role]bool, len(c.Roles))
 	for _, role := range c.Roles {
 		if !role.Valid() {
 			return errors.New("unknown role: " + string(role))
 		}
+		if seen[role] {
+			return errors.New("duplicate role: " + string(role))
+		}
+		seen[role] = true
 	}
 	return nil
 }

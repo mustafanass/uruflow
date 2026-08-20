@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -65,7 +66,10 @@ func (c *Client) Pull(ctx context.Context, image string, auth *Auth, onProgress 
 	for {
 		var progress pullProgress
 		if err := decoder.Decode(&progress); err != nil {
-			break
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("pull %s: decode progress: %w", image, err)
 		}
 		if progress.Error != "" {
 			return fmt.Errorf("pull %s: %s", image, progress.Error)
@@ -87,6 +91,9 @@ func (c *Client) RemoveImage(ctx context.Context, image string) error {
 }
 
 func SplitTag(image string) (repository, tag string) {
+	if separator := strings.LastIndex(image, "@"); separator >= 0 {
+		return image[:separator], image[separator+1:]
+	}
 	separator := strings.LastIndex(image, ":")
 	if separator < 0 || strings.Contains(image[separator+1:], "/") {
 		return image, "latest"

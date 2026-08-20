@@ -72,8 +72,9 @@ CREATE TABLE IF NOT EXISTS releases (
 	builder      TEXT NOT NULL DEFAULT '',
 	builder_name TEXT NOT NULL DEFAULT '',
 	trigger_type TEXT NOT NULL DEFAULT 'manual',
-	message      TEXT NOT NULL DEFAULT '',
-	started_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		message      TEXT NOT NULL DEFAULT '',
+		spec         TEXT NOT NULL DEFAULT '{}',
+		started_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	ended_at     DATETIME,
 	duration_ms  INTEGER NOT NULL DEFAULT 0
 );
@@ -139,9 +140,19 @@ CREATE TABLE IF NOT EXISTS secrets (
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+	provider    TEXT NOT NULL,
+	delivery_id TEXT NOT NULL,
+	received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (provider, delivery_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_releases_one_active_project ON releases(project)
+	WHERE status IN ('pending', 'building', 'releasing');
 CREATE INDEX IF NOT EXISTS idx_releases_started ON releases(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_release_logs_release ON release_logs(release_id, id);
 CREATE INDEX IF NOT EXISTS idx_containers_agent ON containers(agent_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts(resolved, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_received ON webhook_deliveries(received_at);
 `

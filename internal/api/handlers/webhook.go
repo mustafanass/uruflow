@@ -42,9 +42,13 @@ func Health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
-	payload, err := io.ReadAll(io.LimitReader(r.Body, maxPayloadSize))
+	payload, err := io.ReadAll(io.LimitReader(r.Body, maxPayloadSize+1))
 	if err != nil {
 		helper.WriteError(w, http.StatusBadRequest, "cannot read request body")
+		return
+	}
+	if len(payload) > maxPayloadSize {
+		helper.WriteError(w, http.StatusRequestEntityTooLarge, "request body is too large")
 		return
 	}
 
@@ -55,6 +59,21 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deliveryID, ok := webhookHeaders(r, provider)
+	if !ok {
+		helper.WriteError(w, http.StatusBadRequest, "invalid webhook headers")
+		return
+	}
+	claimed, err := h.service.ClaimDelivery(provider, deliveryID)
+	if err != nil {
+		logger.Error("[WEBHOOK] claim delivery: %v", err)
+		helper.WriteError(w, http.StatusInternalServerError, "cannot record webhook delivery")
+		return
+	}
+	if !claimed {
+		helper.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "duplicate"})
+		return
+	}
 	result, err := h.service.Handle(provider, payload)
 	if err != nil {
 		logger.Warn("[WEBHOOK] %v", err)
@@ -76,6 +95,27 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		"branch":     result.Branch,
 		"triggered":  triggered,
 	})
+}
+
+func webhookHeaders(r *http.Request, provider string) (string, bool) {
+	var deliveryID, event string
+	switch provider {
+	case services.ProviderGitHub:
+		deliveryID = r.Header.Get("X-GitHub-Delivery")
+		event = r.Header.Get("X-GitHub-Event")
+		if event != "push" {
+			return "", false
+		}
+	case services.ProviderGitLab:
+		deliveryID = r.Header.Get("X-Gitlab-Event-UUID")
+		event = r.Header.Get("X-Gitlab-Event")
+		if event != "Push Hook" {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	return deliveryID, deliveryID != "" && len(deliveryID) <= 255
 }
 
 func (h *WebhookHandler) authenticate(r *http.Request, payload []byte) (string, bool) {

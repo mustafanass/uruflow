@@ -18,7 +18,7 @@ Startup order matters and is fixed:
 2. start the registry container and wait for it to answer
 3. load project files from `projects/`
 4. start the UFP listener
-5. start the HTTP listener
+5. start the HTTPS listener
 
 Reconciliation runs first so a release can never be observed in an impossible state after a crash.
 The server refuses to start if the registry does not answer within 60 seconds.
@@ -162,7 +162,7 @@ docker exec uruflow-registry \
   bin/registry garbage-collect /etc/docker/registry/config.yml
 ```
 
-Every build pushes a new immutable tag, so `<data_dir>/registry` grows with every release forever
+Every build stores a new immutable image manifest and blobs, so `<data_dir>/registry` grows with releases
 until you do this. Schedule it.
 
 ## 6. State and What It Costs to Lose

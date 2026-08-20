@@ -15,8 +15,9 @@ Before a release is created the server checks, in order:
 
 1. the project exists
 2. **no other release for this project is in flight**
-3. the configured builder exists, holds the `builder` role, and is online
-4. at least one configured runner exists and holds the `runner` role
+3. every configured runner exists, holds the `runner` role, and is online
+4. when a build is needed, the configured builder exists, holds the `builder` role, and is online
+5. prebuilt images use immutable digest references
 
 A failure at any of these returns an error and creates nothing. In particular, a second deploy while
 one is running is refused with `a release is already running for this project` — this is what keeps
@@ -41,7 +42,7 @@ flowchart TD
     DIGEST --> BOK[job.status success]
 
     BOK --> RELEASING[Release status: releasing]
-    RELEASING --> FANOUT[release.run to every online runner]
+    RELEASING --> FANOUT[release.run to every configured runner]
     FANOUT --> PULL[docker pull]
     PULL --> ASIDE[Rename running container aside]
     ASIDE --> START[Create and start replacement]
@@ -65,7 +66,7 @@ One builder, chosen by the project. The builder:
    context and build arguments
 5. tags each image twice — with the **12-character commit SHA** and with `latest`
 6. pushes both tags
-7. reads the repository digest back from the first pushed image
+7. reads each repository digest back from the registry
 
 A project with no `services` block has exactly one build target. Services declaring a prebuilt
 `image` are skipped here and pulled directly by the runners.
@@ -73,12 +74,14 @@ A project with no `services` block has exactly one build target. Services declar
 Every line of git and Docker output streams to the server as it happens and is stored against the
 release.
 
-The builder reports `job.status` with the image reference, the resolved commit and the digest. The
-server records all three, so the release names the exact artifact it produced.
+The builder reports `job.status` with the digest references and resolved commit. The server accepts
+that event only from the builder assigned to the active release and verifies every reference against
+the expected repository before recording it.
 
 ### Stage 2 — Release
 
-The server moves the release to `releasing` and dispatches `release.run` to each runner. Runners work
+The server moves the release to `releasing` using the project snapshot captured when the release was
+claimed, then dispatches `release.run` to each runner. Runners work
 independently and in parallel. A runner that is offline at this moment is marked `skipped` rather than
 failed.
 
@@ -93,7 +96,7 @@ A release completes when every target has reached a terminal state:
 | :--- | :--- |
 | All succeeded | `succeeded` |
 | Any failed | `failed` — "one or more runners failed" |
-| None succeeded, none failed (all skipped) | `failed` — "no runner accepted the release" |
+| Any skipped | `failed` — "one or more runners were unavailable" |
 
 The release records its duration and end time when it settles.
 
@@ -191,7 +194,8 @@ r2  succeeded  api:8f2a  ─┴─▶ release r4, trigger rollback, image api:8f
 r1  succeeded  api:1c9d
 ```
 
-Because the recorded tag is immutable, what returns is byte-identical to what ran before. No rebuild,
+Because the recorded digest is immutable, what returns is byte-identical to what ran before. For a
+multi-service release, every built-service digest and the original project snapshot are reused. No rebuild,
 no git checkout, no chance of a different result from the same commit.
 
 Rollback fails with `no successful release to roll back to` when the project has never had one.
@@ -200,10 +204,11 @@ Rollback fails with `no successful release to roll back to` when the project has
 
 | Action | Effect |
 | :--- | :--- |
-| Stop | Stops the container on every online runner. The image remains; a later release or rollback restarts it. |
-| Delete | Removes the container from every online runner and deletes the project. Images stay in the registry. |
+| Stop | Stops the container on every configured runner. The image remains; a later release or rollback restarts it. |
+| Delete | Removes the container from every configured runner and deletes the project. Images stay in the registry. |
 
-Both act only on online runners. Neither touches images.
+Both require every configured runner to be online. A failed or unreachable runner prevents deletion,
+so URUFLOW never forgets a project while leaving an unmanaged container behind. Neither touches images.
 
 ## 7. Observing a Release
 

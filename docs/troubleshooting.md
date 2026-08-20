@@ -76,9 +76,9 @@ Base images are cached after the first successful pull.
 
 **A prebuilt service fails to pull with `unauthorized`**
 
-Credentials are only sent to the URUFLOW registry, so a public image is pulled anonymously. This error
-from a public registry means the image name is wrong, the tag does not exist, or the runner has no
-outbound access — not that authentication is misconfigured.
+Credentials are only sent to the URUFLOW registry, so a public image is pulled anonymously. Prebuilt
+images must be configured as `repository@sha256:digest`; mutable tags are rejected before a release.
+An authorization error from a public registry means that digest is private or unavailable.
 
 **Push fails with a certificate error**
 

@@ -39,15 +39,18 @@ import (
 )
 
 const (
-	settleWindow = 5 * time.Second
-	builtImage   = "127.0.0.1:5000/uruflow/api:0123456789ab"
-	builtCommit  = "0123456789abcdef0123456789abcdef01234567"
+	settleWindow  = 5 * time.Second
+	builtDigest   = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	builtImage    = "127.0.0.1:5000/uruflow/api@" + builtDigest
+	prebuiltImage = "redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	builtCommit   = "0123456789abcdef0123456789abcdef01234567"
 )
 
 type fakeAgent struct {
 	conn      *ufp.Conn
 	failBuild bool
 	failRun   bool
+	holdBuild chan struct{}
 	builds    chan ufp.BuildRequest
 	releases  chan ufp.ReleaseRequest
 }
@@ -78,20 +81,27 @@ func (a *fakeAgent) HandleRequest(request *ufp.Request) (any, error) {
 func (a *fakeAgent) HandleEvent(*ufp.Event) error { return nil }
 
 func (a *fakeAgent) finishBuild(request ufp.BuildRequest) {
+	if a.holdBuild != nil {
+		<-a.holdBuild
+	}
 	a.conn.SendEvent(ufp.TopicJobLog, ufp.JobLog{
 		JobID: request.JobID, Stage: ufp.StageBuild,
 		Stream: ufp.StreamStdout, Line: "building " + request.Project,
 	})
 
 	images := make(map[string]string, len(request.Targets))
+	primary := ""
 	for _, target := range request.Targets {
-		images[target.Service] = target.Image + ":0123456789ab"
+		images[target.Service] = target.Image + "@" + builtDigest
+		if primary == "" {
+			primary = images[target.Service]
+		}
 	}
 
 	status := ufp.JobStatus{
 		JobID: request.JobID, Stage: ufp.StageBuild,
-		Status: ufp.StatusSuccess, Image: builtImage, Images: images,
-		Commit: builtCommit, Digest: "sha256:abc",
+		Status: ufp.StatusSuccess, Image: primary, Images: images,
+		Commit: builtCommit, Digest: builtDigest,
 	}
 	if a.failBuild {
 		status = ufp.JobStatus{JobID: request.JobID, Stage: ufp.StageBuild,
@@ -162,6 +172,9 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	links := link.NewServer(cfg, store)
+	links.SetRegistry(ufp.RegistryConfig{
+		Host: "127.0.0.1:5000", Username: "uruflow", Password: "secret", CACert: caPEM,
+	})
 	if err := links.Start(); err != nil {
 		t.Fatalf("start link: %v", err)
 	}
@@ -183,7 +196,7 @@ func newHarness(t *testing.T) *harness {
 	pool.AppendCertsFromPEM([]byte(caPEM))
 
 	netConn, err := tls.DialWithDialer(&net.Dialer{Timeout: settleWindow}, "tcp", links.Addr(), &tls.Config{
-		RootCAs: pool, ServerName: ufp.ServerName, MinVersion: tls.VersionTLS12,
+		RootCAs: pool, ServerName: ufp.ServerName, MinVersion: tls.VersionTLS13,
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -203,6 +216,9 @@ func newHarness(t *testing.T) *harness {
 		releases: make(chan ufp.ReleaseRequest, 4),
 	}
 	go conn.Serve(context.Background(), agent)
+	if err := conn.SendEvent(ufp.TopicRegistryReady, ufp.Accepted{}); err != nil {
+		t.Fatal(err)
+	}
 
 	waitFor(t, "agent to come online", func() bool { return links.Online("a1") })
 
@@ -501,7 +517,7 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 		{Name: "app", Dockerfile: "Dockerfile", Context: ".",
 			Ports: []models.Port{{Host: 8080, Container: 80}}},
 		{Name: "worker", Dockerfile: "Dockerfile.worker", Command: "./worker"},
-		{Name: "cache", Image: "redis:7-alpine",
+		{Name: "cache", Image: prebuiltImage,
 			Volumes: []models.Volume{{Source: "/srv/redis", Target: "/data"}}},
 	}
 	project.Runtime.Env = map[string]string{"SHARED": "yes"}
@@ -543,10 +559,10 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 		for _, service := range run.Services {
 			byName[service.Name] = service
 		}
-		if byName["cache"].Image != "redis:7-alpine" {
+		if byName["cache"].Image != prebuiltImage {
 			t.Errorf("prebuilt image was replaced: %q", byName["cache"].Image)
 		}
-		if byName["app"].Image != "127.0.0.1:5000/uruflow/api-app:0123456789ab" {
+		if byName["app"].Image != "127.0.0.1:5000/uruflow/api-app@"+builtDigest {
 			t.Errorf("app image = %q", byName["app"].Image)
 		}
 		if byName["worker"].Command != "./worker" {
@@ -563,4 +579,144 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 	}
 
 	harness.await(t, release.ID, models.StatusSucceeded)
+}
+
+func TestBuildStatusFromAnotherAgentIsRejected(t *testing.T) {
+	harness := newHarness(t)
+	harness.agent.holdBuild = make(chan struct{})
+
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := <-harness.agent.builds
+	harness.pipeline.JobStatus("another-agent", ufp.JobStatus{
+		JobID: release.ID, Stage: ufp.StageBuild, Status: ufp.StatusSuccess,
+		Image: builtImage, Images: map[string]string{"": builtImage}, Digest: builtDigest, Commit: builtCommit,
+	})
+	loaded, err := harness.store.GetRelease(release.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != models.StatusBuilding || loaded.Image != "" {
+		t.Fatalf("forged event changed release: %+v", loaded)
+	}
+	close(harness.agent.holdBuild)
+	_ = build
+	<-harness.agent.releases
+	harness.await(t, release.ID, models.StatusSucceeded)
+}
+
+func TestMutableBuilderArtifactIsRejected(t *testing.T) {
+	harness := newHarness(t)
+	harness.agent.holdBuild = make(chan struct{})
+
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-harness.agent.builds
+	harness.pipeline.JobStatus("a1", ufp.JobStatus{
+		JobID: release.ID, Stage: ufp.StageBuild, Status: ufp.StatusSuccess,
+		Image:  "127.0.0.1:5000/uruflow/api:latest",
+		Images: map[string]string{"": "127.0.0.1:5000/uruflow/api:latest"},
+		Commit: builtCommit,
+	})
+	final := harness.await(t, release.ID, models.StatusFailed)
+	if final.Message == "" {
+		t.Fatal("invalid artifact failure had no message")
+	}
+	close(harness.agent.holdBuild)
+	select {
+	case request := <-harness.agent.releases:
+		t.Fatalf("mutable artifact reached runner: %+v", request)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestReleaseUsesTheClaimedProjectSnapshot(t *testing.T) {
+	harness := newHarness(t)
+	harness.agent.holdBuild = make(chan struct{})
+
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-harness.agent.builds
+	project, _ := harness.store.GetProject("api")
+	project.Runtime.Ports[0].Host = 9090
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	close(harness.agent.holdBuild)
+
+	select {
+	case request := <-harness.agent.releases:
+		if request.Services[0].Ports[0].Host != 8080 {
+			t.Fatalf("release used edited port %d", request.Services[0].Ports[0].Host)
+		}
+	case <-time.After(settleWindow):
+		t.Fatal("release was not dispatched")
+	}
+	harness.await(t, release.ID, models.StatusSucceeded)
+}
+
+func TestOfflineConfiguredRunnerRejectsTheRelease(t *testing.T) {
+	harness := newHarness(t)
+	if err := harness.store.CreateAgent(&models.Agent{ID: "a2", Name: "node-02", Key: "k2",
+		Roles: []models.Role{models.RoleRunner}}); err != nil {
+		t.Fatal(err)
+	}
+	project, _ := harness.store.GetProject("api")
+	project.Runners = append(project.Runners, "a2")
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual); !errors.Is(err, ErrRunnerOffline) {
+		t.Fatalf("error = %v, want ErrRunnerOffline", err)
+	}
+	releases, _ := harness.store.ListReleases(10)
+	if len(releases) != 0 {
+		t.Fatalf("rejected release was persisted: %+v", releases)
+	}
+}
+
+func TestMultiServiceRollbackReusesEveryDigest(t *testing.T) {
+	harness := newHarness(t)
+	project, _ := harness.store.GetProject("api")
+	project.Services = []models.Service{
+		{Name: "app", Dockerfile: "Dockerfile"},
+		{Name: "worker", Dockerfile: "Dockerfile.worker"},
+		{Name: "cache", Image: prebuiltImage},
+	}
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-harness.agent.builds
+	initial := <-harness.agent.releases
+	harness.await(t, first.ID, models.StatusSucceeded)
+
+	rollback, err := harness.pipeline.Rollback("api", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := <-harness.agent.releases
+	if len(replayed.Services) != len(initial.Services) {
+		t.Fatalf("rollback services = %d, want %d", len(replayed.Services), len(initial.Services))
+	}
+	want := make(map[string]string, len(initial.Services))
+	for _, service := range initial.Services {
+		want[service.Name] = service.Image
+	}
+	for _, service := range replayed.Services {
+		if service.Image != want[service.Name] {
+			t.Fatalf("service %s image = %s, want %s", service.Name, service.Image, want[service.Name])
+		}
+	}
+	harness.await(t, rollback.ID, models.StatusSucceeded)
 }

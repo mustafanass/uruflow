@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,9 +37,8 @@ import (
 )
 
 const (
-	dispatchTimeout     = 30 * time.Second
-	TagLatest           = "latest"
-	activeReleaseWindow = 50
+	dispatchTimeout = 30 * time.Second
+	TagLatest       = "latest"
 )
 
 var (
@@ -48,6 +48,8 @@ var (
 	ErrNoBuilder       = errors.New("project has no builder agent")
 	ErrBuilderOffline  = errors.New("builder agent is offline")
 	ErrNoRunners       = errors.New("project has no runner agents")
+	ErrRunnerOffline   = errors.New("runner agent is offline")
+	ErrNotRunner       = errors.New("agent does not have the runner role")
 	ErrNothingToRun    = errors.New("no successful release to roll back to")
 	ErrNotBuilder      = errors.New("agent does not have the builder role")
 )
@@ -96,6 +98,9 @@ func (p *Pipeline) checkSecrets(project *models.Project) error {
 }
 
 func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (*models.Release, error) {
+	if commit != "" && !models.ValidGitCommit(commit) {
+		return nil, fmt.Errorf("invalid git commit %q", commit)
+	}
 	project, err := p.store.GetProject(projectName)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", projectName, ErrProjectNotFound)
@@ -107,13 +112,43 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 	if err := p.checkSecrets(project); err != nil {
 		return nil, err
 	}
-
-	builder, err := p.resolveBuilder(project)
-	if err != nil {
+	if err := p.validateProject(project); err != nil {
 		return nil, err
 	}
 
 	runners, err := p.resolveRunners(project)
+	if err != nil {
+		return nil, err
+	}
+
+	targets := p.buildTargets(project)
+	if len(targets) == 0 {
+		services := project.ServiceList()
+		prebuilt := make(map[string]string, len(services))
+		for _, service := range services {
+			prebuilt[service.Name] = service.Image
+		}
+		_, digest, _ := strings.Cut(services[0].Image, "@")
+		release := &models.Release{
+			ID:        helper.GenerateID(),
+			Project:   project.Name,
+			Branch:    project.Branch,
+			Image:     services[0].Image,
+			Images:    prebuilt,
+			Digest:    digest,
+			Status:    models.StatusReleasing,
+			Trigger:   trigger,
+			Spec:      *project,
+			StartedAt: time.Now(),
+		}
+		if err := p.claim(release, runners); err != nil {
+			return nil, err
+		}
+		go p.rollout(release, &release.Spec, runners)
+		return release, nil
+	}
+
+	builder, err := p.resolveBuilder(project)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +162,7 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 		Builder:     builder.ID,
 		BuilderName: builder.Name,
 		Trigger:     trigger,
+		Spec:        *project,
 		StartedAt:   time.Now(),
 	}
 
@@ -141,17 +177,92 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 		Branch:  project.Branch,
 		Commit:  commit,
 		Tags:    []string{TagLatest},
-		Targets: p.buildTargets(project),
+		Targets: targets,
 	}
 
 	logger.Info("[PIPELINE] release %s: building %s on %s", release.ID, project.Name, builder.Name)
 
 	if err := p.dispatch(builder.ID, ufp.MethodBuildRun, request); err != nil {
+		p.mu.Lock()
 		p.failRelease(release, fmt.Sprintf("dispatch build to %s: %v", builder.Name, err))
+		p.mu.Unlock()
 		return nil, err
 	}
 
 	return release, nil
+}
+
+func (p *Pipeline) validateProject(project *models.Project) error {
+	if !models.ValidResourceName(project.Name) {
+		return fmt.Errorf("invalid project name %q", project.Name)
+	}
+	if strings.TrimSpace(project.GitURL) == "" || strings.TrimSpace(project.Branch) == "" {
+		return fmt.Errorf("project %s requires a git URL and branch", project.Name)
+	}
+	seen := make(map[string]bool, len(project.Services))
+	for _, service := range project.ServiceList() {
+		if service.Name != "" && !models.ValidResourceName(service.Name) {
+			return fmt.Errorf("invalid service name %q", service.Name)
+		}
+		if seen[service.Name] {
+			return fmt.Errorf("service %q is configured more than once", service.Name)
+		}
+		seen[service.Name] = true
+		if !models.ValidSourcePath(service.BuildFile()) || !models.ValidSourcePath(service.BuildContext()) {
+			return fmt.Errorf("service %q build paths must stay inside the source directory", service.Name)
+		}
+		for _, port := range service.Ports {
+			if port.Host < 0 || port.Host > 65535 || port.Container < 1 || port.Container > 65535 {
+				return fmt.Errorf("service %q has an invalid port", service.Name)
+			}
+		}
+		if !service.Built() && !models.ValidDigestReference(service.Image) {
+			name := service.Name
+			if name == "" {
+				name = project.Name
+			}
+			return fmt.Errorf("service %s image must use repository@sha256:digest", name)
+		}
+	}
+	return nil
+}
+
+func (p *Pipeline) validateBuildResult(release *models.Release, status ufp.JobStatus) error {
+	expected := make(map[string]string)
+	first := ""
+	for _, service := range release.Spec.ServiceList() {
+		if !service.Built() {
+			continue
+		}
+		repository := p.imageRepository(&release.Spec, service)
+		expected[service.Name] = repository
+		if first == "" {
+			first = service.Name
+		}
+	}
+	if len(status.Images) != len(expected) {
+		return fmt.Errorf("builder returned %d images, expected %d", len(status.Images), len(expected))
+	}
+	for service, repository := range expected {
+		reference := status.Images[service]
+		if !models.ValidDigestReference(reference) || !strings.HasPrefix(reference, repository+"@sha256:") {
+			return fmt.Errorf("builder returned an invalid digest reference for service %q", service)
+		}
+	}
+	if status.Image == "" || status.Image != status.Images[first] {
+		return fmt.Errorf("builder returned an inconsistent primary image")
+	}
+	_, digest, _ := strings.Cut(status.Image, "@")
+	if status.Digest != digest {
+		return fmt.Errorf("builder returned an inconsistent image digest")
+	}
+	if !models.ValidGitCommit(status.Commit) {
+		return fmt.Errorf("builder returned an invalid resolved commit")
+	}
+	if release.Commit != "" && status.Commit != release.Commit && !strings.HasPrefix(status.Commit, release.Commit) {
+		return fmt.Errorf("builder resolved commit %s instead of %s", status.Commit, release.Commit)
+	}
+	return nil
 }
 
 func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, error) {
@@ -163,15 +274,47 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 		return nil, err
 	}
 
+	var source *models.Release
 	if imageRef == "" {
 		previous, err := p.store.LastSuccessfulRelease(projectName)
 		if err != nil || previous.Image == "" {
 			return nil, ErrNothingToRun
 		}
+		source = previous
 		imageRef = previous.Image
 	}
+	spec := *project
+	images := make(map[string]string)
+	digest := ""
+	commit := ""
+	if source != nil {
+		if source.Spec.Name != "" {
+			spec = source.Spec
+		}
+		images = source.Images
+		if len(images) == 0 {
+			images = map[string]string{"": source.Image}
+		}
+		digest = source.Digest
+		commit = source.Commit
+	} else {
+		if !models.ValidDigestReference(imageRef) {
+			return nil, fmt.Errorf("rollback image must use repository@sha256:digest")
+		}
+		builtServices := make([]models.Service, 0, 1)
+		for _, service := range spec.ServiceList() {
+			if service.Built() {
+				builtServices = append(builtServices, service)
+			}
+		}
+		if len(builtServices) != 1 {
+			return nil, fmt.Errorf("an explicit image rollback requires exactly one built service")
+		}
+		images[builtServices[0].Name] = imageRef
+		_, digest, _ = strings.Cut(imageRef, "@")
+	}
 
-	runners, err := p.resolveRunners(project)
+	runners, err := p.resolveRunners(&spec)
 	if err != nil {
 		return nil, err
 	}
@@ -179,10 +322,14 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 	release := &models.Release{
 		ID:        helper.GenerateID(),
 		Project:   project.Name,
-		Branch:    project.Branch,
+		Branch:    spec.Branch,
+		Commit:    commit,
 		Image:     imageRef,
+		Images:    images,
+		Digest:    digest,
 		Status:    models.StatusReleasing,
 		Trigger:   models.TriggerRollback,
+		Spec:      spec,
 		StartedAt: time.Now(),
 	}
 
@@ -191,65 +338,91 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 	}
 
 	logger.Info("[PIPELINE] release %s: rolling %s back to %s", release.ID, project.Name, imageRef)
-	go p.rollout(release, project, runners)
+	go p.rollout(release, &release.Spec, runners)
 
 	return release, nil
 }
 
 func (p *Pipeline) Stop(projectName string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.ensureIdle(projectName); err != nil {
+		return err
+	}
+
 	project, err := p.store.GetProject(projectName)
 	if err != nil {
 		return fmt.Errorf("%s: %w", projectName, ErrProjectNotFound)
 	}
 
-	var failure error
-	for _, agentID := range project.Runners {
-		if !p.link.Online(agentID) {
-			continue
-		}
-		if err := p.dispatch(agentID, ufp.MethodReleaseStop, ufp.ProjectRef{Project: project.Name}); err != nil {
-			failure = err
+	runners, err := p.resolveRunners(project)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, runner := range runners {
+		if err := p.dispatch(runner.ID, ufp.MethodReleaseStop, ufp.ProjectRef{Project: project.Name}); err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", runner.Name, err))
 		}
 	}
-	return failure
+	return errors.Join(failures...)
 }
 
 func (p *Pipeline) Remove(projectName string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.ensureIdle(projectName); err != nil {
+		return err
+	}
+
 	project, err := p.store.GetProject(projectName)
 	if err != nil {
 		return fmt.Errorf("%s: %w", projectName, ErrProjectNotFound)
 	}
 
-	var failure error
-	for _, agentID := range project.Runners {
-		if !p.link.Online(agentID) {
-			continue
-		}
-		if err := p.dispatch(agentID, ufp.MethodReleaseRemove, ufp.ProjectRef{Project: project.Name}); err != nil {
-			failure = err
+	runners, err := p.resolveRunners(project)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, runner := range runners {
+		if err := p.dispatch(runner.ID, ufp.MethodReleaseRemove, ufp.ProjectRef{Project: project.Name}); err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", runner.Name, err))
 		}
 	}
-	return failure
+	return errors.Join(failures...)
 }
 
 func (p *Pipeline) rollout(release *models.Release, project *models.Project, runners []models.Agent) {
 	request, err := p.releaseRequest(release, project)
 	if err != nil {
+		p.mu.Lock()
 		p.failRelease(release, err.Error())
+		p.mu.Unlock()
 		return
 	}
 
 	for _, runner := range runners {
 		if !p.link.Online(runner.ID) {
-			p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusSkipped, "agent offline")
+			p.mu.Lock()
+			if err := p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusSkipped, "agent offline"); err != nil {
+				logger.Error("[PIPELINE] update target %s/%s: %v", release.ID, runner.ID, err)
+			}
+			p.mu.Unlock()
 			continue
 		}
 		if err := p.dispatch(runner.ID, ufp.MethodReleaseRun, *request); err != nil {
-			p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusFailed, err.Error())
+			p.mu.Lock()
+			if saveErr := p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusFailed, err.Error()); saveErr != nil {
+				logger.Error("[PIPELINE] update target %s/%s: %v", release.ID, runner.ID, saveErr)
+			}
+			p.mu.Unlock()
 		}
 	}
 
+	p.mu.Lock()
 	p.settle(release.ID)
+	p.mu.Unlock()
 }
 
 func (p *Pipeline) buildTargets(project *models.Project) []ufp.BuildTarget {
@@ -354,10 +527,21 @@ func (p *Pipeline) resolveBuilder(project *models.Project) (*models.Agent, error
 
 func (p *Pipeline) resolveRunners(project *models.Project) ([]models.Agent, error) {
 	runners := make([]models.Agent, 0, len(project.Runners))
+	seen := make(map[string]bool, len(project.Runners))
 	for _, agentID := range project.Runners {
+		if seen[agentID] {
+			return nil, fmt.Errorf("%s: runner %s is configured more than once", project.Name, agentID)
+		}
+		seen[agentID] = true
 		runner, err := p.store.GetAgent(agentID)
-		if err != nil || !runner.HasRole(models.RoleRunner) {
-			continue
+		if err != nil {
+			return nil, fmt.Errorf("%s: configured runner %s was not found", project.Name, agentID)
+		}
+		if !runner.HasRole(models.RoleRunner) {
+			return nil, fmt.Errorf("%s: %w", runner.Name, ErrNotRunner)
+		}
+		if !p.link.Online(runner.ID) {
+			return nil, fmt.Errorf("%s: %w", runner.Name, ErrRunnerOffline)
 		}
 		runners = append(runners, *runner)
 	}
@@ -375,42 +559,33 @@ func (p *Pipeline) claim(release *models.Release, runners []models.Agent) error 
 	if err := p.ensureIdle(release.Project); err != nil {
 		return err
 	}
-	if err := p.store.CreateRelease(release); err != nil {
+	targets := p.releaseTargets(release, runners)
+	if err := p.store.ClaimRelease(release, targets); err != nil {
 		return fmt.Errorf("record release: %w", err)
 	}
-
-	p.seedTargets(release, runners)
 	return nil
 }
 
 func (p *Pipeline) ensureIdle(project string) error {
-	releases, err := p.store.ListReleasesByProject(project, activeReleaseWindow)
+	active, err := p.store.ProjectHasActiveRelease(project)
 	if err != nil {
 		return err
 	}
-
-	for _, release := range releases {
-		if !release.Status.Done() {
-			return fmt.Errorf("%s: %w", project, ErrReleaseInFlight)
-		}
+	if active {
+		return fmt.Errorf("%s: %w", project, ErrReleaseInFlight)
 	}
 	return nil
 }
 
-func (p *Pipeline) seedTargets(release *models.Release, runners []models.Agent) {
+func (p *Pipeline) releaseTargets(release *models.Release, runners []models.Agent) []models.ReleaseTarget {
+	targets := make([]models.ReleaseTarget, 0, len(runners))
 	for _, runner := range runners {
-		status := models.StatusPending
-		message := ""
-		if !p.link.Online(runner.ID) {
-			status = models.StatusSkipped
-			message = "agent offline"
-		}
-		p.store.SaveReleaseTarget(&models.ReleaseTarget{
+		targets = append(targets, models.ReleaseTarget{
 			ReleaseID: release.ID,
 			AgentID:   runner.ID,
 			AgentName: runner.Name,
-			Status:    status,
-			Message:   message,
+			Status:    models.StatusPending,
 		})
 	}
+	return targets
 }

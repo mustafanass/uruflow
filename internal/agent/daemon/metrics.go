@@ -58,6 +58,7 @@ func (d *Daemon) publishMetrics(ctx context.Context) {
 		return
 	}
 
+	containers, available := d.collectContainers(ctx)
 	payload := ufp.Metrics{
 		Timestamp: time.Now().Unix(),
 		System: ufp.SystemMetrics{
@@ -71,20 +72,21 @@ func (d *Daemon) publishMetrics(ctx context.Context) {
 			LoadAvg:       system.LoadAvg,
 			Uptime:        system.Uptime,
 		},
-		Containers: d.collectContainers(ctx),
+		ContainersAvailable: available,
+		Containers:          containers,
 	}
 
 	d.send(ufp.TopicMetrics, payload)
 }
 
-func (d *Daemon) collectContainers(ctx context.Context) []ufp.ContainerStatus {
+func (d *Daemon) collectContainers(ctx context.Context) ([]ufp.ContainerStatus, bool) {
 	listCtx, cancel := context.WithTimeout(ctx, listTimeout)
 	defer cancel()
 
 	containers, err := d.docker.ListContainers(listCtx, true)
 	if err != nil {
 		logger.Warn("[AGENT] container listing failed: %v", err)
-		return nil
+		return nil, false
 	}
 
 	reported := make([]ufp.ContainerStatus, 0, len(containers))
@@ -120,7 +122,7 @@ func (d *Daemon) collectContainers(ctx context.Context) []ufp.ContainerStatus {
 		reported = append(reported, status)
 	}
 
-	return reported
+	return reported, true
 }
 
 func shortID(id string) string {

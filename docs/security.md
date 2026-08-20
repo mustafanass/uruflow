@@ -37,7 +37,7 @@ means the link keeps working when the server's address changes without reissuing
 
 ## 3. Agent Link
 
-TLS 1.2 or later, always. There is no plaintext mode and no skip-verify option.
+TLS 1.3, always. There is no plaintext mode and no skip-verify option.
 
 The server does not use client certificates. Agent identity is established by challenge-response:
 
@@ -63,9 +63,10 @@ the server. Anyone who can read either can impersonate that agent.
 
 ## 4. Role Enforcement
 
-An agent declares its roles in the handshake. Enforcement happens twice, independently:
+An agent declares its roles in the handshake. The declaration must exactly match the roles stored
+when the agent was enrolled. Enforcement then happens twice, independently:
 
-- the **server** refuses to dispatch `build.run` to an agent that never claimed `builder`
+- the **server** refuses to dispatch `build.run` to an agent not enrolled as `builder`
 - the **agent** refuses a `build.run` it was not configured for
 
 Neither side relies on the other being correct. The practical effect is a boundary on source-code
@@ -83,9 +84,10 @@ are not written into project files or passed on command lines.
 A builder installs the CA into `/etc/docker/certs.d/<registry>/ca.crt` and runs `docker login` itself.
 Both require root; see [Operations](operations.md#agent-permissions).
 
-Registry credentials are attached **only** to pulls whose image belongs to the URUFLOW registry. A
-service using a public image such as `redis:7-alpine` is pulled anonymously, so the registry password
-is never presented to Docker Hub or any other host.
+Registry credentials are attached **only** to pulls whose image belongs to the URUFLOW registry, so
+the registry password is never presented to Docker Hub or another host. Every released image,
+including a public prebuilt image, must be pinned as `repository@sha256:digest`. Builder results are
+checked against the expected repository and digest format before a runner receives them.
 
 Anonymous requests are refused with `401`, and a client that does not trust the URUFLOW CA cannot
 complete the TLS handshake.
@@ -97,12 +99,13 @@ complete the TLS handshake.
 | GitHub | `X-Hub-Signature-256` | HMAC-SHA256 over the raw body, compared in constant time |
 | GitLab | `X-Gitlab-Token` | Constant-time comparison against the secret |
 
-An invalid signature is refused with `401`. **If `webhook.secret` is empty, verification is skipped and
-any request is accepted** — that is a deliberate escape hatch for local testing and must not be used
-on a reachable network.
+An invalid signature is refused with `401`, and an empty `webhook.secret` prevents startup. The HTTP
+listener uses TLS by default; plaintext is accepted only on a loopback webhook bind for a local
+TLS-terminating proxy. A public certificate can be configured separately from URUFLOW's private agent
+certificate. GitHub delivery ids and GitLab event UUIDs are retained for 30 days to reject replayed pushes.
 
-The webhook endpoint can start a build of any auto-deploy project. Treat the secret as a deployment
-credential.
+The webhook endpoint can start a build of an auto-deploy project only when both repository identity
+and branch match. Treat the secret as a deployment credential.
 
 ## 7. Secrets
 
@@ -168,7 +171,7 @@ The control surface is the terminal interface, which runs on the server host. Ac
 therefore whoever can log into that host — a small, simple, and easily reasoned-about model, provided
 you treat server shell access as equivalent to full deployment authority.
 
-The HTTP listener exposes only two routes: the webhook path and `/health`. There is no HTTP API for
+The HTTPS listener exposes only two routes: the webhook path and `/health`. There is no HTTP API for
 managing projects, agents or releases, so there is no remotely reachable management surface to
 misconfigure.
 

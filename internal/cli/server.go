@@ -30,13 +30,14 @@ import (
 	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 	"github.com/mustafanass/uruflow/internal/tui"
+	"github.com/mustafanass/uruflow/internal/version"
 	"github.com/mustafanass/uruflow/pkg/helper"
 	"github.com/mustafanass/uruflow/pkg/logger"
 	"github.com/spf13/cobra"
 )
 
 const (
-	Version         = "2.0.0"
+	Version         = version.Current
 	shutdownTimeout = 15 * time.Second
 )
 

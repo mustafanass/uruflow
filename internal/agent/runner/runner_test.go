@@ -19,9 +19,13 @@
 package runner
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/mustafanass/uruflow/internal/docker"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 func TestCredentialsOnlyGoToTheUruflowRegistry(t *testing.T) {
@@ -62,4 +66,82 @@ func TestContainerNaming(t *testing.T) {
 	if name := ContainerName("api-prod", "worker"); name != "uruflow-api-prod-worker" {
 		t.Errorf("multi-service name = %q", name)
 	}
+}
+
+func TestRenameFailureRestartsTheCurrentContainer(t *testing.T) {
+	engine := &fakeEngine{
+		exists:    map[string]bool{"uruflow-api": true},
+		renameErr: errors.New("rename failed"),
+	}
+	runner := New(engine, func() *docker.Auth { return nil })
+	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+		JobID: "r1", Project: "api", Services: []ufp.ServiceSpec{{Image: "repo/api@sha256:" + string(make([]byte, 64))}},
+	}, func(string, string) {})
+	if err == nil {
+		t.Fatal("release succeeded after rename failed")
+	}
+	if len(engine.started) != 1 || engine.started[0] != "uruflow-api" {
+		t.Fatalf("started = %v", engine.started)
+	}
+	for _, removed := range engine.removed {
+		if removed == "uruflow-api" {
+			t.Fatal("the current container was removed")
+		}
+	}
+}
+
+func TestReleaseDoesNotTouchAnUnownedNameCollision(t *testing.T) {
+	engine := &fakeEngine{
+		exists:  map[string]bool{"uruflow-api": true},
+		unowned: map[string]bool{"uruflow-api": true},
+	}
+	runner := New(engine, func() *docker.Auth { return nil })
+	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+		JobID: "r1", Project: "api", Services: []ufp.ServiceSpec{{Image: "repo/api@sha256:digest"}},
+	}, func(string, string) {})
+	if err == nil {
+		t.Fatal("release replaced an unowned container")
+	}
+	if len(engine.started) != 0 || len(engine.removed) != 0 {
+		t.Fatalf("unowned container was changed: started=%v removed=%v", engine.started, engine.removed)
+	}
+}
+
+type fakeEngine struct {
+	exists    map[string]bool
+	unowned   map[string]bool
+	renameErr error
+	started   []string
+	removed   []string
+}
+
+func (f *fakeEngine) Pull(context.Context, string, *docker.Auth, func(string)) error { return nil }
+func (f *fakeEngine) ContainerOwnership(_ context.Context, name, _ string) (bool, bool, error) {
+	exists := f.exists[name]
+	return exists, exists && !f.unowned[name], nil
+}
+func (f *fakeEngine) Stop(context.Context, string, time.Duration) error { return nil }
+func (f *fakeEngine) Rename(_ context.Context, from, to string) error {
+	if f.renameErr != nil {
+		return f.renameErr
+	}
+	f.exists[from] = false
+	f.exists[to] = true
+	return nil
+}
+func (f *fakeEngine) Run(context.Context, docker.Spec) (string, error) { return "new", nil }
+func (f *fakeEngine) WaitReady(context.Context, string, time.Duration, time.Duration) error {
+	return nil
+}
+func (f *fakeEngine) Remove(_ context.Context, name string, _ bool) error {
+	f.removed = append(f.removed, name)
+	f.exists[name] = false
+	return nil
+}
+func (f *fakeEngine) Start(_ context.Context, name string) error {
+	f.started = append(f.started, name)
+	return nil
+}
+func (f *fakeEngine) ListContainers(context.Context, bool) ([]docker.Container, error) {
+	return nil, nil
 }

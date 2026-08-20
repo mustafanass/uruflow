@@ -27,17 +27,48 @@ import (
 )
 
 const releaseColumns = `id, project, branch, commit_sha, image, images, digest, status,
-	builder, builder_name, trigger_type, message, started_at, ended_at, duration_ms`
+	builder, builder_name, trigger_type, message, spec, started_at, ended_at, duration_ms`
 
 func (s *Store) CreateRelease(release *models.Release) error {
 	_, err := s.db.Exec(`
 		INSERT INTO releases (id, project, branch, commit_sha, image, images, digest, status,
-		                      builder, builder_name, trigger_type, message, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                      builder, builder_name, trigger_type, message, spec, started_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		release.ID, release.Project, release.Branch, release.Commit, release.Image,
 		encodeJSON(release.Images), release.Digest, release.Status, release.Builder,
-		release.BuilderName, release.Trigger, release.Message, release.StartedAt)
+		release.BuilderName, release.Trigger, release.Message, encodeJSON(release.Spec), release.StartedAt)
 	return err
+}
+
+func (s *Store) ClaimRelease(release *models.Release, targets []models.ReleaseTarget) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		INSERT INTO releases (id, project, branch, commit_sha, image, images, digest, status,
+		                      builder, builder_name, trigger_type, message, spec, started_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		release.ID, release.Project, release.Branch, release.Commit, release.Image,
+		encodeJSON(release.Images), release.Digest, release.Status, release.Builder,
+		release.BuilderName, release.Trigger, release.Message, encodeJSON(release.Spec), release.StartedAt); err != nil {
+		return err
+	}
+
+	for index := range targets {
+		target := &targets[index]
+		if _, err := tx.Exec(`
+			INSERT INTO release_targets (release_id, agent_id, agent_name, status, message, ended_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			target.ReleaseID, target.AgentID, target.AgentName, target.Status,
+			target.Message, nullTime(target.EndedAt)); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (s *Store) UpdateRelease(release *models.Release) error {
@@ -70,9 +101,23 @@ func (s *Store) ListReleases(limit int) ([]models.Release, error) {
 		FROM releases ORDER BY started_at DESC LIMIT ?`, limit)
 }
 
+func (s *Store) ListActiveReleases() ([]models.Release, error) {
+	return s.queryReleases(`SELECT `+releaseColumns+`
+		FROM releases WHERE status NOT IN (?, ?) ORDER BY started_at`,
+		models.StatusSucceeded, models.StatusFailed)
+}
+
 func (s *Store) ListReleasesByProject(project string, limit int) ([]models.Release, error) {
 	return s.queryReleases(`SELECT `+releaseColumns+`
 		FROM releases WHERE project = ? ORDER BY started_at DESC LIMIT ?`, project, limit)
+}
+
+func (s *Store) ProjectHasActiveRelease(project string) (bool, error) {
+	var active bool
+	err := s.db.QueryRow(`SELECT EXISTS(
+		SELECT 1 FROM releases WHERE project = ? AND status NOT IN (?, ?)
+	)`, project, models.StatusSucceeded, models.StatusFailed).Scan(&active)
+	return active, err
 }
 
 func (s *Store) LastSuccessfulRelease(project string) (*models.Release, error) {
@@ -140,11 +185,11 @@ func (s *Store) queryReleases(query string, args ...any) ([]models.Release, erro
 func scanRelease(row scanner) (*models.Release, error) {
 	var release models.Release
 	var endedAt sql.NullTime
-	var images string
+	var images, spec string
 
 	err := row.Scan(&release.ID, &release.Project, &release.Branch, &release.Commit,
 		&release.Image, &images, &release.Digest, &release.Status, &release.Builder,
-		&release.BuilderName, &release.Trigger, &release.Message,
+		&release.BuilderName, &release.Trigger, &release.Message, &spec,
 		&release.StartedAt, &endedAt, &release.Duration)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, storage.ErrNotFound
@@ -154,6 +199,7 @@ func scanRelease(row scanner) (*models.Release, error) {
 	}
 
 	decodeJSON(images, &release.Images)
+	decodeJSON(spec, &release.Spec)
 	release.EndedAt = timePointer(endedAt)
 	return &release, nil
 }

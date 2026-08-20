@@ -104,6 +104,11 @@ func (l *Loader) loadProject(dir, folder string, defaults Defaults, result *Resu
 	if definition.Name == "" {
 		definition.Name = folder
 	}
+	if err := validName(definition.Name); err != nil {
+		result.Problems = append(result.Problems, Problem{
+			Path: definitionPath, Reason: err})
+		return
+	}
 	if definition.Git == "" {
 		result.Problems = append(result.Problems, Problem{
 			Path: definitionPath, Reason: errors.New("git is required")})
@@ -142,6 +147,15 @@ func (l *Loader) loadProject(dir, folder string, defaults Defaults, result *Resu
 }
 
 func (l *Loader) buildProject(dir, path, envName string, definition Definition, defaults Defaults) (*models.Project, error) {
+	if err := validName(envName); err != nil {
+		return nil, err
+	}
+	if err := validateBuildPath("dockerfile", definition.Dockerfile); err != nil {
+		return nil, err
+	}
+	if err := validateBuildPath("context", definition.Context); err != nil {
+		return nil, err
+	}
 	environment, err := readEnvironment(path)
 	if err != nil {
 		return nil, err
@@ -233,9 +247,21 @@ func buildServices(declared map[string]Service) ([]models.Service, error) {
 	services := make([]models.Service, 0, len(names))
 	for _, name := range names {
 		declaration := declared[name]
+		if err := validName(name); err != nil {
+			return nil, fmt.Errorf("service name: %w", err)
+		}
 
 		if declaration.Image != "" && declaration.Dockerfile != "" {
 			return nil, fmt.Errorf("service %q sets both image and dockerfile", name)
+		}
+		if declaration.Image != "" && !models.ValidDigestReference(declaration.Image) {
+			return nil, fmt.Errorf("service %q image must use repository@sha256:digest", name)
+		}
+		if err := validateBuildPath("service "+name+" dockerfile", declaration.Dockerfile); err != nil {
+			return nil, err
+		}
+		if err := validateBuildPath("service "+name+" context", declaration.Context); err != nil {
+			return nil, err
 		}
 
 		ports, err := models.ParsePorts(declaration.Ports)
@@ -263,6 +289,13 @@ func buildServices(declared map[string]Service) ([]models.Service, error) {
 	}
 
 	return services, nil
+}
+
+func validateBuildPath(label, value string) error {
+	if !models.ValidSourcePath(value) {
+		return fmt.Errorf("%s %q escapes the source directory", label, value)
+	}
+	return nil
 }
 
 func (l *Loader) readEnvFile(dir, envName string) (map[string]string, error) {

@@ -19,7 +19,12 @@
 package services
 
 import (
+	"path/filepath"
 	"testing"
+
+	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 )
 
 func TestNormalizeGitURLTreatsEveryFormAsOneRepository(t *testing.T) {
@@ -41,6 +46,38 @@ func TestNormalizeGitURLTreatsEveryFormAsOneRepository(t *testing.T) {
 		if got := normalizeGitURL(form); got != want {
 			t.Errorf("%q normalised to %q, want %q", form, got, want)
 		}
+	}
+}
+
+func TestWebhookDoesNotMatchAProjectByNameAlone(t *testing.T) {
+	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SaveProject(&models.Project{
+		Name: "api", GitURL: "https://github.com/other/api.git", Branch: "main", AutoDeploy: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	service := NewWebhookService(config.Default(), store, nil)
+	matches, err := service.match(&Push{
+		Repository: "api", Branch: "main", Identities: []string{"https://github.com/acme/api.git"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("matched unrelated repository: %+v", matches)
+	}
+}
+
+func TestEmptyWebhookSecretRejectsAuthentication(t *testing.T) {
+	cfg := config.Default()
+	cfg.Webhook.Secret = ""
+	service := NewWebhookService(cfg, nil, nil)
+	if service.VerifyGitHub([]byte("payload"), "") || service.VerifyGitLab("") {
+		t.Fatal("an empty secret disabled webhook authentication")
 	}
 }
 
@@ -67,14 +104,14 @@ func TestParsePushCollectsEveryIdentity(t *testing.T) {
 			"clone_url": "https://github.com/acme/api.git",
 			"ssh_url": "git@github.com:acme/api.git"
 		},
-		"head_commit": {"id": "abc123"}
+			"head_commit": {"id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 	}`)
 
 	push, err := parsePush(ProviderGitHub, payload)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if push.Branch != "develop" || push.Repository != "api" || push.Commit != "abc123" {
+	if push.Branch != "develop" || push.Repository != "api" || push.Commit != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Fatalf("push = %+v", push)
 	}
 	for _, form := range []string{
@@ -94,7 +131,7 @@ func TestParsePushCollectsEveryIdentity(t *testing.T) {
 }
 
 func TestParsePushRejectsTags(t *testing.T) {
-	payload := []byte(`{"ref":"refs/tags/v1","repository":{"name":"api"},"head_commit":{"id":"a"}}`)
+	payload := []byte(`{"ref":"refs/tags/v1","repository":{"name":"api"},"head_commit":{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`)
 
 	if _, err := parsePush(ProviderGitHub, payload); err == nil {
 		t.Error("a tag push should not be treated as a branch push")
@@ -110,14 +147,14 @@ func TestParsePushReadsGitLab(t *testing.T) {
 			"git_ssh_url": "git@gitlab.com:acme/api.git",
 			"git_http_url": "https://gitlab.com/acme/api.git"
 		},
-		"checkout_sha": "def456"
+		"checkout_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	}`)
 
 	push, err := parsePush(ProviderGitLab, payload)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if push.Branch != "main" || push.Commit != "def456" {
+	if push.Branch != "main" || push.Commit != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
 		t.Fatalf("push = %+v", push)
 	}
 	if !sameRepository("https://gitlab.com/acme/api", push.Identities) {

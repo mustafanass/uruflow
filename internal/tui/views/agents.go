@@ -27,6 +27,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mustafanass/uruflow/internal/api"
 	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/services"
 	"github.com/mustafanass/uruflow/internal/tui/components"
 	"github.com/mustafanass/uruflow/internal/tui/theme"
 	"github.com/mustafanass/uruflow/internal/ufp"
@@ -203,6 +204,10 @@ func (a *Agents) create() {
 		a.Notify(missing+" is required", "error")
 		return
 	}
+	if !models.ValidResourceName(a.form.Value(0)) {
+		a.Notify("agent name must use lowercase letters, digits, ., - or _", "error")
+		return
+	}
 
 	roles := make([]models.Role, 0, 2)
 	for _, value := range a.form.Values(1) {
@@ -230,7 +235,7 @@ func (a *Agents) deleteKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "y":
 		if agent := a.selected(); agent != nil {
-			a.Fail(a.server.Store().DeleteAgent(agent.ID))
+			a.Fail(services.DeleteAgent(a.server.Store(), a.server.Link().Revoke, agent.ID))
 		}
 		a.mode = agentList
 		a.reload()

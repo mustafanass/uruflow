@@ -20,6 +20,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,27 +37,33 @@ const (
 	loginTimeout   = 30 * time.Second
 )
 
-func (d *Daemon) applyRegistry(config ufp.RegistryConfig) {
-	d.registryMu.Lock()
+func (d *Daemon) applyRegistry(ctx context.Context, config ufp.RegistryConfig) error {
+	d.registryMu.RLock()
 	changed := d.registry != config
-	d.registry = config
-	d.registryMu.Unlock()
+	d.registryMu.RUnlock()
 
 	if !changed {
-		return
+		return nil
+	}
+	if config.Host == "" || config.Username == "" || config.Password == "" || config.CACert == "" {
+		return fmt.Errorf("registry configuration is incomplete")
 	}
 
-	logger.Info("[AGENT] registry %s configured", config.Host)
-
 	if err := installCA(config); err != nil {
-		logger.Warn("[AGENT] could not install the registry CA: %v", err)
+		return fmt.Errorf("install registry CA: %w", err)
 	}
 
 	if d.builder != nil {
-		if err := login(config); err != nil {
-			logger.Warn("[AGENT] registry login failed: %v", err)
+		if err := login(ctx, config); err != nil {
+			return fmt.Errorf("registry login: %w", err)
 		}
 	}
+
+	d.registryMu.Lock()
+	d.registry = config
+	d.registryMu.Unlock()
+	logger.Info("[AGENT] registry %s configured", config.Host)
+	return nil
 }
 
 func (d *Daemon) registryAuth() *docker.Auth {
@@ -82,11 +89,15 @@ func installCA(config ufp.RegistryConfig) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "ca.crt"), []byte(config.CACert), 0o644)
+	path := filepath.Join(dir, "ca.crt")
+	if current, err := os.ReadFile(path); err == nil && string(current) == config.CACert {
+		return nil
+	}
+	return os.WriteFile(path, []byte(config.CACert), 0o644)
 }
 
-func login(config ufp.RegistryConfig) error {
-	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
+func login(parent context.Context, config ufp.RegistryConfig) error {
+	ctx, cancel := context.WithTimeout(parent, loginTimeout)
 	defer cancel()
 
 	command := exec.CommandContext(ctx, "docker", "login", config.Host,

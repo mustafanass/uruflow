@@ -136,9 +136,10 @@ type JobStatus struct {
 }
 
 type Metrics struct {
-	Timestamp  int64             `json:"timestamp"`
-	System     SystemMetrics     `json:"system"`
-	Containers []ContainerStatus `json:"containers,omitempty"`
+	Timestamp           int64             `json:"timestamp"`
+	System              SystemMetrics     `json:"system"`
+	ContainersAvailable bool              `json:"containers_available"`
+	Containers          []ContainerStatus `json:"containers,omitempty"`
 }
 
 type SystemMetrics struct {

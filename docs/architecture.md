@@ -8,15 +8,15 @@ engineers evaluating the design. For vocabulary, read [Core Concepts](concepts.m
 URUFLOW is a control plane that instructs agents. It holds no workloads itself, and agents make no
 decisions.
 
-[![URUFLOW architecture: the server, builder and runner agents and the private registry; the UFP/2 frame and envelopes; the deployment flow; and the components on each side](../assets/uruflow-arch.png)](../assets/uruflow-arch.png)
+[![URUFLOW architecture: the server, builder and runner agents and the private registry; the UFP frame and envelopes; the deployment flow; and the components on each side](../assets/uruflow-arch.png)](../assets/uruflow-arch.png)
 
 The four panels are expanded in the sections below: the system model here, the wire format in
-[UFP/2 Protocol](protocol.md), and the flow in [Deployments](deployments.md).
+[UFP Protocol](protocol.md), and the flow in [Deployments](deployments.md).
 
 Two properties define the system:
 
 - **Build once, release the same artifact everywhere.** A commit is built exactly once. Every runner
-  receives the identical image by digest-addressable tag.
+  receives the identical image by immutable digest.
 - **Agents connect outward.** The server never dials an agent, so agents may sit behind NAT. A
   disconnected agent is detected by the read deadline on the link, not by polling.
 
@@ -59,9 +59,8 @@ Authority is enforced at the point of dispatch, not by convention.
 | Builder | Clone source, build images, push to the registry | Run released workloads unless it also holds the runner role |
 | Runner | Pull images, run, stop, remove, stream logs | See source code, Dockerfiles, or build tooling |
 
-An agent declares its roles in the handshake. The server refuses a build dispatch to an agent that
-never claimed `builder`, and the agent independently refuses a `build.run` it is not configured for.
-Both checks exist because neither side should rely on the other being correct.
+An agent declares its roles in the handshake, and the server requires an exact match with the roles
+stored at enrollment. The server and agent then enforce those roles independently for every operation.
 
 ### Where Things Exist
 
@@ -89,7 +88,7 @@ sequenceDiagram
     B-->>S: RESPONSE accepted
     B->>B: clone, checkout, build
     B->>G: docker push (sha + latest)
-    B-->>S: EVENT job.status success (image, commit, digest)
+    B-->>S: EVENT job.status success (digest references, commit)
     S->>R: REQUEST release.run
     R-->>S: RESPONSE accepted
     R->>G: docker pull

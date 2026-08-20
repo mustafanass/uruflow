@@ -40,8 +40,12 @@ registry:
   socket: /var/run/docker.sock
 
 webhook:
+  host: 0.0.0.0
   path: /webhook
   secret: <generated>
+  tls: true
+  cert: /etc/letsencrypt/live/uruflow.example.com/fullchain.pem
+  key: /etc/letsencrypt/live/uruflow.example.com/privkey.pem
 ```
 
 ### server
@@ -65,7 +69,7 @@ because it is placed in the server certificate that agents verify.
 | `port` | `5000` | Host port the registry is published on |
 | `namespace` | `uruflow` | Path segment before the project name |
 | `username` | `uruflow` | Registry user |
-| `password` | generated | Registry password; written to `htpasswd` with bcrypt |
+| `password` | generated | Registry password; at least 16 characters, written to `htpasswd` with bcrypt |
 | `image` | `registry:2` | Registry image to run |
 | `socket` | `/var/run/docker.sock` | Docker socket the server uses to run the registry |
 
@@ -78,11 +82,20 @@ different names. Setting both to the same value is normal.
 
 | Field | Default | Meaning |
 | :--- | :--- | :--- |
+| `host` | `server.host` | Interface the webhook and health listener bind to |
 | `path` | `/webhook` | Path receiving pushes |
-| `secret` | generated | Shared secret for signature verification |
+| `secret` | generated | Shared secret for signature verification; at least 32 characters |
+| `tls` | `true` | Serve the webhook and health routes over HTTPS |
+| `cert` | generated server certificate | TLS certificate path; set with `key` for a publicly trusted certificate |
+| `key` | generated server key | TLS private-key path; set with `cert` |
 
-If `secret` is empty, signature verification is skipped and any request is accepted. Do not run that
-way on a reachable network.
+The secret is required. TLS may only be disabled when the effective webhook host is a loopback address, which is
+useful when a local reverse proxy terminates HTTPS. Set `webhook.host: 127.0.0.1` to bind only this
+listener to loopback while agents continue using `server.host: 0.0.0.0`.
+
+The generated certificate is signed by URUFLOW's private CA. Public GitHub and GitLab services do not
+trust that CA, so use a publicly trusted `cert` and `key`, or place an HTTPS reverse proxy in front of
+a loopback-only plaintext listener.
 
 ## 3. Agent — `agent.yaml`
 
@@ -194,12 +207,12 @@ environment.
 
 ## 6. Webhooks
 
-Point your git host at `http://<server>:<http_port><webhook.path>`.
+Point your git host at `https://<server>:<http_port><webhook.path>`.
 
 ### GitHub
 
 1. Repository → Settings → Webhooks → Add webhook
-2. Payload URL: `http://your-server:9000/webhook`
+2. Payload URL: `https://your-server:9000/webhook`
 3. Content type: `application/json`
 4. Secret: the `webhook.secret` from `config.yaml`
 5. Events: just the push event
@@ -209,11 +222,14 @@ Verified with the `X-Hub-Signature-256` header using HMAC-SHA256 over the raw bo
 ### GitLab
 
 1. Project → Settings → Webhooks
-2. URL: `http://your-server:9000/webhook`
+2. URL: `https://your-server:9000/webhook`
 3. Secret token: the `webhook.secret` from `config.yaml`
 4. Trigger: push events
 
 Verified by comparing the `X-Gitlab-Token` header against the secret.
+
+GitHub's delivery id and GitLab's event UUID are stored for 30 days. Replayed deliveries return
+`202 Accepted` without starting another release. Only push event headers are accepted.
 
 ### Routing
 

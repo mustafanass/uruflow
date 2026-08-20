@@ -217,3 +217,19 @@ func TestDeleteAgentCascadesContainers(t *testing.T) {
 		t.Fatal("deleting a missing agent should report not found")
 	}
 }
+
+func TestWebhookDeliveriesAreClaimedOnce(t *testing.T) {
+	store := newTestStore(t)
+	claimed, err := store.ClaimWebhookDelivery("github", "delivery-1")
+	if err != nil || !claimed {
+		t.Fatalf("first claim = %v, %v", claimed, err)
+	}
+	claimed, err = store.ClaimWebhookDelivery("github", "delivery-1")
+	if err != nil || claimed {
+		t.Fatalf("duplicate claim = %v, %v", claimed, err)
+	}
+	claimed, err = store.ClaimWebhookDelivery("gitlab", "delivery-1")
+	if err != nil || !claimed {
+		t.Fatalf("provider-specific claim = %v, %v", claimed, err)
+	}
+}

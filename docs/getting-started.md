@@ -186,15 +186,15 @@ Rollback re-releases the image from the last successful release. It does not reb
 is byte-identical to what ran before.
 
 ```text
-r2  succeeded  demo:8f2ac31b9d04   ← current
-r1  succeeded  demo:1c9d7e5a2f88   ← rollback releases this
+r2  succeeded  demo@sha256:8f2a…   ← current
+r1  succeeded  demo@sha256:1c9d…   ← rollback releases this
 ```
 
 Rollback fails with `no successful release to roll back to` if the project has never had one.
 
 ## 10. Deploy on Push
 
-Add a webhook at your git host pointing to `http://<server>:9000/webhook`, using the `webhook.secret`
+Add a webhook at your git host pointing to `https://<server>:9000/webhook`, using the `webhook.secret`
 from `config.yaml`. Pushes to a project's branch then deploy it automatically.
 
 See [Configuration](configuration.md#6-webhooks) for GitHub and GitLab setup and how pushes are matched.

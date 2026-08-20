@@ -18,7 +18,13 @@
 
 package docker
 
-import "testing"
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
 
 func TestStateFailedDetectsTerminalContainers(t *testing.T) {
 	cases := []struct {
@@ -62,4 +68,30 @@ func TestStateReadyOnlyWhenRunning(t *testing.T) {
 			t.Errorf("%s: Ready() = %v, want %v", test.name, ready, test.ready)
 		}
 	}
+}
+
+func TestDigestReferenceIsSplitForPull(t *testing.T) {
+	repository, digest := SplitTag("registry.example/api@sha256:abc")
+	if repository != "registry.example/api" || digest != "sha256:abc" {
+		t.Fatalf("split = %q, %q", repository, digest)
+	}
+}
+
+func TestPullRejectsMalformedProgress(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"status":"pulling"`)),
+			Header:     make(http.Header),
+		}, nil
+	})}}
+	if err := client.Pull(context.Background(), "registry.example/api@sha256:abc", nil, nil); err == nil {
+		t.Fatal("malformed progress stream was accepted")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
 }

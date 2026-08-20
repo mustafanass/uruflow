@@ -25,20 +25,23 @@ import (
 )
 
 func GenerateSecret() string {
-	bytes := make([]byte, 16)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+	return randomHex(16)
 }
 
 func GenerateToken() string {
-	bytes := make([]byte, 32)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+	return randomHex(32)
 }
 
 func GenerateID() string {
-	bytes := make([]byte, 8)
-	rand.Read(bytes)
+	return randomHex(8)
+
+}
+
+func randomHex(size int) string {
+	bytes := make([]byte, size)
+	if _, err := rand.Read(bytes); err != nil {
+		panic(err)
+	}
 	return hex.EncodeToString(bytes)
 }
 

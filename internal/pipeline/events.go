@@ -33,7 +33,10 @@ var _ link.Events = (*Pipeline)(nil)
 func (p *Pipeline) AgentConnected(agent *models.Agent) {}
 
 func (p *Pipeline) AgentDisconnected(agentID string) {
-	releases, err := p.store.ListReleases(activeReleaseWindow)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	releases, err := p.store.ListActiveReleases()
 	if err != nil {
 		return
 	}
@@ -55,7 +58,9 @@ func (p *Pipeline) AgentDisconnected(agentID string) {
 
 		for _, target := range release.Targets {
 			if target.AgentID == agentID && !target.Status.Done() {
-				p.finishTarget(release.ID, agentID, target.AgentName, models.StatusFailed, "agent disconnected")
+				if err := p.finishTarget(release.ID, agentID, target.AgentName, models.StatusFailed, "agent disconnected"); err != nil {
+					logger.Error("[PIPELINE] update disconnected target %s/%s: %v", release.ID, agentID, err)
+				}
 			}
 		}
 		p.settle(release.ID)
@@ -65,19 +70,33 @@ func (p *Pipeline) AgentDisconnected(agentID string) {
 func (p *Pipeline) ContainerLog(agentID string, entry ufp.ContainerLog) {}
 
 func (p *Pipeline) JobLog(agentID string, entry ufp.JobLog) {
-	p.store.AppendLog(&models.LogLine{
+	release, err := p.store.GetRelease(entry.JobID)
+	if err != nil || !p.acceptsEvent(release, agentID, entry.Stage) {
+		logger.Warn("[PIPELINE] rejected %s log for %s from %s", entry.Stage, entry.JobID, agentID)
+		return
+	}
+	if err := p.store.AppendLog(&models.LogLine{
 		ReleaseID: entry.JobID,
 		Stage:     entry.Stage,
 		AgentName: p.agentName(agentID),
 		Stream:    entry.Stream,
 		Line:      entry.Line,
 		Timestamp: time.Unix(entry.Timestamp, 0),
-	})
+	}); err != nil {
+		logger.Error("[PIPELINE] append log for %s: %v", entry.JobID, err)
+	}
 }
 
 func (p *Pipeline) JobStatus(agentID string, status ufp.JobStatus) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	release, err := p.store.GetRelease(status.JobID)
 	if err != nil {
+		return
+	}
+	if !p.acceptsEvent(release, agentID, status.Stage) {
+		logger.Warn("[PIPELINE] rejected %s status for %s from %s", status.Stage, status.JobID, agentID)
 		return
 	}
 
@@ -89,12 +108,33 @@ func (p *Pipeline) JobStatus(agentID string, status ufp.JobStatus) {
 	}
 }
 
+func (p *Pipeline) acceptsEvent(release *models.Release, agentID, stage string) bool {
+	switch stage {
+	case ufp.StageBuild:
+		return release.Status == models.StatusBuilding && release.Builder == agentID
+	case ufp.StageRelease:
+		if release.Status != models.StatusReleasing {
+			return false
+		}
+		for _, target := range release.Targets {
+			if target.AgentID == agentID && !target.Status.Done() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (p *Pipeline) onBuildStatus(release *models.Release, status ufp.JobStatus) {
 	switch status.Status {
 	case ufp.StatusFailed:
 		p.failRelease(release, status.Message)
 
 	case ufp.StatusSuccess:
+		if err := p.validateBuildResult(release, status); err != nil {
+			p.failRelease(release, err.Error())
+			return
+		}
 		release.Image = status.Image
 		release.Images = status.Images
 		release.Digest = status.Digest
@@ -102,12 +142,19 @@ func (p *Pipeline) onBuildStatus(release *models.Release, status ufp.JobStatus) 
 			release.Commit = status.Commit
 		}
 		release.Status = models.StatusReleasing
-		p.store.UpdateRelease(release)
-
-		project, err := p.store.GetProject(release.Project)
-		if err != nil {
-			p.failRelease(release, "project was removed mid-release")
+		if err := p.store.UpdateRelease(release); err != nil {
+			logger.Error("[PIPELINE] update release %s: %v", release.ID, err)
 			return
+		}
+
+		project := &release.Spec
+		if project.Name == "" {
+			var err error
+			project, err = p.store.GetProject(release.Project)
+			if err != nil {
+				p.failRelease(release, "release has no project snapshot")
+				return
+			}
 		}
 
 		runners, err := p.resolveRunners(project)
@@ -127,18 +174,27 @@ func (p *Pipeline) onReleaseStatus(release *models.Release, agentID string, stat
 		return
 	}
 
-	outcome := models.StatusSucceeded
-	if status.Status == ufp.StatusFailed {
+	var outcome models.Status
+	switch status.Status {
+	case ufp.StatusSuccess:
+		outcome = models.StatusSucceeded
+	case ufp.StatusFailed:
 		outcome = models.StatusFailed
+	default:
+		logger.Warn("[PIPELINE] rejected unknown release status %q for %s", status.Status, status.JobID)
+		return
 	}
 
-	p.finishTarget(release.ID, agentID, p.agentName(agentID), outcome, status.Message)
+	if err := p.finishTarget(release.ID, agentID, p.agentName(agentID), outcome, status.Message); err != nil {
+		logger.Error("[PIPELINE] update target %s/%s: %v", release.ID, agentID, err)
+		return
+	}
 	p.settle(release.ID)
 }
 
-func (p *Pipeline) finishTarget(releaseID, agentID, agentName string, status models.Status, message string) {
+func (p *Pipeline) finishTarget(releaseID, agentID, agentName string, status models.Status, message string) error {
 	ended := time.Now()
-	p.store.SaveReleaseTarget(&models.ReleaseTarget{
+	return p.store.SaveReleaseTarget(&models.ReleaseTarget{
 		ReleaseID: releaseID,
 		AgentID:   agentID,
 		AgentName: agentName,
@@ -154,7 +210,7 @@ func (p *Pipeline) settle(releaseID string) {
 		return
 	}
 
-	succeeded, failed := 0, 0
+	succeeded, failed, skipped := 0, 0, 0
 	for _, target := range release.Targets {
 		if !target.Status.Done() {
 			return
@@ -164,13 +220,17 @@ func (p *Pipeline) settle(releaseID string) {
 			succeeded++
 		case models.StatusFailed:
 			failed++
+		case models.StatusSkipped:
+			skipped++
 		}
 	}
 
-	if failed > 0 || succeeded == 0 {
+	if failed > 0 || skipped > 0 || succeeded == 0 {
 		message := "no runner accepted the release"
 		if failed > 0 {
 			message = "one or more runners failed"
+		} else if skipped > 0 {
+			message = "one or more runners were unavailable"
 		}
 		p.failRelease(release, message)
 		return
@@ -181,6 +241,18 @@ func (p *Pipeline) settle(releaseID string) {
 }
 
 func (p *Pipeline) failRelease(release *models.Release, message string) {
+	current, err := p.store.GetRelease(release.ID)
+	if err == nil {
+		for _, target := range current.Targets {
+			if target.Status.Done() {
+				continue
+			}
+			if err := p.finishTarget(release.ID, target.AgentID, target.AgentName,
+				models.StatusSkipped, message); err != nil {
+				logger.Error("[PIPELINE] close target %s/%s: %v", release.ID, target.AgentID, err)
+			}
+		}
+	}
 	p.completeRelease(release, models.StatusFailed, message)
 	logger.Error("[PIPELINE] release %s failed: %s", release.ID, message)
 }
@@ -191,7 +263,12 @@ func (p *Pipeline) completeRelease(release *models.Release, status models.Status
 	release.Message = message
 	release.EndedAt = &ended
 	release.Duration = ended.Sub(release.StartedAt).Milliseconds()
-	p.store.UpdateRelease(release)
+	if release.Duration < 1 {
+		release.Duration = 1
+	}
+	if err := p.store.UpdateRelease(release); err != nil {
+		logger.Error("[PIPELINE] complete release %s: %v", release.ID, err)
+	}
 }
 
 func (p *Pipeline) agentName(agentID string) string {

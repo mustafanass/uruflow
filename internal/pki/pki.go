@@ -39,6 +39,7 @@ const (
 	caLifetime    = 10 * 365 * 24 * time.Hour
 	leafLifetime  = 5 * 365 * 24 * time.Hour
 	serialBitSize = 128
+	renewalWindow = 30 * 24 * time.Hour
 )
 
 type Authority struct {
@@ -55,7 +56,18 @@ type Material struct {
 }
 
 func LoadOrCreateCA(certPath, keyPath string) (*Authority, error) {
-	if fileExists(certPath) && fileExists(keyPath) {
+	certExists, err := regularFile(certPath)
+	if err != nil {
+		return nil, err
+	}
+	keyExists, err := regularFile(keyPath)
+	if err != nil {
+		return nil, err
+	}
+	if certExists != keyExists {
+		return nil, fmt.Errorf("pki: incomplete CA material in %s", filepath.Dir(certPath))
+	}
+	if certExists {
 		return loadCA(certPath, keyPath)
 	}
 	return createCA(certPath, keyPath)
@@ -71,7 +83,7 @@ func (a *Authority) CertificatePEM() (string, error) {
 
 func (a *Authority) EnsureLeaf(material Material) error {
 	if fileExists(material.CertPath) && fileExists(material.KeyPath) {
-		if valid, err := leafCovers(material); err == nil && valid {
+		if valid, err := a.leafCovers(material); err == nil && valid {
 			return nil
 		}
 	}
@@ -107,10 +119,10 @@ func (a *Authority) issueLeaf(material Material) error {
 		return err
 	}
 
-	if err := writeCertificate(material.CertPath, der); err != nil {
+	if err := writeKey(material.KeyPath, key); err != nil {
 		return err
 	}
-	return writeKey(material.KeyPath, key)
+	return writeCertificate(material.CertPath, der)
 }
 
 func createCA(certPath, keyPath string) (*Authority, error) {
@@ -140,10 +152,10 @@ func createCA(certPath, keyPath string) (*Authority, error) {
 		return nil, err
 	}
 
-	if err := writeCertificate(certPath, der); err != nil {
+	if err := writeKey(keyPath, key); err != nil {
 		return nil, err
 	}
-	if err := writeKey(keyPath, key); err != nil {
+	if err := writeCertificate(certPath, der); err != nil {
 		return nil, err
 	}
 
@@ -180,10 +192,22 @@ func loadCA(certPath, keyPath string) (*Authority, error) {
 		return nil, err
 	}
 
+	now := time.Now()
+	if !certificate.IsCA || now.Before(certificate.NotBefore) || now.After(certificate.NotAfter) {
+		return nil, fmt.Errorf("pki: invalid CA certificate in %s", certPath)
+	}
+	if err := certificate.CheckSignatureFrom(certificate); err != nil {
+		return nil, fmt.Errorf("pki: CA certificate is not self-signed: %w", err)
+	}
+	publicKey, ok := certificate.PublicKey.(*ecdsa.PublicKey)
+	if !ok || !publicKey.Equal(&key.PublicKey) {
+		return nil, fmt.Errorf("pki: CA certificate and key do not match")
+	}
+
 	return &Authority{certificate: certificate, key: key, certPath: certPath, keyPath: keyPath}, nil
 }
 
-func leafCovers(material Material) (bool, error) {
+func (a *Authority) leafCovers(material Material) (bool, error) {
 	certPEM, err := os.ReadFile(material.CertPath)
 	if err != nil {
 		return false, err
@@ -196,7 +220,27 @@ func leafCovers(material Material) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if time.Now().After(certificate.NotAfter) {
+	keyPEM, err := os.ReadFile(material.KeyPath)
+	if err != nil {
+		return false, err
+	}
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return false, fmt.Errorf("pki: malformed key %s", material.KeyPath)
+	}
+	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return false, err
+	}
+	now := time.Now()
+	if now.Before(certificate.NotBefore) || certificate.NotAfter.Before(now.Add(renewalWindow)) {
+		return false, nil
+	}
+	if err := certificate.CheckSignatureFrom(a.certificate); err != nil {
+		return false, nil
+	}
+	publicKey, ok := certificate.PublicKey.(*ecdsa.PublicKey)
+	if !ok || !publicKey.Equal(&key.PublicKey) {
 		return false, nil
 	}
 
@@ -239,11 +283,8 @@ func newSerial() (*big.Int, error) {
 }
 
 func writeCertificate(path string, der []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return err
-	}
 	encoded := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	return os.WriteFile(path, encoded, 0o644)
+	return writeAtomic(path, encoded, 0o644)
 }
 
 func writeKey(path string, key *ecdsa.PrivateKey) error {
@@ -255,10 +296,53 @@ func writeKey(path string, key *ecdsa.PrivateKey) error {
 		return err
 	}
 	encoded := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
-	return os.WriteFile(path, encoded, 0o600)
+	return writeAtomic(path, encoded, 0o600)
 }
 
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func regularFile(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, fmt.Errorf("pki: %s is not a regular file", path)
+	}
+	return true, nil
+}
+
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(dir, ".uruflow-pki-")
+	if err != nil {
+		return err
+	}
+	temporary := file.Name()
+	defer os.Remove(temporary)
+	if err := file.Chmod(mode); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary, path)
 }

@@ -46,6 +46,7 @@ var addedColumns = []column{
 	{table: "projects", name: "source", spec: "TEXT NOT NULL DEFAULT ''"},
 	{table: "projects", name: "services", spec: "TEXT NOT NULL DEFAULT '[]'"},
 	{table: "releases", name: "images", spec: "TEXT NOT NULL DEFAULT '{}'"},
+	{table: "releases", name: "spec", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "containers", name: "service", spec: "TEXT NOT NULL DEFAULT ''"},
 }
 
@@ -94,6 +95,31 @@ func (s *Store) addMissingColumns() error {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+func (s *Store) ClaimWebhookDelivery(provider, deliveryID string) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM webhook_deliveries WHERE received_at < datetime('now', '-30 days')`); err != nil {
+		return false, err
+	}
+	result, err := tx.Exec(`INSERT OR IGNORE INTO webhook_deliveries (provider, delivery_id) VALUES (?, ?)`,
+		provider, deliveryID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return rows == 1, nil
 }
 
 func encodeJSON(value any) string {

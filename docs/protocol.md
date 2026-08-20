@@ -1,4 +1,4 @@
-# UFP/2 Protocol
+# UFP Protocol
 
 UFP is the protocol the URUFLOW Server and its agents speak. You do not need this document to operate
 URUFLOW. It exists for contributors changing the wire contract and for engineers auditing the link.
@@ -20,7 +20,7 @@ method or topic name, not a frame type.
 
 ## 2. Transport
 
-TCP with TLS 1.2 or later. There is no plaintext mode.
+TCP with TLS 1.3. There is no plaintext mode.
 
 The agent verifies the server against the URUFLOW certificate authority and expects the fixed server
 name `uruflow-server`, which is always present in the server certificate. Pinning a logical name
@@ -36,7 +36,7 @@ Every message is an 8-byte header followed by a JSON payload.
 ```text
  0        1        2        3        4                                7
  ┌────────┬────────┬────────┬────────┬────────────────────────────────┐
- │  0x55  │  0x46  │  0x02  │  type  │      payload length (u32 BE)   │
+ │  0x55  │  0x46  │  0x03  │  type  │      payload length (u32 BE)   │
  │  'U'   │  'F'   │  ver   │        │                                │
  └────────┴────────┴────────┴────────┴────────────────────────────────┘
 ```
@@ -44,11 +44,11 @@ Every message is an 8-byte header followed by a JSON payload.
 | Field | Size | Value |
 | :--- | :--- | :--- |
 | Magic | 2 bytes | `0x55 0x46` |
-| Version | 1 byte | `0x02` |
+| Version | 1 byte | `0x03` |
 | Frame type | 1 byte | See below |
 | Payload length | 4 bytes | Unsigned, big-endian |
 
-A frame is rejected if the magic does not match, the version is not `0x02`, or the declared length
+A frame is rejected if the magic does not match, the version is not `0x03`, or the declared length
 exceeds **16 MiB**. Payloads are JSON, so frames remain readable in a packet capture.
 
 ## 4. Frame Types
@@ -95,9 +95,10 @@ One-way, unacknowledged. Flows needing completion use a correlated status event 
 | Direction | Topic | Carries |
 | :--- | :--- | :--- |
 | Server → Agent | `registry.config` | Registry address, credentials, CA certificate |
+| Agent → Server | `registry.ready` | Registry trust and builder login completed successfully |
 | Agent → Server | `job.log` | One line of build or release output |
 | Agent → Server | `job.status` | Stage transition: running, success, failed |
-| Agent → Server | `metrics.push` | System metrics and managed container state |
+| Agent → Server | `metrics.push` | System metrics, snapshot validity, and managed container state |
 | Agent → Server | `container.log` | One line from a followed container |
 
 ### Methods
@@ -147,9 +148,9 @@ The shared key never crosses the wire. Four properties matter:
 
 ### Role Declaration
 
-The agent declares its roles in `HELLO`. An agent declaring no valid role is rejected. The server
-stores the declared roles and refuses to dispatch `build.run` to an agent that never claimed
-`builder`; the agent refuses the same request independently.
+The agent declares its roles in `HELLO`. The declaration must exactly match the roles stored during
+enrollment; unknown, duplicate, missing or additional roles reject the connection. The server checks
+the enrolled role for job events and dispatch, and the agent independently rejects disallowed methods.
 
 ## 7. Connection Lifecycle
 
@@ -168,8 +169,9 @@ The serve loop:
 - `EVENT` is handled **inline, in order** — log lines must not reorder
 - `REQUEST` is handled **in a goroutine** — a handler may run for minutes
 
-Both sides tear down the connection when the loop exits. On the agent this cancels any in-flight log
-streams and triggers a reconnect after `reconnect_sec`.
+Both sides tear down the connection when the loop exits. On the agent this cancels in-flight builds,
+releases, maintenance operations and log streams before reconnecting after `reconnect_sec`. A project
+accepts only one active agent job, and a repeated job id is acknowledged without starting it twice.
 
 ## 8. Liveness
 
@@ -188,9 +190,10 @@ healthy connection always sees traffic well inside 60 seconds. No separate heart
 | Condition | Result |
 | :--- | :--- |
 | Bad magic, version, or oversized length | Connection error; the link drops |
-| Malformed envelope JSON | Frame skipped, connection continues |
+| Malformed top-level envelope JSON | Frame skipped, connection continues |
+| Malformed payload for a known event | Connection error |
 | Unknown method | `RESPONSE` with `ok: false` and a message |
-| Unknown topic | Ignored |
+| Unknown topic | Connection error |
 | Response for an unknown id | Dropped |
 | Unexpected frame type | Connection error |
 
@@ -199,10 +202,10 @@ stream is no longer aligned.
 
 ## 10. Versioning
 
-The version byte is `0x02`. A peer speaking `0x01` is rejected at the first frame, so a 1.x agent
-cannot half-connect to a 2.x server.
+The version byte is `0x03`. A peer speaking `0x01` or `0x02` is rejected at the first frame, so an
+older agent cannot half-connect to a 2.2 server.
 
-Within version 2, compatibility is managed through names:
+Within UFP, compatibility is managed through names:
 
 - adding a method or topic is backward compatible
 - adding an optional payload field is backward compatible
