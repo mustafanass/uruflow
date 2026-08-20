@@ -20,7 +20,7 @@ package views
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/urustack/uruflow/internal/tui/components"
+	"github.com/mustafanass/uruflow/internal/tui/components"
 )
 
 type Page interface {

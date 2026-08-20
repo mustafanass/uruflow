@@ -23,8 +23,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 func (s *Store) SetSecret(name string, value []byte) error {

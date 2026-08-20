@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/urustack/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 const (

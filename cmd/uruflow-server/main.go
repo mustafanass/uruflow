@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/urustack/uruflow/internal/cli"
+	"github.com/mustafanass/uruflow/internal/cli"
 )
 
 func main() {

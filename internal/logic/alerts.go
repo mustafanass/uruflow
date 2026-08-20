@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/pkg/helper"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/pkg/helper"
 )
 
 const (

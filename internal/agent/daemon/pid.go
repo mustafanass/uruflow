@@ -26,7 +26,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/urustack/uruflow/pkg/logger"
+	"github.com/mustafanass/uruflow/pkg/logger"
 )
 
 func (d *Daemon) writePid() error {

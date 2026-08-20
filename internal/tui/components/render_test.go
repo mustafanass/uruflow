@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 const cardTestWidth = 80

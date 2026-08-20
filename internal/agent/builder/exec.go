@@ -27,7 +27,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/urustack/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 type LogFunc = ufp.LogFunc

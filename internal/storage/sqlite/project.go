@@ -22,8 +22,8 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 const projectColumns = `name, git_url, branch, dockerfile, context, build_args,

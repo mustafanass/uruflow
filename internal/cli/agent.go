@@ -24,10 +24,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mustafanass/uruflow/internal/agent/config"
+	"github.com/mustafanass/uruflow/internal/agent/daemon"
+	"github.com/mustafanass/uruflow/internal/ufp"
 	"github.com/spf13/cobra"
-	"github.com/urustack/uruflow/internal/agent/config"
-	"github.com/urustack/uruflow/internal/agent/daemon"
-	"github.com/urustack/uruflow/internal/ufp"
 )
 
 type enrollment struct {

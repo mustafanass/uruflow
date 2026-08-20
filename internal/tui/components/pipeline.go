@@ -21,8 +21,8 @@ package components
 import (
 	"strings"
 
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 const stepLink = "──"

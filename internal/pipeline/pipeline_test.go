@@ -28,14 +28,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/link"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/pki"
-	"github.com/urustack/uruflow/internal/registry"
-	"github.com/urustack/uruflow/internal/secrets"
-	"github.com/urustack/uruflow/internal/storage/sqlite"
-	"github.com/urustack/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/link"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/pki"
+	"github.com/mustafanass/uruflow/internal/registry"
+	"github.com/mustafanass/uruflow/internal/secrets"
+	"github.com/mustafanass/uruflow/internal/storage/sqlite"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 const (

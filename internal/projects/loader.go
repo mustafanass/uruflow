@@ -28,7 +28,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/urustack/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/models"
 	"gopkg.in/yaml.v3"
 )
 

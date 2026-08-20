@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/models"
 )
 
 func TestReconcileClosesOutInterruptedWork(t *testing.T) {

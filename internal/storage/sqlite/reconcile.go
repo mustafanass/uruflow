@@ -21,7 +21,7 @@ package sqlite
 import (
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/models"
 )
 
 func (s *Store) SetAllAgentsOffline() error {

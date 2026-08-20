@@ -23,12 +23,12 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/storage/sqlite"
+	"github.com/mustafanass/uruflow/pkg/helper"
 	"github.com/spf13/cobra"
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
-	"github.com/urustack/uruflow/internal/storage/sqlite"
-	"github.com/urustack/uruflow/pkg/helper"
 )
 
 var agentRoles string

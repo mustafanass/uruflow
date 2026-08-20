@@ -28,8 +28,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urustack/uruflow/internal/docker"
-	"github.com/urustack/uruflow/internal/pki"
+	"github.com/mustafanass/uruflow/internal/docker"
+	"github.com/mustafanass/uruflow/internal/pki"
 )
 
 const (

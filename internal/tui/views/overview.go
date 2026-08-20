@@ -22,10 +22,10 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/storage"
-	"github.com/urustack/uruflow/internal/tui/components"
-	"github.com/urustack/uruflow/internal/tui/theme"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
+	"github.com/mustafanass/uruflow/internal/tui/components"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 )
 
 const (

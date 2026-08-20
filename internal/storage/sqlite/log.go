@@ -18,7 +18,7 @@
 
 package sqlite
 
-import "github.com/urustack/uruflow/internal/models"
+import "github.com/mustafanass/uruflow/internal/models"
 
 func (s *Store) AppendLog(line *models.LogLine) error {
 	_, err := s.db.Exec(`

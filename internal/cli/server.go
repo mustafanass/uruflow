@@ -26,13 +26,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mustafanass/uruflow/internal/api"
+	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/storage/sqlite"
+	"github.com/mustafanass/uruflow/internal/tui"
+	"github.com/mustafanass/uruflow/pkg/helper"
+	"github.com/mustafanass/uruflow/pkg/logger"
 	"github.com/spf13/cobra"
-	"github.com/urustack/uruflow/internal/api"
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/storage/sqlite"
-	"github.com/urustack/uruflow/internal/tui"
-	"github.com/urustack/uruflow/pkg/helper"
-	"github.com/urustack/uruflow/pkg/logger"
 )
 
 const (

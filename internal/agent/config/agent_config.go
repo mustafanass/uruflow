@@ -24,13 +24,13 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/urustack/uruflow/internal/docker"
-	"github.com/urustack/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/docker"
+	"github.com/mustafanass/uruflow/internal/ufp"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	Version              = "2.0.0"
+	Version              = "2.1.6"
 	DefaultReconnectSecs = 5
 	DefaultMetricsSecs   = 10
 )

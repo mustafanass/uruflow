@@ -201,19 +201,6 @@ Projects can equally be created in the interface without writing files. See [Pro
 - One release per project at a time, enforced across restarts
 - A terminal interface that works over SSH with no port forwarding
 
-## What URUFLOW Does Not Try to Be
-
-It is a deployment system, not a platform. It has no pipeline language, no test runner, and no plugin
-system. It deliberately does not provide:
-
-- a reverse proxy, domain routing, or certificates for your services
-- replicas, or dependency ordering between services
-- managed databases or backups of your data
-- secret rotation, versioning, or per-project access control
-- user accounts, roles, or an audit trail
-- a web interface or a management API
-- high availability of the control plane
-
 ## Documentation
 
 | Document | For |

@@ -24,10 +24,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/urustack/uruflow/internal/config"
-	"github.com/urustack/uruflow/internal/models"
-	"github.com/urustack/uruflow/internal/projects"
-	"github.com/urustack/uruflow/internal/storage/sqlite"
+	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/projects"
+	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 )
 
 func testServer(t *testing.T) (*Server, string) {

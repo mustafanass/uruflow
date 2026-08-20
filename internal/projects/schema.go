@@ -18,7 +18,7 @@
 
 package projects
 
-import "github.com/urustack/uruflow/internal/models"
+import "github.com/mustafanass/uruflow/internal/models"
 
 const (
 	ProjectFile   = "project.yaml"

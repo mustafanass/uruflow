@@ -22,7 +22,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/urustack/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/models"
 )
 
 const alertColumns = `id, agent_id, agent_name, type, message, severity, resolved, created_at, resolved_at`
