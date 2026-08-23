@@ -1,11 +1,9 @@
-<h1 align="center">URUFLOW</h1>
-
 <p align="center">
-  A self-hosted deployment control plane for Docker workloads.
+  <img src="assets/uruflow_branding.png" alt="uruflow — self-hosted deployment control plane for Docker" width="720">
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.2.0-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.2.1-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
   <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp%2F3-F5A524?style=flat-square" alt="ufp protocol"></a>
@@ -63,22 +61,91 @@ release, so what returns is byte-identical to what ran before.
 
 For the complete lifecycle and every failure boundary, see [Deployments](docs/deployments.md).
 
+## Installation
+
+Latest release: **v2.2.1** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
+
+There are **two different binaries and they are not interchangeable** — installing the wrong one on a
+machine is the most common setup mistake:
+
+| Binary | Install on | Role |
+| :--- | :--- | :--- |
+| `uruflow` | the server, one machine | control plane, private registry, terminal interface |
+| `uruflow-agent` | every builder and runner machine | runs builds, pulls images, releases containers |
+
+Check the architecture of each machine before downloading:
+
+```bash
+uname -m      # x86_64 -> amd64      aarch64 / arm64 -> arm64
+```
+
+### Server — `uruflow`
+
+**linux/amd64**
+
+```bash
+curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-2.2.1-linux-amd64
+echo "ca36ae9c54a38eda765082e5176efbb282534a76a1d18272724ea2fd137a8b27  uruflow" | sha256sum -c -
+chmod +x uruflow && sudo mv uruflow /usr/local/bin/
+```
+
+**linux/arm64**
+
+```bash
+curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-2.2.1-linux-arm64
+echo "7ab4cdc39e652546b54a7da1136e804ba8a84112e41f71b8f89df7599082ca7b  uruflow" | sha256sum -c -
+chmod +x uruflow && sudo mv uruflow /usr/local/bin/
+```
+
+### Agent — `uruflow-agent`
+
+**linux/amd64**
+
+```bash
+curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-agent-2.2.1-linux-amd64
+echo "a58d3eb168773c2d841c366e894a73164b6db08315ce55f60ae2b46777add85c  uruflow-agent" | sha256sum -c -
+chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
+```
+
+**linux/arm64**
+
+```bash
+curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-agent-2.2.1-linux-arm64
+echo "d1d21e860b0cf22046271b039ad4527e41a31aa74c6148ae785efc4d5b738059  uruflow-agent" | sha256sum -c -
+chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
+```
+
+### Checksums
+
+| Asset | Size | SHA-256 |
+| :--- | ---: | :--- |
+| `uruflow-2.2.1-linux-amd64` | 18.3 MB | `ca36ae9c54a38eda765082e5176efbb282534a76a1d18272724ea2fd137a8b27` |
+| `uruflow-2.2.1-linux-arm64` | 17.9 MB | `7ab4cdc39e652546b54a7da1136e804ba8a84112e41f71b8f89df7599082ca7b` |
+| `uruflow-agent-2.2.1-linux-amd64` | 15.6 MB | `a58d3eb168773c2d841c366e894a73164b6db08315ce55f60ae2b46777add85c` |
+| `uruflow-agent-2.2.1-linux-arm64` | 15.3 MB | `d1d21e860b0cf22046271b039ad4527e41a31aa74c6148ae785efc4d5b738059` |
+
+`SHA256SUMS.txt` on the release page covers every asset, including the `.tar.gz` archives:
+
+```bash
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+Server and agent must run the same version — they share a UFP wire format. There is no prebuilt macOS
+agent; build it from source, see [Development](#development).
+
 ## Quick Start
 
 The server needs Docker and root — it writes `/etc/uruflow` and `/var/lib/uruflow` and drives the
 Docker socket to host the registry. A runner needs Docker; a builder needs Docker, `git` and root.
 
+Install the binaries first — see [Installation](#installation).
+
 On the server:
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/latest/download/uruflow-linux-amd64 -o uruflow
-chmod +x uruflow && sudo mv uruflow /usr/local/bin/
-
 sudo uruflow init     # writes /etc/uruflow/config.yaml
 sudo uruflow          # starts the registry, the agent link, webhooks and the interface
 ```
-
-To build from source instead, see [Development](#development).
 
 Enrol an agent — press `3` then `n` in the interface, or:
 
