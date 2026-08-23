@@ -42,16 +42,29 @@ type Definition struct {
 }
 
 type Service struct {
-	Image      string            `yaml:"image,omitempty"`
-	Dockerfile string            `yaml:"dockerfile,omitempty"`
-	Context    string            `yaml:"context,omitempty"`
-	BuildArgs  map[string]string `yaml:"build_args,omitempty"`
-	Command    string            `yaml:"command,omitempty"`
-	Ports      []string          `yaml:"ports,omitempty"`
-	Volumes    []string          `yaml:"volumes,omitempty"`
-	Env        map[string]string `yaml:"env,omitempty"`
-	Network    string            `yaml:"network,omitempty"`
-	Restart    string            `yaml:"restart,omitempty"`
+	Image       string            `yaml:"image,omitempty"`
+	Dockerfile  string            `yaml:"dockerfile,omitempty"`
+	Context     string            `yaml:"context,omitempty"`
+	BuildArgs   map[string]string `yaml:"build_args,omitempty"`
+	Command     string            `yaml:"command,omitempty"`
+	Ports       []string          `yaml:"ports,omitempty"`
+	Volumes     []string          `yaml:"volumes,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	Network     string            `yaml:"network,omitempty"`
+	Restart     string            `yaml:"restart,omitempty"`
+	Healthcheck *Healthcheck      `yaml:"healthcheck,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+}
+
+type Healthcheck struct {
+	Type      string `yaml:"type"`
+	Scheme    string `yaml:"scheme,omitempty"`
+	Path      string `yaml:"path,omitempty"`
+	Port      int    `yaml:"port,omitempty"`
+	Interval  string `yaml:"interval,omitempty"`
+	Timeout   string `yaml:"timeout,omitempty"`
+	Retries   *int   `yaml:"retries,omitempty"`
+	StableFor string `yaml:"stable_for,omitempty"`
 }
 
 type Environment struct {

@@ -162,6 +162,9 @@ func mergeEnvironment(path string, incoming Environment) Environment {
 	if len(incoming.Env) > 0 {
 		existing.Env = incoming.Env
 	}
+	if incoming.Services != nil {
+		existing.Services = incoming.Services
+	}
 	return existing
 }
 

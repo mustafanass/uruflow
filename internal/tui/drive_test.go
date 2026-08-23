@@ -29,6 +29,8 @@ import (
 	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
+	"github.com/mustafanass/uruflow/internal/tui/views"
+	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
 func driveServer(t *testing.T) *api.Server {
@@ -112,6 +114,16 @@ func TestProjectsViewShowsDetailTabs(t *testing.T) {
 	view = press(t, model, "ctrl+t")
 	if !strings.Contains(view, "MODE") {
 		t.Fatalf("ctrl+t did not reach the variables tab:\n%s", view)
+	}
+}
+
+func TestLogBridgeCountsDroppedMessagesWithoutBlocking(t *testing.T) {
+	logs := make(chan views.ContainerLogMsg, 1)
+	bridge := &bridge{logs: logs}
+	bridge.ContainerLog("a1", ufp.ContainerLog{Line: "first"})
+	bridge.ContainerLog("a1", ufp.ContainerLog{Line: "second"})
+	if dropped := bridge.dropped.Load(); dropped != 1 {
+		t.Fatalf("dropped = %d", dropped)
 	}
 }
 

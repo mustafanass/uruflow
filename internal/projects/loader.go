@@ -23,10 +23,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
 	"gopkg.in/yaml.v3"
@@ -272,23 +274,142 @@ func buildServices(declared map[string]Service) ([]models.Service, error) {
 		if err != nil {
 			return nil, fmt.Errorf("service %q: %w", name, err)
 		}
+		healthcheck, err := buildHealthcheck(name, declaration.Healthcheck)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateLabels(name, declaration.Labels); err != nil {
+			return nil, err
+		}
 
 		services = append(services, models.Service{
-			Name:       name,
-			Image:      declaration.Image,
-			Dockerfile: declaration.Dockerfile,
-			Context:    declaration.Context,
-			BuildArgs:  declaration.BuildArgs,
-			Command:    declaration.Command,
-			Ports:      ports,
-			Volumes:    volumes,
-			Env:        declaration.Env,
-			Network:    declaration.Network,
-			Restart:    declaration.Restart,
+			Name:        name,
+			Image:       declaration.Image,
+			Dockerfile:  declaration.Dockerfile,
+			Context:     declaration.Context,
+			BuildArgs:   declaration.BuildArgs,
+			Command:     declaration.Command,
+			Ports:       ports,
+			Volumes:     volumes,
+			Env:         declaration.Env,
+			Network:     declaration.Network,
+			Restart:     declaration.Restart,
+			Healthcheck: healthcheck,
+			Labels:      declaration.Labels,
 		})
 	}
 
 	return services, nil
+}
+
+const (
+	defaultHealthInterval = 5 * time.Second
+	defaultHealthTimeout  = 3 * time.Second
+	defaultHealthRetries  = 10
+)
+
+func buildHealthcheck(service string, declaration *Healthcheck) (*models.Healthcheck, error) {
+	if declaration == nil {
+		return nil, nil
+	}
+
+	field := func(name string) string { return fmt.Sprintf("service %q healthcheck.%s", service, name) }
+	healthcheck := &models.Healthcheck{Type: declaration.Type}
+	switch declaration.Type {
+	case "http", "tcp":
+		if declaration.Port < 1 || declaration.Port > 65535 {
+			return nil, fmt.Errorf("%s must be between 1 and 65535", field("port"))
+		}
+		healthcheck.Port = declaration.Port
+		healthcheck.Interval = defaultHealthInterval
+		healthcheck.Timeout = defaultHealthTimeout
+		healthcheck.Retries = defaultHealthRetries
+
+		var err error
+		if declaration.Interval != "" {
+			healthcheck.Interval, err = positiveDuration(field("interval"), declaration.Interval)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if declaration.Timeout != "" {
+			healthcheck.Timeout, err = positiveDuration(field("timeout"), declaration.Timeout)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if declaration.Retries != nil {
+			if *declaration.Retries <= 0 {
+				return nil, fmt.Errorf("%s must be positive", field("retries"))
+			}
+			healthcheck.Retries = *declaration.Retries
+		}
+
+		if declaration.Type == "tcp" {
+			if declaration.Path != "" || declaration.Scheme != "" || declaration.StableFor != "" {
+				return nil, fmt.Errorf("service %q healthcheck contains fields that are not valid for tcp", service)
+			}
+			return healthcheck, nil
+		}
+
+		if declaration.Path == "" {
+			return nil, fmt.Errorf("%s is required", field("path"))
+		}
+		parsed, err := url.ParseRequestURI(declaration.Path)
+		if err != nil || !strings.HasPrefix(declaration.Path, "/") || parsed.IsAbs() || parsed.Host != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("%s must be a valid absolute request path", field("path"))
+		}
+		healthcheck.Path = declaration.Path
+		healthcheck.Scheme = declaration.Scheme
+		if healthcheck.Scheme == "" {
+			healthcheck.Scheme = "http"
+		}
+		if healthcheck.Scheme != "http" && healthcheck.Scheme != "https" {
+			return nil, fmt.Errorf("%s must be http or https", field("scheme"))
+		}
+		if declaration.StableFor != "" {
+			return nil, fmt.Errorf("%s is only valid for running healthchecks", field("stable_for"))
+		}
+		return healthcheck, nil
+
+	case "running":
+		if declaration.StableFor == "" {
+			return nil, fmt.Errorf("%s is required", field("stable_for"))
+		}
+		stableFor, err := positiveDuration(field("stable_for"), declaration.StableFor)
+		if err != nil {
+			return nil, err
+		}
+		if declaration.Port != 0 || declaration.Path != "" || declaration.Scheme != "" || declaration.Interval != "" || declaration.Timeout != "" || declaration.Retries != nil {
+			return nil, fmt.Errorf("service %q healthcheck contains fields that are not valid for running", service)
+		}
+		healthcheck.StableFor = stableFor
+		return healthcheck, nil
+
+	default:
+		if declaration.Type == "" {
+			return nil, fmt.Errorf("%s is required", field("type"))
+		}
+		return nil, fmt.Errorf("%s %q is not supported", field("type"), declaration.Type)
+	}
+}
+
+func positiveDuration(field, value string) (time.Duration, error) {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s is invalid: %w", field, err)
+	}
+	if duration <= 0 {
+		return 0, fmt.Errorf("%s must be positive", field)
+	}
+	return duration, nil
+}
+
+func validateLabels(service string, labels map[string]string) error {
+	if err := models.ValidateLabels(labels); err != nil {
+		return fmt.Errorf("service %q: %w", service, err)
+	}
+	return nil
 }
 
 func validateBuildPath(label, value string) error {
@@ -353,6 +474,30 @@ func decodeStrict(data []byte, target any) error {
 		return err
 	}
 	return nil
+}
+
+func ValidateEnvironmentYAML(content string) error {
+	var environment Environment
+	if err := decodeStrict([]byte(content), &environment); err != nil {
+		return err
+	}
+	if environment.Branch == "" {
+		return errors.New("branch is required")
+	}
+	if environment.Builder == "" {
+		return errors.New("builder is required")
+	}
+	if len(environment.Runners) == 0 {
+		return errors.New("at least one runner is required")
+	}
+	if _, err := models.ParsePorts(environment.Ports); err != nil {
+		return err
+	}
+	if _, err := models.ParseVolumes(environment.Volumes); err != nil {
+		return err
+	}
+	_, err := buildServices(environment.Services)
+	return err
 }
 
 func mergeEnv(layers ...map[string]string) map[string]string {

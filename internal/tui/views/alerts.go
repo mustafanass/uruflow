@@ -48,11 +48,18 @@ func (a *Alerts) Init() tea.Cmd {
 func (a *Alerts) Capturing() bool { return false }
 
 func (a *Alerts) reload() {
+	var alerts []models.Alert
+	var err error
 	if a.resolved {
-		a.alerts, _ = a.store.ListRecentAlerts(alertHistory)
+		alerts, err = a.store.ListRecentAlerts(alertHistory)
 	} else {
-		a.alerts, _ = a.store.ListActiveAlerts()
+		alerts, err = a.store.ListActiveAlerts()
 	}
+	if err != nil {
+		a.Fail(err)
+		return
+	}
+	a.alerts = alerts
 	if a.cursor >= len(a.alerts) {
 		a.cursor = 0
 	}

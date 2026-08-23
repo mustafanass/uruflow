@@ -73,7 +73,12 @@ func (s *Secrets) Init() tea.Cmd {
 func (s *Secrets) Capturing() bool { return s.mode != secretList }
 
 func (s *Secrets) reload() {
-	s.secrets, _ = s.server.Store().ListSecrets()
+	secretsList, err := s.server.Store().ListSecrets()
+	if err != nil {
+		s.Fail(err)
+		return
+	}
+	s.secrets = secretsList
 	if s.cursor >= len(s.secrets) {
 		s.cursor = 0
 	}

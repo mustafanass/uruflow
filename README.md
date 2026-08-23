@@ -133,9 +133,10 @@ check readiness
   └─ not ready  → remove the replacement, rename the previous back, start it
 ```
 
-A container is ready when it reports `healthy`, or has stayed running for five seconds if its image
-declares no `HEALTHCHECK`. Exiting, reporting unhealthy, or restarting during the wait fails the
-release immediately.
+A service may define native HTTP, TCP or stable-running readiness. That policy is authoritative when
+present. Without one, the existing Docker `HEALTHCHECK` or five-second running fallback is preserved.
+Any readiness failure restores the previous container; multi-service releases restore every service
+already replaced on that runner.
 
 **This is not zero-downtime deployment.** A project owns a host port, so the old and new containers
 cannot overlap — there is roughly a second of unavailability per release. What the procedure guarantees

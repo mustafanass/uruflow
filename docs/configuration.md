@@ -142,7 +142,30 @@ Paths default to the user's home directory when the agent runs as a non-root use
 non-root agent cannot install the registry CA into `/etc/docker/certs.d`. See
 [Operations](operations.md#agent-permissions).
 
-## 4. Data Directory Layout
+## 4. Project Service Specification
+
+Services are declared under `services` in an environment YAML file. Unknown keys are rejected.
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `image` | string | Immutable `repository@sha256:digest`; mutually exclusive with `dockerfile` |
+| `dockerfile` | string | Build file inside the source directory |
+| `context` | string | Build context inside the source directory; defaults to `.` |
+| `build_args` | `map[string]string` | Docker build arguments |
+| `command` | string | Container command override |
+| `ports` | string list | `host:container[/protocol]` bindings |
+| `volumes` | string list | `source:target[:ro]` mounts |
+| `env` | `map[string]string` | Service environment merged over project environment |
+| `network` | string | Docker network |
+| `restart` | string | Restart policy; defaults to `unless-stopped` |
+| `healthcheck` | object | Native `http`, `tcp` or `running` release readiness |
+| `labels` | `map[string]string` | Generic Docker labels; `uruflow.*` is reserved |
+
+`http` accepts `scheme`, `path`, `port`, `interval`, `timeout` and `retries`. `scheme` defaults to
+`http`; timing defaults are `5s`, `3s` and `10`. `tcp` accepts `port` and the same timing fields.
+`running` accepts only the required positive `stable_for` duration.
+
+## 5. Data Directory Layout
 
 ```text
 /var/lib/uruflow/
@@ -165,7 +188,7 @@ changing `advertise`.
 
 For what to back up and why, see [Operations](operations.md#backup-and-restore).
 
-## 5. Command Reference
+## 6. Command Reference
 
 ### Server Commands
 
@@ -205,7 +228,7 @@ For what to back up and why, see [Operations](operations.md#backup-and-restore).
 `uruflow-agent` accepts `--config` / `-c` on every subcommand, or `URUFLOW_AGENT_CONFIG` in the
 environment.
 
-## 6. Webhooks
+## 7. Webhooks
 
 Point your git host at `https://<server>:<http_port><webhook.path>`.
 

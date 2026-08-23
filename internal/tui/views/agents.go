@@ -52,6 +52,7 @@ const (
 )
 
 type ContainerLogMsg ufp.ContainerLog
+type DroppedLogsMsg uint64
 
 type Agents struct {
 	Base
@@ -64,6 +65,7 @@ type Agents struct {
 	containers      []models.Container
 	streaming       string
 	lines           []string
+	dropped         uint64
 
 	form     *components.Form
 	enrolled *models.Agent
@@ -88,7 +90,12 @@ func (a *Agents) Init() tea.Cmd {
 func (a *Agents) Capturing() bool { return a.mode != agentList }
 
 func (a *Agents) reload() {
-	a.agents, _ = a.server.Store().ListAgents()
+	agents, err := a.server.Store().ListAgents()
+	if err != nil {
+		a.Fail(fmt.Errorf("load agents: %w", err))
+		return
+	}
+	a.agents = agents
 	if a.cursor >= len(a.agents) {
 		a.cursor = 0
 	}
@@ -99,7 +106,12 @@ func (a *Agents) reload() {
 
 func (a *Agents) loadContainers() {
 	if agent := a.selected(); agent != nil {
-		a.containers, _ = a.server.Store().ListContainersByAgent(agent.ID)
+		containers, err := a.server.Store().ListContainersByAgent(agent.ID)
+		if err != nil {
+			a.Fail(fmt.Errorf("load containers for %s: %w", agent.Name, err))
+			return
+		}
+		a.containers = containers
 		if a.containerCursor >= len(a.containers) {
 			a.containerCursor = 0
 		}
@@ -125,6 +137,11 @@ func (a *Agents) Update(msg tea.Msg) tea.Cmd {
 	case ContainerLogMsg:
 		if a.mode == agentLogs && message.ContainerID == a.streaming {
 			a.appendLog(message)
+		}
+		return nil
+	case DroppedLogsMsg:
+		if a.mode == agentLogs {
+			a.dropped += uint64(message)
 		}
 		return nil
 
@@ -286,6 +303,7 @@ func (a *Agents) follow() {
 
 	a.streaming = container.ID
 	a.lines = nil
+	a.dropped = 0
 	a.mode = agentLogs
 }
 
@@ -545,6 +563,9 @@ func (a *Agents) renderLogs() string {
 	}
 	if len(lines) == 0 {
 		lines = []string{theme.Ghost.Render("attached — this container has not written anything to stdout yet")}
+	}
+	if a.dropped > 0 {
+		lines = append([]string{theme.Warn.Render(fmt.Sprintf("▲ %d log lines dropped", a.dropped))}, lines...)
 	}
 
 	title := name + "  " + theme.Frame(a.Frame) + theme.Ghost.Render(" streaming")

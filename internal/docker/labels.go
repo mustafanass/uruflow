@@ -18,6 +18,11 @@
 
 package docker
 
+import (
+	"fmt"
+	"strings"
+)
+
 const (
 	LabelManaged = "uruflow.managed"
 	LabelProject = "uruflow.project"
@@ -40,6 +45,20 @@ func ManagedLabels(project, service, release string) map[string]string {
 		labels[LabelService] = service
 	}
 	return labels
+}
+
+func ContainerLabels(user map[string]string, project, service, release string) (map[string]string, error) {
+	labels := make(map[string]string, len(user)+5)
+	for key, value := range user {
+		if strings.HasPrefix(key, "uruflow.") {
+			return nil, fmt.Errorf("label %q is reserved for uruflow", key)
+		}
+		labels[key] = value
+	}
+	for key, value := range ManagedLabels(project, service, release) {
+		labels[key] = value
+	}
+	return labels, nil
 }
 
 func IsManaged(labels map[string]string) bool {

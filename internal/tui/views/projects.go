@@ -21,7 +21,10 @@ package views
 import (
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mustafanass/uruflow/internal/api"
@@ -40,6 +43,7 @@ const (
 	projectConfirmDelete
 	projectConfirmDeploy
 	projectConfirmRollback
+	projectConfirmStop
 )
 
 const (
@@ -61,7 +65,49 @@ const (
 const (
 	tabSettings = iota
 	tabVariables
+	tabServices
 	tabYAML
+)
+
+const (
+	serviceTabSettings = iota
+	serviceTabRuntime
+	serviceTabHealth
+	serviceTabTiming
+	serviceTabBuildArgs
+	serviceTabEnv
+	serviceTabLabels
+	serviceTabCount
+)
+
+const (
+	serviceFieldName = iota
+	serviceFieldSource
+	serviceFieldImage
+	serviceFieldDockerfile
+	serviceFieldContext
+)
+
+const (
+	runtimeFieldCommand = iota
+	runtimeFieldRestart
+	runtimeFieldPorts
+	runtimeFieldVolumes
+	runtimeFieldNetwork
+)
+
+const (
+	healthFieldType = iota
+	healthFieldScheme
+	healthFieldPath
+	healthFieldPort
+)
+
+const (
+	timingFieldInterval = iota
+	timingFieldTimeout
+	timingFieldRetries
+	timingFieldStableFor
 )
 
 const (
@@ -92,6 +138,20 @@ type Projects struct {
 	detailTab int
 	editing   string
 	discard   bool
+
+	services       []models.Service
+	serviceCursor  int
+	serviceOpen    bool
+	serviceEditing int
+	serviceTab     int
+	serviceDirty   bool
+	serviceForm    *components.Form
+	runtimeForm    *components.Form
+	healthForm     *components.Form
+	timingForm     *components.Form
+	serviceBuild   *components.Sheet
+	serviceEnv     *components.Sheet
+	serviceLabels  *components.Sheet
 }
 
 func NewProjects(server *api.Server) *Projects {
@@ -113,6 +173,32 @@ func NewProjects(server *api.Server) *Projects {
 			components.NewField("network", "bridge", "docker network for the container", true),
 			components.NewToggle("auto deploy", "deploy automatically on webhook push"),
 		),
+		serviceForm: components.NewForm(
+			components.NewField("name", "api", "unique service name", false),
+			components.NewChoice("source", "build from source or use an immutable digest", false),
+			components.NewField("image", "repository@sha256:…", "required for image source", true),
+			components.NewField("dockerfile", "Dockerfile", "path inside the repository", true),
+			components.NewField("context", ".", "build context inside the repository", true),
+		),
+		runtimeForm: components.NewForm(
+			components.NewField("command", "./server", "container command override", true),
+			components.NewField("restart", "unless-stopped", "docker restart policy", true),
+			components.NewField("ports", "8080:80", "host:container, comma separated", true),
+			components.NewField("volumes", "/srv/data:/data", "source:target[:ro], comma separated", true),
+			components.NewField("network", "bridge", "docker network", true),
+		),
+		healthForm: components.NewForm(
+			components.NewChoice("type", "native readiness policy", false),
+			components.NewChoice("scheme", "http or https", true),
+			components.NewField("path", "/health", "HTTP request path", true),
+			components.NewField("port", "8080", "container port", true),
+		),
+		timingForm: components.NewForm(
+			components.NewField("interval", "5s", "HTTP/TCP delay between attempts", true),
+			components.NewField("timeout", "3s", "HTTP/TCP per-attempt timeout", true),
+			components.NewField("retries", "10", "HTTP/TCP finite attempt count", true),
+			components.NewField("stable for", "5s", "running type only", true),
+		),
 	}
 }
 
@@ -125,13 +211,23 @@ func (p *Projects) Init() tea.Cmd {
 func (p *Projects) Capturing() bool { return p.mode != projectList }
 
 func (p *Projects) reload() {
-	p.projects, _ = p.server.Store().ListProjects()
+	projectsList, err := p.server.Store().ListProjects()
+	if err != nil {
+		p.Fail(fmt.Errorf("load projects: %w", err))
+		return
+	}
+	p.projects = projectsList
 	if p.cursor >= len(p.projects) {
 		p.cursor = 0
 	}
 
 	for _, project := range p.projects {
-		if releases, err := p.server.Store().ListReleasesByProject(project.Name, 1); err == nil && len(releases) > 0 {
+		releases, err := p.server.Store().ListReleasesByProject(project.Name, 1)
+		if err != nil {
+			p.Fail(fmt.Errorf("load releases for %s: %w", project.Name, err))
+			continue
+		}
+		if len(releases) > 0 {
 			p.last[project.Name] = releases[0]
 		}
 	}
@@ -162,6 +258,8 @@ func (p *Projects) key(msg tea.KeyMsg) tea.Cmd {
 		return p.confirm(msg, p.deploy)
 	case projectConfirmRollback:
 		return p.confirm(msg, p.rollback)
+	case projectConfirmStop:
+		return p.confirm(msg, p.stop)
 	}
 
 	switch msg.String() {
@@ -186,7 +284,9 @@ func (p *Projects) key(msg tea.KeyMsg) tea.Cmd {
 			p.mode = projectConfirmRollback
 		}
 	case "s":
-		p.stop()
+		if p.selected() != nil {
+			p.mode = projectConfirmStop
+		}
 	case "ctrl+t":
 		p.detailTab = (p.detailTab + 1) % detailTabCount
 	case "R":
@@ -212,6 +312,9 @@ func (p *Projects) openCreate() {
 	p.variables.Load("")
 	p.yaml = components.NewSheet("config", "")
 	p.yaml.Load("")
+	p.services = nil
+	p.serviceDirty = false
+	p.resetServiceEditor()
 
 	p.editing = ""
 	p.tab = tabSettings
@@ -237,12 +340,23 @@ func (p *Projects) openEdit() {
 
 	p.variables = components.NewSheet("variables", "")
 	p.yaml = components.NewSheet("config", "")
+	p.services = append([]models.Service(nil), project.Services...)
+	p.serviceDirty = false
+	p.resetServiceEditor()
 
 	if project.Managed() {
 		p.variables.Path = projects.EnvPathFor(project.Source)
 		p.yaml.Path = project.Source
-		p.variables.Load(readFile(p.variables.Path))
-		p.yaml.Load(readFile(p.yaml.Path))
+		variables, err := readFile(p.variables.Path)
+		if err != nil && !os.IsNotExist(err) {
+			p.Fail(fmt.Errorf("read variables: %w", err))
+		}
+		config, err := readFile(p.yaml.Path)
+		if err != nil {
+			p.Fail(fmt.Errorf("read config: %w", err))
+		}
+		p.variables.Load(variables)
+		p.yaml.Load(config)
 	} else {
 		p.variables.Load(projects.FormatDotEnv(project.Runtime.Env))
 		p.yaml.Load("")
@@ -260,6 +374,11 @@ func (p *Projects) sizeSheets() {
 	height := p.TableHeight(12)
 	p.variables.Resize(width, height)
 	p.yaml.Resize(width, height)
+	if p.serviceBuild != nil {
+		p.serviceBuild.Resize(width, height)
+		p.serviceEnv.Resize(width, height)
+		p.serviceLabels.Resize(width, height)
+	}
 }
 
 func (p *Projects) fileMode() bool {
@@ -270,6 +389,7 @@ func (p *Projects) tabs() []components.TabItem {
 	items := []components.TabItem{
 		{Label: "settings"},
 		{Label: "variables", Dirty: p.variables.Dirty()},
+		{Label: "services", Dirty: p.serviceDirty},
 	}
 	if p.fileMode() {
 		items = append(items, components.TabItem{Label: "config", Dirty: p.yaml.Dirty()})
@@ -278,6 +398,9 @@ func (p *Projects) tabs() []components.TabItem {
 }
 
 func (p *Projects) editKey(msg tea.KeyMsg) tea.Cmd {
+	if p.serviceOpen {
+		return p.serviceKey(msg)
+	}
 	if msg.String() != "esc" {
 		p.discard = false
 	}
@@ -306,6 +429,8 @@ func (p *Projects) editKey(msg tea.KeyMsg) tea.Cmd {
 	switch p.tab {
 	case tabVariables:
 		return p.variables.Update(msg)
+	case tabServices:
+		return p.servicesKey(msg)
 	case tabYAML:
 		return p.yaml.Update(msg)
 	}
@@ -322,7 +447,317 @@ func (p *Projects) editKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (p *Projects) dirty() bool {
-	return p.variables.Dirty() || p.yaml.Dirty()
+	return p.variables.Dirty() || p.yaml.Dirty() || p.serviceDirty
+}
+
+func (p *Projects) resetServiceEditor() {
+	p.serviceCursor = 0
+	p.serviceOpen = false
+	p.serviceEditing = -1
+	p.serviceTab = serviceTabSettings
+	p.serviceForm.Field(serviceFieldSource).SetOptions([]components.Option{
+		{Value: "built", Label: "built"},
+		{Value: "image", Label: "image"},
+	})
+	p.healthForm.Field(healthFieldType).SetOptions([]components.Option{
+		{Value: "none", Label: "none"},
+		{Value: "http", Label: "http"},
+		{Value: "tcp", Label: "tcp"},
+		{Value: "running", Label: "running"},
+	})
+	p.healthForm.Field(healthFieldScheme).SetOptions([]components.Option{
+		{Value: "http", Label: "http"},
+		{Value: "https", Label: "https"},
+	})
+	p.serviceBuild = components.NewSheet("build args", "")
+	p.serviceEnv = components.NewSheet("environment", "")
+	p.serviceLabels = components.NewSheet("labels", "")
+	p.serviceBuild.Load("")
+	p.serviceEnv.Load("")
+	p.serviceLabels.Load("")
+}
+
+func (p *Projects) servicesKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "up", "k":
+		p.serviceCursor = move(p.serviceCursor, -1, len(p.services))
+	case "down", "j":
+		p.serviceCursor = move(p.serviceCursor, 1, len(p.services))
+	case "n":
+		p.openService(-1)
+	case "e", "enter":
+		if p.serviceCursor < len(p.services) {
+			p.openService(p.serviceCursor)
+		}
+	case "d":
+		if p.serviceCursor < len(p.services) {
+			p.services = append(p.services[:p.serviceCursor], p.services[p.serviceCursor+1:]...)
+			p.serviceCursor = move(p.serviceCursor, 0, len(p.services))
+			p.serviceDirty = true
+		}
+	}
+	return nil
+}
+
+func (p *Projects) openService(index int) {
+	p.serviceForm.Reset()
+	p.runtimeForm.Reset()
+	p.healthForm.Reset()
+	p.timingForm.Reset()
+	p.serviceForm.Field(serviceFieldSource).SetOptions([]components.Option{{Value: "built", Label: "built"}, {Value: "image", Label: "image"}})
+	p.healthForm.Field(healthFieldType).SetOptions([]components.Option{{Value: "none", Label: "none"}, {Value: "http", Label: "http"}, {Value: "tcp", Label: "tcp"}, {Value: "running", Label: "running"}})
+	p.healthForm.Field(healthFieldScheme).SetOptions([]components.Option{{Value: "http", Label: "http"}, {Value: "https", Label: "https"}})
+	p.serviceBuild.Load("")
+	p.serviceEnv.Load("")
+	p.serviceLabels.Load("")
+	p.serviceEditing = index
+	p.serviceTab = serviceTabSettings
+	p.serviceOpen = true
+	if index >= 0 && index < len(p.services) {
+		p.loadService(p.services[index])
+	}
+	p.sizeSheets()
+}
+
+func (p *Projects) loadService(service models.Service) {
+	source := "built"
+	if !service.Built() {
+		source = "image"
+	}
+	values := map[int]string{
+		serviceFieldName: service.Name, serviceFieldSource: source, serviceFieldImage: service.Image,
+		serviceFieldDockerfile: service.Dockerfile, serviceFieldContext: service.Context,
+	}
+	for index, value := range values {
+		p.serviceForm.Field(index).Set(value)
+	}
+	p.runtimeForm.Field(runtimeFieldCommand).Set(service.Command)
+	p.runtimeForm.Field(runtimeFieldRestart).Set(service.Restart)
+	p.runtimeForm.Field(runtimeFieldPorts).Set(formatPorts(service.Ports))
+	p.runtimeForm.Field(runtimeFieldVolumes).Set(formatVolumes(service.Volumes))
+	p.runtimeForm.Field(runtimeFieldNetwork).Set(service.Network)
+	p.serviceBuild.Load(projects.FormatDotEnv(service.BuildArgs))
+	p.serviceEnv.Load(projects.FormatDotEnv(service.Env))
+	p.serviceLabels.Load(formatStringMap(service.Labels))
+	if service.Healthcheck == nil {
+		p.healthForm.Field(healthFieldType).Set("none")
+		return
+	}
+	health := service.Healthcheck
+	p.healthForm.Field(healthFieldType).Set(health.Type)
+	p.healthForm.Field(healthFieldScheme).Set(health.Scheme)
+	p.healthForm.Field(healthFieldPath).Set(health.Path)
+	if health.Port != 0 {
+		p.healthForm.Field(healthFieldPort).Set(strconv.Itoa(health.Port))
+	}
+	if health.Interval != 0 {
+		p.timingForm.Field(timingFieldInterval).Set(health.Interval.String())
+	}
+	if health.Timeout != 0 {
+		p.timingForm.Field(timingFieldTimeout).Set(health.Timeout.String())
+	}
+	if health.Retries != 0 {
+		p.timingForm.Field(timingFieldRetries).Set(strconv.Itoa(health.Retries))
+	}
+	if health.StableFor != 0 {
+		p.timingForm.Field(timingFieldStableFor).Set(health.StableFor.String())
+	}
+}
+
+func (p *Projects) serviceKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		p.serviceOpen = false
+		return nil
+	case "ctrl+s":
+		p.saveService()
+		return nil
+	case "ctrl+t":
+		p.serviceTab = (p.serviceTab + 1) % serviceTabCount
+		return nil
+	}
+
+	switch p.serviceTab {
+	case serviceTabBuildArgs:
+		return p.serviceBuild.Update(msg)
+	case serviceTabEnv:
+		return p.serviceEnv.Update(msg)
+	case serviceTabLabels:
+		return p.serviceLabels.Update(msg)
+	}
+	form := p.serviceForm
+	if p.serviceTab == serviceTabRuntime {
+		form = p.runtimeForm
+	} else if p.serviceTab == serviceTabHealth {
+		form = p.healthForm
+	} else if p.serviceTab == serviceTabTiming {
+		form = p.timingForm
+	}
+	switch msg.String() {
+	case "tab", "down":
+		form.Next()
+		return nil
+	case "shift+tab", "up":
+		form.Previous()
+		return nil
+	}
+	return form.Update(msg)
+}
+
+func (p *Projects) saveService() {
+	service, err := p.buildService()
+	if err != nil {
+		p.Fail(err)
+		return
+	}
+	for index := range p.services {
+		if index != p.serviceEditing && p.services[index].Name == service.Name {
+			p.Notify("service "+service.Name+" already exists", "error")
+			return
+		}
+	}
+	if p.serviceEditing < 0 {
+		p.services = append(p.services, service)
+		sort.Slice(p.services, func(i, j int) bool { return p.services[i].Name < p.services[j].Name })
+		for index := range p.services {
+			if p.services[index].Name == service.Name {
+				p.serviceCursor = index
+			}
+		}
+	} else {
+		p.services[p.serviceEditing] = service
+		sort.Slice(p.services, func(i, j int) bool { return p.services[i].Name < p.services[j].Name })
+	}
+	p.serviceDirty = true
+	p.serviceOpen = false
+}
+
+func (p *Projects) buildService() (models.Service, error) {
+	name := p.serviceForm.Value(serviceFieldName)
+	if !models.ValidResourceName(name) {
+		return models.Service{}, fmt.Errorf("service name is invalid")
+	}
+	service := models.Service{
+		Name: name, Dockerfile: p.serviceForm.Value(serviceFieldDockerfile), Context: p.serviceForm.Value(serviceFieldContext),
+		Command: p.runtimeForm.Value(runtimeFieldCommand), Restart: p.runtimeForm.Value(runtimeFieldRestart),
+		Network: p.runtimeForm.Value(runtimeFieldNetwork),
+	}
+	if p.serviceForm.Value(serviceFieldSource) == "image" {
+		service.Image = p.serviceForm.Value(serviceFieldImage)
+		if !models.ValidDigestReference(service.Image) {
+			return models.Service{}, fmt.Errorf("service image must use repository@sha256:digest")
+		}
+	}
+	if !models.ValidSourcePath(service.Dockerfile) || !models.ValidSourcePath(service.Context) {
+		return models.Service{}, fmt.Errorf("service build paths must stay inside the source directory")
+	}
+	var err error
+	service.Ports, err = parsePorts(p.runtimeForm.Value(runtimeFieldPorts))
+	if err != nil {
+		return models.Service{}, err
+	}
+	service.Volumes, err = parseVolumes(p.runtimeForm.Value(runtimeFieldVolumes))
+	if err != nil {
+		return models.Service{}, err
+	}
+	service.BuildArgs, err = projects.ParseDotEnv(p.serviceBuild.Value())
+	if err != nil {
+		return models.Service{}, fmt.Errorf("build args: %w", err)
+	}
+	service.Env, err = projects.ParseDotEnv(p.serviceEnv.Value())
+	if err != nil {
+		return models.Service{}, fmt.Errorf("service env: %w", err)
+	}
+	service.Labels, err = parseStringMap(p.serviceLabels.Value())
+	if err != nil {
+		return models.Service{}, fmt.Errorf("labels: %w", err)
+	}
+	if err := models.ValidateLabels(service.Labels); err != nil {
+		return models.Service{}, err
+	}
+	service.Healthcheck, err = p.buildServiceHealthcheck()
+	return service, err
+}
+
+func (p *Projects) buildServiceHealthcheck() (*models.Healthcheck, error) {
+	typeName := p.healthForm.Value(healthFieldType)
+	if typeName == "none" {
+		return nil, nil
+	}
+	health := &models.Healthcheck{Type: typeName}
+	if typeName == "running" {
+		stable := p.timingForm.Value(timingFieldStableFor)
+		if stable == "" {
+			return nil, fmt.Errorf("healthcheck stable_for is required")
+		}
+		var err error
+		health.StableFor, err = time.ParseDuration(stable)
+		if err != nil {
+			return nil, fmt.Errorf("healthcheck stable_for: %w", err)
+		}
+		return health, models.ValidateHealthcheck(health)
+	}
+	port, err := strconv.Atoi(p.healthForm.Value(healthFieldPort))
+	if err != nil {
+		return nil, fmt.Errorf("healthcheck port is required")
+	}
+	health.Port = port
+	health.Scheme = p.healthForm.Value(healthFieldScheme)
+	health.Path = p.healthForm.Value(healthFieldPath)
+	if health.Scheme == "" {
+		health.Scheme = "http"
+	}
+	interval := p.timingForm.Value(timingFieldInterval)
+	if interval == "" {
+		interval = "5s"
+	}
+	health.Interval, err = time.ParseDuration(interval)
+	if err != nil {
+		return nil, fmt.Errorf("healthcheck interval: %w", err)
+	}
+	timeout := p.timingForm.Value(timingFieldTimeout)
+	if timeout == "" {
+		timeout = "3s"
+	}
+	health.Timeout, err = time.ParseDuration(timeout)
+	if err != nil {
+		return nil, fmt.Errorf("healthcheck timeout: %w", err)
+	}
+	retries := p.timingForm.Value(timingFieldRetries)
+	if retries == "" {
+		retries = "10"
+	}
+	health.Retries, err = strconv.Atoi(retries)
+	if err != nil {
+		return nil, fmt.Errorf("healthcheck retries: %w", err)
+	}
+	if typeName == "tcp" {
+		health.Scheme = ""
+		health.Path = ""
+	}
+	return health, models.ValidateHealthcheck(health)
+}
+
+func parseStringMap(content string) (map[string]string, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, nil
+	}
+	values := make(map[string]string)
+	if err := yaml.Unmarshal([]byte(content), &values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func formatStringMap(values map[string]string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	encoded, err := yaml.Marshal(values)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func (p *Projects) refreshAgentOptions() {
@@ -391,6 +826,10 @@ func (p *Projects) save() {
 	}
 
 	if p.fileMode() {
+		if p.serviceDirty && p.yaml.Dirty() {
+			p.Notify("save either structured services or raw config changes, not both at once", "error")
+			return
+		}
 		p.saveToFiles()
 		return
 	}
@@ -417,7 +856,10 @@ func (p *Projects) saveStandalone(variables map[string]string) {
 	}
 
 	if p.editing != "" && p.editing != project.Name {
-		p.server.Store().DeleteProject(p.editing)
+		if err := p.server.Store().DeleteProject(p.editing); err != nil {
+			p.Fail(err)
+			return
+		}
 	}
 	if err := p.server.Store().SaveProject(project); err != nil {
 		p.Fail(err)
@@ -459,6 +901,9 @@ func (p *Projects) saveToFiles() {
 		},
 		RawEnv: p.variables.Value(),
 	}
+	if p.serviceDirty {
+		draft.Environment.Services = serviceDeclarations(p.services)
+	}
 	if p.yaml.Dirty() {
 		if err := validateYAML(p.yaml.Value()); err != nil {
 			p.Fail(err)
@@ -480,6 +925,7 @@ func (p *Projects) saveToFiles() {
 func (p *Projects) finish(message string) {
 	p.variables.MarkSaved()
 	p.yaml.MarkSaved()
+	p.serviceDirty = false
 	p.mode = projectList
 	p.reload()
 	p.Notify(message, "success")
@@ -512,6 +958,7 @@ func (p *Projects) buildProject(variables map[string]string) (*models.Project, e
 		Builder:    p.form.Value(fieldBuilder),
 		Runners:    p.form.Values(fieldRunners),
 		AutoDeploy: p.form.Value(fieldAuto) == "yes",
+		Services:   append([]models.Service(nil), p.services...),
 		Runtime: models.Runtime{
 			Ports:   ports,
 			Volumes: volumes,
@@ -519,6 +966,39 @@ func (p *Projects) buildProject(variables map[string]string) (*models.Project, e
 			Env:     variables,
 		},
 	}, nil
+}
+
+func serviceDeclarations(services []models.Service) map[string]projects.Service {
+	declarations := make(map[string]projects.Service, len(services))
+	for _, service := range services {
+		declaration := projects.Service{
+			Image: service.Image, Dockerfile: service.Dockerfile, Context: service.Context,
+			BuildArgs: service.BuildArgs, Command: service.Command,
+			Ports: models.FormatPorts(service.Ports), Volumes: models.FormatVolumes(service.Volumes),
+			Env: service.Env, Network: service.Network, Restart: service.Restart, Labels: service.Labels,
+		}
+		if service.Healthcheck != nil {
+			health := service.Healthcheck
+			declaration.Healthcheck = &projects.Healthcheck{
+				Type: health.Type, Scheme: health.Scheme, Path: health.Path, Port: health.Port,
+			}
+			if health.Interval != 0 {
+				declaration.Healthcheck.Interval = health.Interval.String()
+			}
+			if health.Timeout != 0 {
+				declaration.Healthcheck.Timeout = health.Timeout.String()
+			}
+			if health.Retries != 0 {
+				retries := health.Retries
+				declaration.Healthcheck.Retries = &retries
+			}
+			if health.StableFor != 0 {
+				declaration.Healthcheck.StableFor = health.StableFor.String()
+			}
+		}
+		declarations[service.Name] = declaration
+	}
+	return declarations
 }
 
 func (p *Projects) confirm(msg tea.KeyMsg, action func()) tea.Cmd {
@@ -610,17 +1090,16 @@ func (p *Projects) agentNames(ids []string) []string {
 	return names
 }
 
-func readFile(path string) string {
+func readFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return string(data)
+	return string(data), nil
 }
 
 func validateYAML(content string) error {
-	var probe map[string]any
-	if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+	if err := projects.ValidateEnvironmentYAML(content); err != nil {
 		return fmt.Errorf("invalid yaml: %w", err)
 	}
 	return nil
@@ -629,14 +1108,19 @@ func validateYAML(content string) error {
 func (p *Projects) Hints() []components.Hint {
 	switch p.mode {
 	case projectEdit:
+		if p.serviceOpen {
+			return []components.Hint{{Key: "ctrl+t", Label: "next service tab"}, {Key: "tab", Label: "next field"}, {Key: "ctrl+s", Label: "save service"}, {Key: "esc", Label: "cancel"}}
+		}
 		hints := []components.Hint{{Key: "ctrl+t", Label: "next tab"}}
 		if p.tab == tabSettings {
 			hints = append(hints, components.Hint{Key: "tab", Label: "next field"})
+		} else if p.tab == tabServices {
+			hints = append(hints, components.Hint{Key: "n", Label: "add"}, components.Hint{Key: "e / enter", Label: "edit"}, components.Hint{Key: "d", Label: "remove"})
 		}
 		return append(hints,
 			components.Hint{Key: "ctrl+s", Label: "save"},
 			components.Hint{Key: "esc", Label: "cancel"})
-	case projectConfirmDelete, projectConfirmDeploy, projectConfirmRollback:
+	case projectConfirmDelete, projectConfirmDeploy, projectConfirmRollback, projectConfirmStop:
 		return []components.Hint{{Key: "y", Label: "confirm"}, {Key: "n", Label: "cancel"}}
 	default:
 		return []components.Hint{
@@ -663,6 +1147,8 @@ func (p *Projects) Render() string {
 		return p.renderDeploy()
 	case projectConfirmRollback:
 		return p.renderConfirm("Roll back", "Roll "+p.name()+" back to its last successful image?", false, "roll back")
+	case projectConfirmStop:
+		return p.renderConfirm("Stop project", "Stop "+p.name()+" on all runners?", true, "stop")
 	default:
 		return p.renderList()
 	}
@@ -692,6 +1178,12 @@ func (p *Projects) renderEdit() string {
 	case tabVariables:
 		body += theme.Ghost.Render("environment variables — paste a .env file or type KEY=VALUE lines") +
 			"\n" + p.variables.Render()
+	case tabServices:
+		if p.serviceOpen {
+			body += p.renderServiceEditor()
+		} else {
+			body += p.renderServices()
+		}
 	case tabYAML:
 		body += theme.Ghost.Render("paste "+p.form.Value(fieldEnvName)+".yaml here and it is written as the file") +
 			"\n" + p.yaml.Render()
@@ -703,6 +1195,54 @@ func (p *Projects) renderEdit() string {
 		components.Card(title, body, p.Width, true),
 		p.Notice(),
 	)
+}
+
+func (p *Projects) renderServices() string {
+	if len(p.services) == 0 {
+		return theme.Ghost.Render("SERVICES\n\n  no explicit services — the project uses its standalone runtime\n  press n to add a service")
+	}
+	lines := []string{theme.Heading.Render("SERVICES"), ""}
+	for index, service := range p.services {
+		pointer := "  "
+		if index == p.serviceCursor {
+			pointer = theme.Lead.Render(theme.IconPointer + " ")
+		}
+		mode := theme.Mark.Render("built")
+		source := service.BuildFile()
+		if !service.Built() {
+			mode = theme.Note.Render("image")
+			source = theme.Truncate(service.Image, 42)
+		}
+		lines = append(lines, pointer+theme.Body.Render(theme.Cell(service.Name, 18))+theme.Cell(mode, 12)+theme.Ghost.Render(source))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (p *Projects) renderServiceEditor() string {
+	items := []components.TabItem{
+		{Label: "settings"}, {Label: "runtime"}, {Label: "health"}, {Label: "timing"},
+		{Label: "build args", Dirty: p.serviceBuild.Dirty()},
+		{Label: "env", Dirty: p.serviceEnv.Dirty()},
+		{Label: "labels", Dirty: p.serviceLabels.Dirty()},
+	}
+	body := components.TabBar(items, p.serviceTab, components.CardWidth(p.Width), "service") + "\n"
+	switch p.serviceTab {
+	case serviceTabRuntime:
+		body += p.runtimeForm.Render(components.CardWidth(p.Width))
+	case serviceTabHealth:
+		body += p.healthForm.Render(components.CardWidth(p.Width))
+	case serviceTabTiming:
+		body += p.timingForm.Render(components.CardWidth(p.Width))
+	case serviceTabBuildArgs:
+		body += theme.Ghost.Render("build arguments — KEY=VALUE lines") + "\n" + p.serviceBuild.Render()
+	case serviceTabEnv:
+		body += theme.Ghost.Render("service environment — KEY=VALUE lines") + "\n" + p.serviceEnv.Render()
+	case serviceTabLabels:
+		body += theme.Ghost.Render("docker labels — YAML string map; uruflow.* is reserved") + "\n" + p.serviceLabels.Render()
+	default:
+		body += p.serviceForm.Render(components.CardWidth(p.Width))
+	}
+	return body
 }
 
 func (p *Projects) renderList() string {
@@ -839,7 +1379,10 @@ func (p *Projects) detailConfig(project *models.Project) string {
 		return theme.Ghost.Render("standalone project — it has no file; press e to edit it")
 	}
 
-	content := readFile(project.Source)
+	content, err := readFile(project.Source)
+	if err != nil {
+		return theme.Bad.Render("cannot read " + project.Source + ": " + err.Error())
+	}
 	if strings.TrimSpace(content) == "" {
 		return theme.Bad.Render("cannot read " + project.Source)
 	}
@@ -873,22 +1416,47 @@ func (p *Projects) detail(project *models.Project) string {
 			fmt.Sprintf("%d variables", len(project.Runtime.Env)), 12))
 	}
 
-	if project.MultiService() {
-		lines = append(lines, "", theme.Heading.Render("SERVICES"))
-		for _, service := range project.Services {
-			source := theme.Mark.Render("built")
-			if !service.Built() {
-				source = theme.Note.Render(service.Image)
-			}
-			detail := ""
-			if ports := formatPorts(service.Ports); ports != "" {
-				detail = theme.Ghost.Render("  " + ports)
-			}
-			lines = append(lines, "  "+theme.Body.Render(theme.Cell(service.Name, 16))+source+detail)
-		}
-	}
+	lines = append(lines, "")
+	lines = append(lines, p.serviceDetails(project)...)
 
 	return strings.Join(lines, "\n")
+}
+
+func (p *Projects) serviceDetails(project *models.Project) []string {
+	lines := []string{theme.Heading.Render("SERVICES")}
+	for _, service := range project.ServiceList() {
+		name := service.Name
+		if name == "" {
+			name = "default"
+		}
+		mode := "built"
+		source := service.BuildFile()
+		if !service.Built() {
+			mode = "image"
+			source = theme.Truncate(service.Image, 32)
+		}
+		health := "none"
+		if service.Healthcheck != nil {
+			health = service.Healthcheck.Type
+		}
+		ports := formatPorts(service.Ports)
+		if ports == "" {
+			ports = "–"
+		}
+		network := service.Network
+		if network == "" {
+			network = "default"
+		}
+		if p.Width < 120 {
+			lines = append(lines,
+				"  "+theme.Body.Render(theme.Cell(name, 14))+theme.Mark.Render(theme.Cell(mode, 8))+theme.Ghost.Render(theme.Truncate(source, 44)),
+				theme.Ghost.Render("    ports "+theme.Cell(ports, 14)+" net "+theme.Cell(network, 10)+" health "+theme.Cell(health, 9)+fmt.Sprintf(" labels %d", len(service.Labels))))
+			continue
+		}
+		lines = append(lines, "  "+theme.Body.Render(theme.Cell(name, 14))+theme.Mark.Render(theme.Cell(mode, 8))+
+			theme.Ghost.Render(theme.Cell(source, 30)+" ports "+theme.Cell(ports, 16)+" net "+theme.Cell(network, 12)+" health "+theme.Cell(health, 9)+fmt.Sprintf(" labels %d", len(service.Labels))))
+	}
+	return lines
 }
 
 func (p *Projects) renderDeploy() string {

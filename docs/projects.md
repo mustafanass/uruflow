@@ -24,12 +24,13 @@ Press `2`, then `n`. The first field chooses where it lives (all keys are listed
 ▸ stored as     ○ standalone  ◉ file       ‹ › to change
 ```
 
-The form has three tabs, cycled with `ctrl+t`:
+The form tabs are cycled with `ctrl+t`:
 
 | Tab | Contents |
 | :--- | :--- |
 | `settings` | Name, git URL, branch, Dockerfile, context, ports, volumes, network, and pickers for builder, runners and auto-deploy |
 | `variables` | The `.env` file — paste one in, or type `KEY=VALUE` lines |
+| `services` | Add, edit and remove native project services |
 | `config` | File mode only. Paste `<env>.yaml` to use it instead of the settings tab. |
 
 `ctrl+s` validates before writing anything. YAML must parse; the `.env` must parse, with the offending
@@ -125,6 +126,15 @@ services:
     ports: ["8080:80"]
     env:
       ROLE: web
+    healthcheck:
+      type: http
+      path: /health
+      port: 80
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    labels:
+      traefik.enable: "true"
   worker:
     dockerfile: Dockerfile.worker
     command: ./worker
@@ -147,7 +157,57 @@ reference; mutable tags are rejected. Built services get their own image reposit
 `<registry>/<namespace>/<project>-<service>`, so each is versioned independently by commit.
 
 Every field a single-service project supports is available per service: `command`, `ports`,
-`volumes`, `env`, `network`, `restart` and `build_args`.
+`volumes`, `env`, `network`, `restart` and `build_args`. Services also support native
+`healthcheck` readiness and generic Docker `labels`.
+
+### Service Healthchecks
+
+Three deliberately small readiness policies are supported:
+
+```yaml
+services:
+  api:
+    healthcheck:
+      type: http
+      scheme: http       # optional; defaults to http
+      path: /health      # required
+      port: 8080         # required; container port
+      interval: 5s       # optional; defaults to 5s
+      timeout: 3s        # optional; defaults to 3s per attempt
+      retries: 10        # optional; defaults to 10 attempts
+  cache:
+    healthcheck:
+      type: tcp
+      port: 6379
+  worker:
+    healthcheck:
+      type: running
+      stable_for: 10s
+```
+
+HTTP accepts only `2xx`. HTTP and TCP require a valid port and use finite attempts. `running`
+requires the container to remain running without a restart for `stable_for`. Durations must be
+positive. Unknown types, fields and malformed paths are rejected with the service field path.
+
+See [Deployments](deployments.md#readiness) for runtime precedence and failure behavior.
+
+### Docker Labels
+
+Labels are a string map and are copied unchanged to both built and prebuilt service containers:
+
+```yaml
+services:
+  api:
+    dockerfile: Dockerfile
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.api.rule: "Host(`api.example.com`)"
+      traefik.http.services.api.loadbalancer.server.port: "8080"
+```
+
+Traefik is only an example consumer; it is not built into or required by URUFLOW. Caddy, monitoring
+agents and other Docker-integrated tools can consume the same generic labels. Keys beginning with
+`uruflow.` are reserved for ownership and release identity and are rejected in project configuration.
 
 ### Service Variables
 
@@ -257,9 +317,14 @@ Secrets live in the `7` view, where `n` stores one and `d` removes one.
 A file-backed project can be edited in the interface. The `settings` tab owns git URL, Dockerfile,
 context, branch, builder, runners, ports, volumes, network and auto-deploy.
 
-Everything else in those files is **preserved** on save, including `build_args`, `command`, `restart`
-and project-level `env`. Those fields have no form control and can only be set by editing the files —
-either in the `config` tab or on disk.
+The `services` tab owns the service list and exposes source mode, build and runtime fields,
+healthcheck, build arguments, environment and labels. Complex maps use focused sheet editors. File
+mode writes these structured changes through the native project writer. Raw `config` changes and
+structured service changes cannot be saved together in one operation, preventing two competing
+representations.
+
+Other project-level fields are **preserved** on save, including `build_args`, `command`, `restart`
+and project-level `env`.
 
 Comments in YAML files are lost when the settings tab writes them back. Content pasted into the
 `config` tab is written verbatim, so comments survive that path.

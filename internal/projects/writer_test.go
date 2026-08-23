@@ -287,3 +287,40 @@ func TestTyposAreRejectedWithTheFieldName(t *testing.T) {
 		t.Fatalf("the problem does not name the bad key: %s", result.Problems[0].Error())
 	}
 }
+
+func TestStructuredServicesWriteAndLoadBack(t *testing.T) {
+	root := t.TempDir()
+	loader := NewLoader(root, fakeAgents())
+	item := draft()
+	retries := 4
+	item.Environment.Services = map[string]Service{
+		"api": {
+			Dockerfile: "Dockerfile", Ports: []string{"8080:8080"},
+			Healthcheck: &Healthcheck{Type: "http", Path: "/ready", Port: 8080, Interval: "2s", Timeout: "1s", Retries: &retries},
+			Labels:      map[string]string{"traefik.enable": "true"},
+		},
+		"cache": {
+			Image:       "redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			Healthcheck: &Healthcheck{Type: "tcp", Port: 6379},
+			Labels:      map[string]string{"metrics.enabled": "yes"},
+		},
+	}
+	if err := loader.Write(item); err != nil {
+		t.Fatal(err)
+	}
+	result := loader.Load()
+	if len(result.Problems) != 0 || len(result.Projects) != 1 || len(result.Projects[0].Services) != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+	byName := map[string]Service{}
+	environment, err := readEnvironment(result.Projects[0].Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, service := range environment.Services {
+		byName[name] = service
+	}
+	if byName["api"].Labels["traefik.enable"] != "true" || byName["api"].Healthcheck.Path != "/ready" || byName["cache"].Image == "" {
+		t.Fatalf("services = %+v", byName)
+	}
+}

@@ -67,7 +67,7 @@ The detail panel has three tabs:
 
 | Tab | Shows |
 | :--- | :--- |
-| `overview` | Image repository, build settings, runners, ports, volumes |
+| `overview` | Build settings, runners, and a compact summary of every service: source, image or Dockerfile, ports, network, healthcheck and label count |
 | `variables` | Effective environment variables after merging |
 | `config` | The `<env>.yaml` file, for file-backed projects |
 
@@ -79,6 +79,7 @@ The form has its own tabs, cycled with `ctrl+t`:
 | :--- | :--- |
 | `settings` | Fields and pickers |
 | `variables` | The `.env` file — paste or type |
+| `services` | Native multi-service list and editor |
 | `config` | File mode only: paste `<env>.yaml` to use instead of the settings tab |
 
 | Key | Action |
@@ -92,6 +93,11 @@ The form has its own tabs, cycled with `ctrl+t`:
 
 Fields that accept only known values are pickers rather than text: `stored as`, `builder`, `runners`
 and `auto deploy`. `builder` and `runners` list only agents that hold the matching role.
+
+In `services`, use `n` to add, `e` or `enter` to edit, and `d` to remove. The nested editor splits
+settings, runtime, health timing, build arguments, service environment and labels into compact tabs.
+`ctrl+s` saves the service into the project draft; save the project itself with `ctrl+s` from the
+services list.
 
 ## Agents
 
@@ -128,6 +134,9 @@ A release shows its stage inline:
 
 Opening one shows status, image, commit, digest, per-runner outcome, and the full log with build and
 release output interleaved in arrival order.
+
+Container log following remains non-blocking. If the in-memory bridge fills, the log view reports
+`▲ <count> log lines dropped` instead of stalling agent protocol event handling.
 
 ## Registry
 
