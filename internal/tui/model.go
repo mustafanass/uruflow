@@ -21,6 +21,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,25 +43,29 @@ type refreshMsg struct{}
 type frameMsg struct{}
 
 type Model struct {
-	server *api.Server
-	pages  []views.Page
-	tabs   []components.Tab
-	active int
-	width  int
-	height int
-	ready  bool
-	frame  int
-	help   bool
-	logs   chan views.ContainerLogMsg
+	server  *api.Server
+	pages   []views.Page
+	tabs    []components.Tab
+	active  int
+	width   int
+	height  int
+	ready   bool
+	frame   int
+	help    bool
+	logs    chan views.ContainerLogMsg
+	bridge  *bridge
+	dropped uint64
 }
 
 func NewModel(server *api.Server) *Model {
 	logs := make(chan views.ContainerLogMsg, logQueue)
-	server.Link().Subscribe(&bridge{logs: logs})
+	logBridge := &bridge{logs: logs}
+	server.Link().Subscribe(logBridge)
 
 	return &Model{
 		server: server,
 		logs:   logs,
+		bridge: logBridge,
 		pages: []views.Page{
 			views.NewOverview(server.Store()),
 			views.NewProjects(server),
@@ -102,6 +107,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case frameMsg:
 		m.frame++
 		m.page().Tick(m.frame)
+		dropped := m.bridge.dropped.Load()
+		if dropped > m.dropped {
+			m.pages[2].Update(views.DroppedLogsMsg(dropped - m.dropped))
+			m.dropped = dropped
+		}
 		return m, frame()
 
 	case refreshMsg:
@@ -230,7 +240,7 @@ func (m *Model) renderHelp() string {
 			theme.Note.Render("registry")+theme.Ghost.Render("  "+theme.IconArrow+"  ")+
 			theme.Lead.Render("runners pull and run"),
 		"",
-		"  "+theme.Ghost.Render("runners never see your source; they only ever pull a tagged image"),
+		"  "+theme.Ghost.Render("runners never see your source; they pull immutable, digest-addressed release artifacts"),
 	)
 
 	return strings.Join(lines, "\n")
@@ -249,7 +259,8 @@ func (m *Model) listen() tea.Cmd {
 }
 
 type bridge struct {
-	logs chan views.ContainerLogMsg
+	logs    chan views.ContainerLogMsg
+	dropped atomic.Uint64
 }
 
 func (b *bridge) AgentConnected(agent *models.Agent)             {}
@@ -261,5 +272,6 @@ func (b *bridge) ContainerLog(agentID string, entry ufp.ContainerLog) {
 	select {
 	case b.logs <- views.ContainerLogMsg(entry):
 	default:
+		b.dropped.Add(1)
 	}
 }

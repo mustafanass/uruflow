@@ -22,8 +22,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -114,6 +116,16 @@ type inspectResult struct {
 	Config       struct {
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	NetworkSettings struct {
+		IPAddress string `json:"IPAddress"`
+		Ports     map[string][]struct {
+			HostIP   string `json:"HostIp"`
+			HostPort string `json:"HostPort"`
+		} `json:"Ports"`
+		Networks map[string]struct {
+			IPAddress string `json:"IPAddress"`
+		} `json:"Networks"`
+	} `json:"NetworkSettings"`
 }
 
 func (c *Client) ListContainers(ctx context.Context, managedOnly bool) ([]Container, error) {
@@ -192,6 +204,40 @@ func (c *Client) ContainerOwnership(ctx context.Context, name, project string) (
 	}
 	labels := details.Config.Labels
 	return true, IsManaged(labels) && ProjectOf(labels) == project, nil
+}
+
+func (c *Client) Endpoint(ctx context.Context, id string, port int) (string, error) {
+	details, err := c.Inspect(ctx, id)
+	if err != nil {
+		return "", err
+	}
+
+	bindings := details.NetworkSettings.Ports[fmt.Sprintf("%d/tcp", port)]
+	for _, binding := range bindings {
+		if binding.HostPort == "" {
+			continue
+		}
+		host := binding.HostIP
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = "127.0.0.1"
+		}
+		return net.JoinHostPort(host, binding.HostPort), nil
+	}
+
+	addresses := make([]string, 0, len(details.NetworkSettings.Networks)+1)
+	if details.NetworkSettings.IPAddress != "" {
+		addresses = append(addresses, details.NetworkSettings.IPAddress)
+	}
+	for _, network := range details.NetworkSettings.Networks {
+		if network.IPAddress != "" {
+			addresses = append(addresses, network.IPAddress)
+		}
+	}
+	if len(addresses) == 0 {
+		return "", fmt.Errorf("container has no reachable address for port %d", port)
+	}
+	sort.Strings(addresses)
+	return net.JoinHostPort(addresses[0], strconv.Itoa(port)), nil
 }
 
 func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {

@@ -515,7 +515,9 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 	project, _ := harness.store.GetProject("api")
 	project.Services = []models.Service{
 		{Name: "app", Dockerfile: "Dockerfile", Context: ".",
-			Ports: []models.Port{{Host: 8080, Container: 80}}},
+			Ports:       []models.Port{{Host: 8080, Container: 80}},
+			Healthcheck: &models.Healthcheck{Type: "http", Scheme: "http", Path: "/ready", Port: 80, Interval: 2 * time.Second, Timeout: time.Second, Retries: 5},
+			Labels:      map[string]string{"traefik.enable": "true"}},
 		{Name: "worker", Dockerfile: "Dockerfile.worker", Command: "./worker"},
 		{Name: "cache", Image: prebuiltImage,
 			Volumes: []models.Volume{{Source: "/srv/redis", Target: "/data"}}},
@@ -571,6 +573,12 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 		if byName["app"].Env["SHARED"] != "yes" {
 			t.Errorf("project env did not reach the service: %v", byName["app"].Env)
 		}
+		if byName["app"].Healthcheck == nil || byName["app"].Healthcheck.Path != "/ready" || byName["app"].Healthcheck.Retries != 5 {
+			t.Errorf("healthcheck did not reach runner: %+v", byName["app"].Healthcheck)
+		}
+		if byName["app"].Labels["traefik.enable"] != "true" {
+			t.Errorf("labels did not reach runner: %#v", byName["app"].Labels)
+		}
 		if byName["cache"].Restart != "unless-stopped" {
 			t.Errorf("default restart policy missing: %q", byName["cache"].Restart)
 		}
@@ -578,7 +586,10 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 		t.Fatal("no release was dispatched")
 	}
 
-	harness.await(t, release.ID, models.StatusSucceeded)
+	final := harness.await(t, release.ID, models.StatusSucceeded)
+	if final.Spec.Services[0].Healthcheck == nil || final.Spec.Services[0].Labels["traefik.enable"] != "true" {
+		t.Fatalf("release snapshot lost runtime specification: %+v", final.Spec.Services[0])
+	}
 }
 
 func TestBuildStatusFromAnotherAgentIsRejected(t *testing.T) {
@@ -685,7 +696,7 @@ func TestMultiServiceRollbackReusesEveryDigest(t *testing.T) {
 	harness := newHarness(t)
 	project, _ := harness.store.GetProject("api")
 	project.Services = []models.Service{
-		{Name: "app", Dockerfile: "Dockerfile"},
+		{Name: "app", Dockerfile: "Dockerfile", Healthcheck: &models.Healthcheck{Type: "tcp", Port: 8080, Interval: time.Second, Timeout: time.Second, Retries: 3}, Labels: map[string]string{"monitor.team": "platform"}},
 		{Name: "worker", Dockerfile: "Dockerfile.worker"},
 		{Name: "cache", Image: prebuiltImage},
 	}
@@ -716,6 +727,9 @@ func TestMultiServiceRollbackReusesEveryDigest(t *testing.T) {
 	for _, service := range replayed.Services {
 		if service.Image != want[service.Name] {
 			t.Fatalf("service %s image = %s, want %s", service.Name, service.Image, want[service.Name])
+		}
+		if service.Name == "app" && (service.Healthcheck == nil || service.Healthcheck.Type != "tcp" || service.Labels["monitor.team"] != "platform") {
+			t.Fatalf("rollback lost app runtime specification: %+v", service)
 		}
 	}
 	harness.await(t, rollback.ID, models.StatusSucceeded)

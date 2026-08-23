@@ -133,7 +133,22 @@ ends up serving a mixture of old and new services.
 
 ### Readiness
 
-A replacement is ready when:
+When a service declares a native URUFLOW `healthcheck`, it is authoritative for release readiness:
+
+- `http` sends `GET` to the configured path and accepts a `2xx` response
+- `tcp` requires a successful TCP connection
+- `running` requires an uninterrupted running period equal to `stable_for`
+
+HTTP and TCP resolve the configured container port to its published host binding when present,
+otherwise to the container's Docker network address. Each attempt has its own `timeout`; at most
+`retries` attempts run, separated by `interval`. The release job's ten-minute context is the outer
+bound. Connections and response bodies are closed after every attempt.
+
+While a native check is active, Dockerfile `HEALTHCHECK` status is not combined with it. The native
+policy is the sole readiness policy, though an exit, death or restart still fails readiness.
+
+When no native healthcheck is configured, the previous behavior is unchanged. A replacement is
+ready when:
 
 - its image declares a `HEALTHCHECK` and the container reports **healthy**, or
 - it declares none and the container has stayed **running** for **5 seconds**
@@ -144,7 +159,11 @@ It fails immediately, without waiting out the timeout, when the container:
 - reports **unhealthy**
 - **restarts** during the wait, which is how a crash loop is caught under a restart policy
 
-The overall wait is capped at **2 minutes**.
+That fallback wait is capped at **2 minutes**.
+
+Every readiness failure uses the same replacement safety path: the failed container is removed and
+the set-aside container is renamed back and started. In a multi-service release, already replaced
+services are restored in reverse order, preserving the all-or-nothing runner state.
 
 ### The Availability Gap
 
@@ -169,7 +188,8 @@ overlap on different ports.
 | Pull fails on a runner | Before replacement | None on that runner |
 | Container fails to create or start | After the old one was set aside | Previous container restored |
 | Container exits immediately | Readiness check | Previous container restored |
-| Health check never passes | Readiness check, within 2 minutes | Previous container restored |
+| Native healthcheck exhausts retries | Readiness check, bounded by its settings and release context | Previous container restored |
+| Docker image health never passes without a native check | Readiness check, within 2 minutes | Previous container restored |
 | Container crash-loops | Readiness check, on first restart | Previous container restored |
 | One runner fails, others succeed | Settling | Failed runner keeps its previous container; others run the new image. The release is marked failed. |
 | Builder disconnects mid-build | Agent disconnect | Release fails with `builder disconnected` |
@@ -204,7 +224,7 @@ Rollback fails with `no successful release to roll back to` when the project has
 
 | Action | Effect |
 | :--- | :--- |
-| Stop | Stops the container on every configured runner. The image remains; a later release or rollback restarts it. |
+| Stop | After confirmation, stops the container on every configured runner. The image remains; a later release or rollback restarts it. |
 | Delete | Removes the container from every configured runner and deletes the project. Images stay in the registry. |
 
 Both require every configured runner to be online. A failed or unreachable runner prevents deletion,

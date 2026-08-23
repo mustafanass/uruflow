@@ -223,6 +223,12 @@ func (p *Pipeline) validateProject(project *models.Project) error {
 			}
 			return fmt.Errorf("service %s image must use repository@sha256:digest", name)
 		}
+		if err := models.ValidateHealthcheck(service.Healthcheck); err != nil {
+			return fmt.Errorf("service %q: %w", service.Name, err)
+		}
+		if err := models.ValidateLabels(service.Labels); err != nil {
+			return fmt.Errorf("service %q: %w", service.Name, err)
+		}
 	}
 	return nil
 }
@@ -481,6 +487,15 @@ func (p *Pipeline) releaseRequest(release *models.Release, project *models.Proje
 			Network: service.Network,
 			Restart: service.RestartPolicy(),
 			Command: service.Command,
+			Labels:  service.Labels,
+		}
+		if service.Healthcheck != nil {
+			spec.Healthcheck = &ufp.HealthcheckSpec{
+				Type: service.Healthcheck.Type, Scheme: service.Healthcheck.Scheme,
+				Path: service.Healthcheck.Path, Port: service.Healthcheck.Port,
+				Interval: service.Healthcheck.Interval, Timeout: service.Healthcheck.Timeout,
+				Retries: service.Healthcheck.Retries, StableFor: service.Healthcheck.StableFor,
+			}
 		}
 		for _, port := range service.Ports {
 			spec.Ports = append(spec.Ports, ufp.PortBinding{

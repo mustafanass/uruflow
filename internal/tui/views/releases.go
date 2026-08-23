@@ -19,6 +19,7 @@
 package views
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -61,16 +62,29 @@ func (r *Releases) Init() tea.Cmd {
 func (r *Releases) Capturing() bool { return r.mode == releaseDetail }
 
 func (r *Releases) reload() {
-	r.releases, _ = r.server.Store().ListReleases(releaseHistory)
+	releases, err := r.server.Store().ListReleases(releaseHistory)
+	if err != nil {
+		r.Fail(fmt.Errorf("load releases: %w", err))
+		return
+	}
+	r.releases = releases
 	if r.cursor >= len(r.releases) {
 		r.cursor = 0
 	}
 
 	if r.mode == releaseDetail && r.current != nil {
-		if refreshed, err := r.server.Store().GetRelease(r.current.ID); err == nil {
-			r.current = refreshed
+		refreshed, err := r.server.Store().GetRelease(r.current.ID)
+		if err != nil {
+			r.Fail(fmt.Errorf("load release %s: %w", r.current.ID, err))
+			return
 		}
-		r.logs, _ = r.server.Store().ListLogs(r.current.ID)
+		r.current = refreshed
+		logs, err := r.server.Store().ListLogs(r.current.ID)
+		if err != nil {
+			r.Fail(fmt.Errorf("load release logs: %w", err))
+			return
+		}
+		r.logs = logs
 	}
 }
 
@@ -107,7 +121,12 @@ func (r *Releases) key(msg tea.KeyMsg) tea.Cmd {
 		r.cursor = move(r.cursor, 1, len(r.releases))
 	case "enter":
 		if release := r.selected(); release != nil {
-			r.current, _ = r.server.Store().GetRelease(release.ID)
+			current, err := r.server.Store().GetRelease(release.ID)
+			if err != nil {
+				r.Fail(fmt.Errorf("load release %s: %w", release.ID, err))
+				return nil
+			}
+			r.current = current
 			r.follow = true
 			r.mode = releaseDetail
 			r.reload()

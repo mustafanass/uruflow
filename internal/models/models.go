@@ -110,17 +110,30 @@ type Project struct {
 }
 
 type Service struct {
-	Name       string            `json:"name"`
-	Image      string            `json:"image,omitempty"`
-	Dockerfile string            `json:"dockerfile,omitempty"`
-	Context    string            `json:"context,omitempty"`
-	BuildArgs  map[string]string `json:"build_args,omitempty"`
-	Command    string            `json:"command,omitempty"`
-	Ports      []Port            `json:"ports,omitempty"`
-	Volumes    []Volume          `json:"volumes,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	Network    string            `json:"network,omitempty"`
-	Restart    string            `json:"restart,omitempty"`
+	Name        string            `json:"name"`
+	Image       string            `json:"image,omitempty"`
+	Dockerfile  string            `json:"dockerfile,omitempty"`
+	Context     string            `json:"context,omitempty"`
+	BuildArgs   map[string]string `json:"build_args,omitempty"`
+	Command     string            `json:"command,omitempty"`
+	Ports       []Port            `json:"ports,omitempty"`
+	Volumes     []Volume          `json:"volumes,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	Network     string            `json:"network,omitempty"`
+	Restart     string            `json:"restart,omitempty"`
+	Healthcheck *Healthcheck      `json:"healthcheck,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+}
+
+type Healthcheck struct {
+	Type      string        `json:"type"`
+	Scheme    string        `json:"scheme,omitempty"`
+	Path      string        `json:"path,omitempty"`
+	Port      int           `json:"port,omitempty"`
+	Interval  time.Duration `json:"interval,omitempty"`
+	Timeout   time.Duration `json:"timeout,omitempty"`
+	Retries   int           `json:"retries,omitempty"`
+	StableFor time.Duration `json:"stable_for,omitempty"`
 }
 
 type Runtime struct {

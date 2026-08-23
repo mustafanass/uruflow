@@ -196,6 +196,20 @@ func validateReleaseRequest(request ufp.ReleaseRequest) error {
 				return fmt.Errorf("release service %q has an invalid port", service.Name)
 			}
 		}
+		if service.Healthcheck != nil {
+			healthcheck := &models.Healthcheck{
+				Type: service.Healthcheck.Type, Scheme: service.Healthcheck.Scheme,
+				Path: service.Healthcheck.Path, Port: service.Healthcheck.Port,
+				Interval: service.Healthcheck.Interval, Timeout: service.Healthcheck.Timeout,
+				Retries: service.Healthcheck.Retries, StableFor: service.Healthcheck.StableFor,
+			}
+			if err := models.ValidateHealthcheck(healthcheck); err != nil {
+				return fmt.Errorf("release service %q: %w", service.Name, err)
+			}
+		}
+		if err := models.ValidateLabels(service.Labels); err != nil {
+			return fmt.Errorf("release service %q: %w", service.Name, err)
+		}
 		seen[service.Name] = true
 	}
 	return nil

@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
 )
@@ -285,5 +286,84 @@ func TestSingleServiceProjectsStayFlat(t *testing.T) {
 		if len(list) != 1 || list[0].Name != "" {
 			t.Fatalf("%s implicit service = %+v", project.Name, list)
 		}
+	}
+}
+
+func TestServicesLoadHealthchecksAndLabels(t *testing.T) {
+	root := seedTree(t)
+	write(t, filepath.Join(root, "projects", "checks", "project.yaml"), "git: git@host:checks.git\n")
+	write(t, filepath.Join(root, "projects", "checks", "prod.yaml"),
+		"branch: main\nbuilder: builder-01\nrunners: [web-01]\nservices:\n"+
+			"  api:\n    dockerfile: Dockerfile\n    healthcheck:\n      type: http\n      path: /health\n      port: 8080\n      interval: 2s\n      timeout: 1s\n      retries: 4\n"+
+			"    labels:\n      traefik.enable: \"true\"\n      monitor.team: platform\n"+
+			"  cache:\n    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n    healthcheck:\n      type: tcp\n      port: 6379\n"+
+			"    labels:\n      metrics.enabled: \"yes\"\n"+
+			"  worker:\n    dockerfile: Dockerfile.worker\n    healthcheck:\n      type: running\n      stable_for: 8s\n")
+
+	result := NewLoader(root, fakeAgents()).Load()
+	if len(result.Problems) != 0 {
+		t.Fatalf("problems: %v", result.Problems)
+	}
+	var project models.Project
+	for index := range result.Projects {
+		if result.Projects[index].Name == "checks-prod" {
+			project = result.Projects[index]
+		}
+	}
+	services := map[string]models.Service{}
+	for _, service := range project.Services {
+		services[service.Name] = service
+	}
+	api := services["api"]
+	if api.Healthcheck == nil || api.Healthcheck.Type != "http" || api.Healthcheck.Scheme != "http" || api.Healthcheck.Interval != 2*time.Second || api.Healthcheck.Retries != 4 {
+		t.Fatalf("api healthcheck = %+v", api.Healthcheck)
+	}
+	if api.Labels["traefik.enable"] != "true" || api.Labels["monitor.team"] != "platform" {
+		t.Fatalf("api labels = %#v", api.Labels)
+	}
+	if cache := services["cache"]; cache.Built() || cache.Healthcheck.Timeout != 3*time.Second || cache.Labels["metrics.enabled"] != "yes" {
+		t.Fatalf("cache = %+v", cache)
+	}
+	if worker := services["worker"]; worker.Healthcheck.StableFor != 8*time.Second {
+		t.Fatalf("worker healthcheck = %+v", worker.Healthcheck)
+	}
+}
+
+func TestInvalidHealthchecksAndReservedLabelsAreRejected(t *testing.T) {
+	cases := map[string]string{
+		"unknown type":           "healthcheck:\n      type: exec\n",
+		"missing path":           "healthcheck:\n      type: http\n      port: 8080\n",
+		"bad port":               "healthcheck:\n      type: tcp\n      port: 70000\n",
+		"zero duration":          "healthcheck:\n      type: tcp\n      port: 80\n      timeout: 0s\n",
+		"zero retries":           "healthcheck:\n      type: tcp\n      port: 80\n      retries: 0\n",
+		"bad path":               "healthcheck:\n      type: http\n      port: 80\n      path: health\n",
+		"running missing stable": "healthcheck:\n      type: running\n",
+		"reserved label":         "labels:\n      uruflow.project: forged\n",
+	}
+	for name, serviceConfig := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "projects", "bad", "project.yaml"), "git: git@host:bad.git\n")
+			write(t, filepath.Join(root, "projects", "bad", "prod.yaml"),
+				"branch: main\nbuilder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    dockerfile: Dockerfile\n    "+serviceConfig)
+			result := NewLoader(root, fakeAgents()).Load()
+			if len(result.Problems) == 0 {
+				t.Fatal("invalid service configuration was accepted")
+			}
+			if !strings.Contains(result.Problems[0].Error(), "service") || !strings.Contains(result.Problems[0].Error(), "api") {
+				t.Fatalf("error lacks service path: %v", result.Problems[0])
+			}
+		})
+	}
+}
+
+func TestUnknownHealthcheckKeyIsRejected(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "projects", "bad", "project.yaml"), "git: git@host:bad.git\n")
+	write(t, filepath.Join(root, "projects", "bad", "prod.yaml"),
+		"branch: main\nbuilder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    healthcheck:\n      type: tcp\n      port: 80\n      intervaal: 2s\n")
+	result := NewLoader(root, fakeAgents()).Load()
+	if len(result.Problems) == 0 || !strings.Contains(result.Problems[0].Error(), "intervaal") {
+		t.Fatalf("unknown healthcheck key was not reported: %v", result.Problems)
 	}
 }

@@ -90,6 +90,36 @@ func TestPullRejectsMalformedProgress(t *testing.T) {
 	}
 }
 
+func TestContainerLabelsPreserveUserValuesAndProtectOwnership(t *testing.T) {
+	labels, err := ContainerLabels(map[string]string{"traefik.enable": "true", "empty": ""}, "api", "web", "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if labels["traefik.enable"] != "true" || labels["empty"] != "" || labels[LabelProject] != "api" || labels[LabelService] != "web" {
+		t.Fatalf("labels = %#v", labels)
+	}
+	if _, err := ContainerLabels(map[string]string{LabelProject: "forged"}, "api", "", "r1"); err == nil {
+		t.Fatal("reserved label was accepted")
+	}
+}
+
+func TestEndpointPrefersPublishedPortThenContainerAddress(t *testing.T) {
+	response := `{"NetworkSettings":{"Ports":{"8080/tcp":[{"HostIp":"0.0.0.0","HostPort":"18080"}]},"Networks":{"bridge":{"IPAddress":"172.18.0.4"}}}}`
+	client := &Client{http: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response)), Header: make(http.Header)}, nil
+	})}}
+	endpoint, err := client.Endpoint(context.Background(), "container", 8080)
+	if err != nil || endpoint != "127.0.0.1:18080" {
+		t.Fatalf("published endpoint = %q err=%v", endpoint, err)
+	}
+
+	response = `{"NetworkSettings":{"Networks":{"bridge":{"IPAddress":"172.18.0.4"}}}}`
+	endpoint, err = client.Endpoint(context.Background(), "container", 8080)
+	if err != nil || endpoint != "172.18.0.4:8080" {
+		t.Fatalf("container endpoint = %q err=%v", endpoint, err)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

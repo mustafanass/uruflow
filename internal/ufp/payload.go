@@ -18,6 +18,8 @@
 
 package ufp
 
+import "time"
+
 type Hello struct {
 	AgentID  string `json:"agent_id"`
 	Hostname string `json:"hostname"`
@@ -88,14 +90,27 @@ type ReleaseRequest struct {
 }
 
 type ServiceSpec struct {
-	Name    string            `json:"name"`
-	Image   string            `json:"image"`
-	Ports   []PortBinding     `json:"ports,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	Volumes []VolumeBinding   `json:"volumes,omitempty"`
-	Network string            `json:"network,omitempty"`
-	Restart string            `json:"restart,omitempty"`
-	Command string            `json:"command,omitempty"`
+	Name        string            `json:"name"`
+	Image       string            `json:"image"`
+	Ports       []PortBinding     `json:"ports,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	Volumes     []VolumeBinding   `json:"volumes,omitempty"`
+	Network     string            `json:"network,omitempty"`
+	Restart     string            `json:"restart,omitempty"`
+	Command     string            `json:"command,omitempty"`
+	Healthcheck *HealthcheckSpec  `json:"healthcheck,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+}
+
+type HealthcheckSpec struct {
+	Type      string        `json:"type"`
+	Scheme    string        `json:"scheme,omitempty"`
+	Path      string        `json:"path,omitempty"`
+	Port      int           `json:"port,omitempty"`
+	Interval  time.Duration `json:"interval,omitempty"`
+	Timeout   time.Duration `json:"timeout,omitempty"`
+	Retries   int           `json:"retries,omitempty"`
+	StableFor time.Duration `json:"stable_for,omitempty"`
 }
 
 type PortBinding struct {

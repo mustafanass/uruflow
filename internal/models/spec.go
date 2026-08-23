@@ -21,6 +21,7 @@ package models
 import (
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -58,6 +59,69 @@ func ValidGitCommit(commit string) bool {
 	}
 	_, err := hex.DecodeString(commit)
 	return err == nil
+}
+
+func ValidateHealthcheck(healthcheck *Healthcheck) error {
+	if healthcheck == nil {
+		return nil
+	}
+	switch healthcheck.Type {
+	case "http":
+		parsed, err := url.ParseRequestURI(healthcheck.Path)
+		if err != nil || !strings.HasPrefix(healthcheck.Path, "/") || parsed.IsAbs() || parsed.Host != "" || parsed.Fragment != "" {
+			return fmt.Errorf("healthcheck.path must be a valid absolute request path")
+		}
+		if healthcheck.Scheme != "http" && healthcheck.Scheme != "https" {
+			return fmt.Errorf("healthcheck.scheme must be http or https")
+		}
+		if healthcheck.StableFor != 0 {
+			return fmt.Errorf("healthcheck.stable_for is only valid for running")
+		}
+		return validateProbeHealthcheck(healthcheck)
+	case "tcp":
+		if healthcheck.Scheme != "" || healthcheck.Path != "" || healthcheck.StableFor != 0 {
+			return fmt.Errorf("healthcheck contains fields that are not valid for tcp")
+		}
+		return validateProbeHealthcheck(healthcheck)
+	case "running":
+		if healthcheck.StableFor <= 0 {
+			return fmt.Errorf("healthcheck.stable_for must be positive")
+		}
+		if healthcheck.Scheme != "" || healthcheck.Path != "" || healthcheck.Port != 0 || healthcheck.Interval != 0 || healthcheck.Timeout != 0 || healthcheck.Retries != 0 {
+			return fmt.Errorf("healthcheck contains fields that are not valid for running")
+		}
+	default:
+		return fmt.Errorf("healthcheck.type %q is not supported", healthcheck.Type)
+	}
+	return nil
+}
+
+func validateProbeHealthcheck(healthcheck *Healthcheck) error {
+	if healthcheck.Port < 1 || healthcheck.Port > 65535 {
+		return fmt.Errorf("healthcheck.port must be between 1 and 65535")
+	}
+	if healthcheck.Interval <= 0 {
+		return fmt.Errorf("healthcheck.interval must be positive")
+	}
+	if healthcheck.Timeout <= 0 {
+		return fmt.Errorf("healthcheck.timeout must be positive")
+	}
+	if healthcheck.Retries <= 0 {
+		return fmt.Errorf("healthcheck.retries must be positive")
+	}
+	return nil
+}
+
+func ValidateLabels(labels map[string]string) error {
+	for key := range labels {
+		if key == "" || strings.TrimSpace(key) != key || strings.ContainsAny(key, " \t\r\n") {
+			return fmt.Errorf("label %q has an invalid key", key)
+		}
+		if strings.HasPrefix(key, "uruflow.") {
+			return fmt.Errorf("label %q is reserved for uruflow", key)
+		}
+	}
+	return nil
 }
 
 const (

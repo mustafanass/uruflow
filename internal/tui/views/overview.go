@@ -68,15 +68,32 @@ func (o *Overview) Hints() []components.Hint {
 }
 
 func (o *Overview) reload() {
-	o.stats, _ = o.store.Stats()
-	o.agents, _ = o.store.ListAgents()
-	o.releases, _ = o.store.ListReleases(recentReleases)
-	o.alerts, _ = o.store.ListActiveAlerts()
+	stats, err := o.store.Stats()
+	if err != nil {
+		o.Fail(fmt.Errorf("load overview: %w", err))
+		return
+	}
+	agents, err := o.store.ListAgents()
+	if err != nil {
+		o.Fail(fmt.Errorf("load agents: %w", err))
+		return
+	}
+	releases, err := o.store.ListReleases(recentReleases)
+	if err != nil {
+		o.Fail(fmt.Errorf("load releases: %w", err))
+		return
+	}
+	alerts, err := o.store.ListActiveAlerts()
+	if err != nil {
+		o.Fail(fmt.Errorf("load alerts: %w", err))
+		return
+	}
+	o.stats, o.agents, o.releases, o.alerts = stats, agents, releases, alerts
 }
 
 func (o *Overview) Render() string {
 	if o.stats == nil {
-		return theme.Faint.Render("loading…")
+		return components.Stack(theme.Faint.Render("loading…"), o.Notice())
 	}
 
 	return components.Stack(

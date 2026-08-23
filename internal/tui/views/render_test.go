@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
@@ -154,5 +155,124 @@ func TestRuntimeSpecRoundTrip(t *testing.T) {
 	}
 	if _, err := parseVolumes("/srv:/data:rw"); err == nil {
 		t.Error("an unknown volume flag should be rejected")
+	}
+}
+
+func TestRawProjectYAMLRejectsUnknownServiceFields(t *testing.T) {
+	content := "branch: main\nbuilder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    healthcheck:\n      type: tcp\n      port: 80\n      intervaal: 2s\n"
+	if err := validateYAML(content); err == nil || !strings.Contains(err.Error(), "intervaal") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestServiceEditorAddsEditsAndRemovesAService(t *testing.T) {
+	page := NewProjects(nil)
+	page.Resize(100, 24)
+	page.variables = components.NewSheet("variables", "")
+	page.yaml = components.NewSheet("config", "")
+	page.resetServiceEditor()
+	page.openService(-1)
+	page.serviceForm.Field(serviceFieldName).Set("api")
+	page.runtimeForm.Field(runtimeFieldPorts).Set("8080:8080")
+	page.healthForm.Field(healthFieldType).Set("http")
+	page.healthForm.Field(healthFieldPath).Set("/ready")
+	page.healthForm.Field(healthFieldPort).Set("8080")
+	page.timingForm.Field(timingFieldInterval).Set("1s")
+	page.timingForm.Field(timingFieldTimeout).Set("500ms")
+	page.timingForm.Field(timingFieldRetries).Set("3")
+	page.serviceLabels.Load("traefik.enable: \"true\"\n")
+	page.saveService()
+
+	if len(page.services) != 1 || page.services[0].Healthcheck == nil || page.services[0].Healthcheck.Path != "/ready" || page.services[0].Labels["traefik.enable"] != "true" {
+		t.Fatalf("service = %+v", page.services)
+	}
+	page.openService(0)
+	page.runtimeForm.Field(runtimeFieldCommand).Set("./api")
+	page.saveService()
+	if page.services[0].Command != "./api" {
+		t.Fatalf("edited command = %q", page.services[0].Command)
+	}
+	page.serviceCursor = 0
+	page.servicesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if len(page.services) != 0 || !page.serviceDirty {
+		t.Fatalf("remove failed: %+v", page.services)
+	}
+}
+
+func TestMultiServiceDetailsShowRuntimeSummary(t *testing.T) {
+	page := NewProjects(nil)
+	page.Resize(80, 20)
+	project := &models.Project{Services: []models.Service{
+		{Name: "api", Dockerfile: "Dockerfile", Ports: []models.Port{{Host: 8080, Container: 80}}, Network: "edge", Healthcheck: &models.Healthcheck{Type: "http"}, Labels: map[string]string{"traefik.enable": "true"}},
+		{Name: "cache", Image: "redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}}
+	output := strings.Join(page.serviceDetails(project), "\n")
+	for _, want := range []string{"api", "cache", "built", "image", "8080:80", "edge", "http", "labels 1"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("service details lack %q:\n%s", want, output)
+		}
+	}
+	for index, line := range strings.Split(output, "\n") {
+		if width := lipgloss.Width(line); width > components.CardWidth(80) {
+			t.Fatalf("service detail line %d overflows: %d", index+1, width)
+		}
+	}
+}
+
+func TestServiceEditorRemainsCompactAtSmallWidths(t *testing.T) {
+	page := NewProjects(nil)
+	page.Resize(80, 20)
+	page.variables = components.NewSheet("variables", "")
+	page.yaml = components.NewSheet("config", "")
+	page.resetServiceEditor()
+	tabs := page.tabs()
+	if len(tabs) < 3 || tabs[2].Label != "services" {
+		t.Fatalf("services tab is unreachable: %+v", tabs)
+	}
+	page.openService(-1)
+	output := page.renderServiceEditor()
+	for index, line := range strings.Split(output, "\n") {
+		if width := lipgloss.Width(line); width > components.CardWidth(80) {
+			t.Fatalf("line %d overflows small editor: %d", index+1, width)
+		}
+	}
+	if !strings.Contains(output, "settings") || !strings.Contains(output, "labels") {
+		t.Fatalf("service tabs are not visible:\n%s", output)
+	}
+}
+
+func TestStopRequiresConfirmation(t *testing.T) {
+	page := NewProjects(nil)
+	page.Resize(100, 24)
+	page.projects = []models.Project{{Name: "api"}}
+	page.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if page.mode != projectConfirmStop {
+		t.Fatalf("mode = %v", page.mode)
+	}
+	if output := page.Render(); !strings.Contains(output, "Stop api on all runners?") {
+		t.Fatalf("confirmation is missing:\n%s", output)
+	}
+	page.confirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, func() { t.Fatal("stop action ran on cancel") })
+}
+
+func TestStoreErrorsAreVisible(t *testing.T) {
+	store := seed(t)
+	page := NewOverview(store)
+	page.Resize(renderWidth, renderHeight)
+	page.Init()
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	page.reload()
+	if output := page.Render(); !strings.Contains(output, "load overview") {
+		t.Fatalf("store error is hidden:\n%s", output)
+	}
+}
+
+func TestDroppedLogIndicatorRenders(t *testing.T) {
+	page := &Agents{mode: agentLogs, streaming: "container", dropped: 17}
+	page.Resize(100, 20)
+	if output := page.renderLogs(); !strings.Contains(output, "17 log lines dropped") {
+		t.Fatalf("drop indicator is missing:\n%s", output)
 	}
 }
