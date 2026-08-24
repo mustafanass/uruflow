@@ -70,3 +70,15 @@ var (
 	Key  = lipgloss.NewStyle().Foreground(Primary).Bold(true)
 	Hint = lipgloss.NewStyle().Foreground(Dim)
 )
+
+func SetRenderer(renderer *lipgloss.Renderer) {
+	styles := []*lipgloss.Style{
+		&Base, &Title, &Brand, &Heading, &Body, &Faint, &Ghost,
+		&Good, &Warn, &Bad, &Note, &Mark, &Lead,
+		&Selected, &Column, &Rule,
+		&Panel, &PanelActive, &TabActive, &TabIdle, &Key, &Hint,
+	}
+	for _, style := range styles {
+		*style = style.Renderer(renderer)
+	}
+}

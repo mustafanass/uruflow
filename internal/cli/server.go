@@ -28,6 +28,7 @@ import (
 
 	"github.com/mustafanass/uruflow/internal/api"
 	"github.com/mustafanass/uruflow/internal/config"
+	"github.com/mustafanass/uruflow/internal/console"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 	"github.com/mustafanass/uruflow/internal/tui"
 	"github.com/mustafanass/uruflow/internal/version"
@@ -53,13 +54,23 @@ func ExecuteServer() error {
 		Long:          "uruflow builds images on a builder agent, pushes them to its own registry, then releases those images to runner agents.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE:          runServer,
+		RunE:          runDefault,
 	}
 
 	root.PersistentFlags().StringVarP(&serverConfigPath, "config", "c", "", "config file path")
-	root.Flags().BoolVar(&headless, "headless", false, "run without the terminal interface")
+	root.Flags().BoolVar(&headless, "headless", false, "run the server in the foreground (deprecated: use serve)")
 	root.AddCommand(
 		agentCommands(),
+		&cobra.Command{
+			Use:   "serve",
+			Short: "Run the persistent server (for systemd)",
+			RunE:  runServer,
+		},
+		&cobra.Command{
+			Use:   "console",
+			Short: "Attach the terminal dashboard to the running server",
+			RunE:  runConsole,
+		},
 		&cobra.Command{
 			Use:   "init",
 			Short: "Create the server configuration",
@@ -91,16 +102,30 @@ func runInit(*cobra.Command, []string) error {
 	return tui.RunSetup(configPath())
 }
 
-func runServer(cmd *cobra.Command, args []string) error {
+func runDefault(cmd *cobra.Command, args []string) error {
+	if headless {
+		return runServer(cmd, args)
+	}
+	return runConsole(cmd, args)
+}
+
+func runConsole(*cobra.Command, []string) error {
+	path := configPath()
+	if !helper.Exists(path) {
+		return fmt.Errorf("server config not found at %s; run uruflow init first", path)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return err
+	}
+	return console.Attach(cfg.ConsoleSocketPath())
+}
+
+func runServer(*cobra.Command, []string) error {
 	path := configPath()
 
 	if !helper.Exists(path) {
-		if err := tui.RunSetup(path); err != nil {
-			return err
-		}
-		if !helper.Exists(path) {
-			return fmt.Errorf("setup did not complete")
-		}
+		return fmt.Errorf("server config not found at %s; run uruflow init first", path)
 	}
 
 	cfg, err := config.Load(path)
@@ -116,11 +141,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := logger.Init(cfg.LogPath(), "info"); err != nil {
-		if headless {
-			logger.Init("", "info")
-		} else {
-			logger.Discard()
-		}
+		logger.Init("", "info")
 	}
 	logger.Info("[SERVER] uruflow %s starting", Version)
 
@@ -139,27 +160,27 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-
-	if headless {
-		logger.Info("[SERVER] running headless")
-		<-signals
-		shutdown(server)
-		return nil
-	}
-
-	go func() {
-		<-signals
-		shutdown(server)
-		os.Exit(0)
-	}()
-
-	if err := tui.Run(server); err != nil {
+	control, err := console.Listen(cfg.ConsoleSocketPath(), func(
+		ctx context.Context, terminal *os.File, environment []string, sizes <-chan console.Size,
+	) error {
+		logger.Info("[CONSOLE] dashboard attached")
+		defer logger.Info("[CONSOLE] dashboard detached")
+		return tui.RunTerminal(ctx, server, terminal, environment, sizes)
+	})
+	if err != nil {
 		shutdown(server)
 		return err
 	}
+	defer control.Close()
+	logger.Info("[CONSOLE] accepting local dashboards on %s", cfg.ConsoleSocketPath())
 
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	logger.Info("[SERVER] running")
+	<-signals
+	control.Close()
 	shutdown(server)
 	return nil
 }

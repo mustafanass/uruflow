@@ -34,6 +34,7 @@ Two properties define the system:
 | `internal/storage` | Persistence contract and SQLite implementation | The database schema |
 | `internal/agent` | Agent daemon, builder, runner, metrics | Execution on a target machine |
 | `internal/api` | Composition root, HTTP webhooks, project reload | Wiring |
+| `internal/console` | Root-only local dashboard attachment | Unix socket and terminal handoff |
 | `internal/tui` | Terminal interface | Presentation only |
 
 ### Dependency Rules
@@ -45,6 +46,11 @@ sides impossible to evolve separately. Adding an import there should be treated 
 `internal/tui` reads through `internal/api` and never reaches into storage or the pipeline directly.
 It reaches the rest of the system through a handful of accessors on the composition root, which is
 what makes an HTTP API a mechanical addition rather than a rewrite.
+
+The server process is always the owner of the database, listeners, live agent sessions and TUI
+actions. `uruflow console` passes its terminal descriptor to that process over the root-only local
+socket; it does not construct a second server. Detaching therefore removes only the presentation
+subscriber and cannot interrupt agent connections or a release.
 
 `internal/docker` is shared by the server (to run the registry) and the agent (to run workloads).
 It knows nothing about projects or releases.
