@@ -97,8 +97,6 @@ func NewForm(fields ...*Field) *Form {
 	return form
 }
 
-func (f *Field) Kind() FieldKind { return f.kind }
-
 func (f *Field) Secret() {
 	f.input.EchoMode = textinput.EchoPassword
 	f.input.EchoCharacter = '•'

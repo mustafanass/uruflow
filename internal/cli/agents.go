@@ -25,6 +25,7 @@ import (
 
 	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/roles"
 	"github.com/mustafanass/uruflow/internal/services"
 	"github.com/mustafanass/uruflow/internal/storage"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
@@ -80,7 +81,7 @@ func addAgent(_ *cobra.Command, args []string) error {
 	}
 	defer store.Close()
 
-	roles, err := parseRoles(agentRoles)
+	parsedRoles, err := roles.Parse(agentRoles)
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func addAgent(_ *cobra.Command, args []string) error {
 		ID:    helper.GenerateID(),
 		Name:  args[0],
 		Key:   helper.GenerateToken(),
-		Roles: roles,
+		Roles: parsedRoles,
 	}
 	if err := store.CreateAgent(agent); err != nil {
 		return fmt.Errorf("an agent named %s already exists", agent.Name)
@@ -132,7 +133,7 @@ func listAgents(*cobra.Command, []string) error {
 	fmt.Fprintln(writer, "NAME\tID\tROLES\tSTATUS\tHOST\tVERSION")
 	for _, agent := range agents {
 		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			agent.Name, agent.ID, joinRoles(agent.Roles), agent.Status, agent.Host, agent.Version)
+			agent.Name, agent.ID, roles.Format(agent.Roles), agent.Status, agent.Host, agent.Version)
 	}
 	return writer.Flush()
 }

@@ -37,18 +37,6 @@ import (
 	"github.com/mustafanass/uruflow/internal/tui/views"
 )
 
-func Run(server *api.Server) error {
-	log.SetOutput(io.Discard)
-
-	model := NewModel(server)
-	defer model.Close()
-	program := tea.NewProgram(model, tea.WithAltScreen())
-	if _, err := program.Run(); err != nil {
-		return fmt.Errorf("tui: %w", err)
-	}
-	return nil
-}
-
 func RunTerminal(
 	ctx context.Context,
 	server *api.Server,

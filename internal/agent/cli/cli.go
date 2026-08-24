@@ -26,6 +26,7 @@ import (
 
 	"github.com/mustafanass/uruflow/internal/agent/config"
 	"github.com/mustafanass/uruflow/internal/agent/daemon"
+	"github.com/mustafanass/uruflow/internal/roles"
 	"github.com/mustafanass/uruflow/internal/ufp"
 	"github.com/spf13/cobra"
 )
@@ -44,7 +45,7 @@ var (
 	enrol           enrollment
 )
 
-func ExecuteAgent() error {
+func Execute() error {
 	root := &cobra.Command{
 		Use:           "uruflow-agent",
 		Short:         "uruflow build and release agent",
@@ -100,7 +101,7 @@ func runAgentInit(*cobra.Command, []string) error {
 		return fmt.Errorf("--id, --key and --server are required; the uruflow agents view prints all three")
 	}
 
-	roles, err := parseRoles(enrol.roles)
+	parsedRoles, err := roles.Parse(enrol.roles)
 	if err != nil {
 		return err
 	}
@@ -113,7 +114,7 @@ func runAgentInit(*cobra.Command, []string) error {
 	cfg := config.Default()
 	cfg.AgentID = enrol.id
 	cfg.Key = enrol.key
-	cfg.Roles = roles
+	cfg.Roles = parsedRoles
 	cfg.Server.Host = host
 	cfg.Server.Port = port
 	cfg.Server.CACert = enrol.ca
@@ -177,38 +178,8 @@ func statusAgent(*cobra.Command, []string) error {
 
 	fmt.Printf("uruflow-agent is running (pid %d)\n", pid)
 	fmt.Printf("server: %s:%d\n", cfg.Server.Host, cfg.Server.Port)
-	fmt.Printf("roles: %s\n", joinRoles(cfg.Roles))
+	fmt.Printf("roles: %s\n", roles.Format(cfg.Roles))
 	return nil
-}
-
-func parseRoles(value string) ([]ufp.Role, error) {
-	roles := make([]ufp.Role, 0, 2)
-
-	for _, part := range strings.Split(value, ",") {
-		role := ufp.Role(strings.ToLower(strings.TrimSpace(part)))
-		if role == "" {
-			continue
-		}
-		if !role.Valid() {
-			return nil, fmt.Errorf("unknown role %q: use builder, runner or both", part)
-		}
-		if !ufp.HasRole(roles, role) {
-			roles = append(roles, role)
-		}
-	}
-
-	if len(roles) == 0 {
-		return nil, fmt.Errorf("at least one role is required: builder, runner")
-	}
-	return roles, nil
-}
-
-func joinRoles(roles []ufp.Role) string {
-	names := make([]string, 0, len(roles))
-	for _, role := range roles {
-		names = append(names, string(role))
-	}
-	return strings.Join(names, ", ")
 }
 
 func splitServer(value string) (string, int, error) {

@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mustafanass/uruflow/internal/cli"
+	agentcli "github.com/mustafanass/uruflow/internal/agent/cli"
 )
 
 func main() {
-	if err := cli.ExecuteAgent(); err != nil {
+	if err := agentcli.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "uruflow-agent: %v\n", err)
 		os.Exit(1)
 	}

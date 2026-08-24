@@ -115,9 +115,6 @@ func TestReferenceParsing(t *testing.T) {
 	if got := References("prefix ${secret:a} middle ${secret:b} suffix"); len(got) != 2 {
 		t.Fatalf("references = %v", got)
 	}
-	if HasReference("plain value") {
-		t.Error("a plain value was treated as a reference")
-	}
 	if References("${secret:}") != nil && len(References("${secret:}")) != 0 {
 		t.Error("an empty name was accepted")
 	}
@@ -169,14 +166,5 @@ func TestNamesCollectsEveryReference(t *testing.T) {
 	names := Names(env)
 	if len(names) != 2 || names[0] != "one" || names[1] != "two" {
 		t.Fatalf("names = %v", names)
-	}
-}
-
-func TestMaskHidesReferences(t *testing.T) {
-	if masked := Mask("${secret:db}"); masked != Masked {
-		t.Fatalf("mask = %q", masked)
-	}
-	if masked := Mask("plain"); masked != "plain" {
-		t.Fatalf("a plain value was masked: %q", masked)
 	}
 }

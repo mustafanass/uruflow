@@ -211,5 +211,3 @@ func (r *Registry) summary() string {
 		components.KeyValue("state", state, 12),
 	}, "\n")
 }
-
-func (r *Registry) Healthy() bool { return r.healthy }

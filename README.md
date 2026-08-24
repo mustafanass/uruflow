@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.2.1-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.2.2-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
   <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp-F5A524?style=flat-square" alt="ufp protocol"></a>
@@ -64,7 +64,7 @@ For the complete lifecycle and every failure boundary, see [Deployments](docs/de
 
 ## Installation
 
-Latest release: **v2.2.1** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
+Latest release: **v2.2.2** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
 
 There are **two different binaries and they are not interchangeable** — installing the wrong one on a
 machine is the most common setup mistake:
@@ -85,16 +85,16 @@ uname -m      # x86_64 -> amd64      aarch64 / arm64 -> arm64
 **linux/amd64**
 
 ```bash
-curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-2.2.1-linux-amd64
-echo "ca36ae9c54a38eda765082e5176efbb282534a76a1d18272724ea2fd137a8b27  uruflow" | sha256sum -c -
+curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-2.2.2-linux-amd64
+echo "c2fea65c07bd616182ece56e99ca2afac80323d784734b44fb97bea20932e789  uruflow" | sha256sum -c -
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-2.2.1-linux-arm64
-echo "7ab4cdc39e652546b54a7da1136e804ba8a84112e41f71b8f89df7599082ca7b  uruflow" | sha256sum -c -
+curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-2.2.2-linux-arm64
+echo "52d9d743cf5b21d64ae7379594b1d0f6d8b4347c4360cc935b73a17c1d544148  uruflow" | sha256sum -c -
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 ```
 
@@ -103,16 +103,16 @@ chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 **linux/amd64**
 
 ```bash
-curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-agent-2.2.1-linux-amd64
-echo "a58d3eb168773c2d841c366e894a73164b6db08315ce55f60ae2b46777add85c  uruflow-agent" | sha256sum -c -
+curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-agent-2.2.2-linux-amd64
+echo "ec05f8ec2dd6cbf30eb08949b2db04d7b6b27218b6d68c15328d81e0ef697742  uruflow-agent" | sha256sum -c -
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.1/uruflow-agent-2.2.1-linux-arm64
-echo "d1d21e860b0cf22046271b039ad4527e41a31aa74c6148ae785efc4d5b738059  uruflow-agent" | sha256sum -c -
+curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-agent-2.2.2-linux-arm64
+echo "f0b0f8e5a55b7d7a25094d901d1ae00bb5f55da6565f78985d09e59368945f99  uruflow-agent" | sha256sum -c -
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 ```
 
@@ -120,10 +120,10 @@ chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 
 | Asset | Size | SHA-256 |
 | :--- | ---: | :--- |
-| `uruflow-2.2.1-linux-amd64` | 18.3 MB | `ca36ae9c54a38eda765082e5176efbb282534a76a1d18272724ea2fd137a8b27` |
-| `uruflow-2.2.1-linux-arm64` | 17.9 MB | `7ab4cdc39e652546b54a7da1136e804ba8a84112e41f71b8f89df7599082ca7b` |
-| `uruflow-agent-2.2.1-linux-amd64` | 15.6 MB | `a58d3eb168773c2d841c366e894a73164b6db08315ce55f60ae2b46777add85c` |
-| `uruflow-agent-2.2.1-linux-arm64` | 15.3 MB | `d1d21e860b0cf22046271b039ad4527e41a31aa74c6148ae785efc4d5b738059` |
+| `uruflow-2.2.2-linux-amd64` | 18.4 MB | `373a7f439d852a2eda12ba3164504f7d5583702aa10a5b1db86562ac77cbc1eb` |
+| `uruflow-2.2.2-linux-arm64` | 18.0 MB | `fc4db2b0e00ed22bb6b9c740c5b754eae760c1e0629c2bf1ddb26a9096562a70` |
+| `uruflow-agent-2.2.2-linux-amd64` | 6.9 MB | `3b98183985c7b0257f8f83d0b9b29eecf121f8f28e366d2235ee4ebaa38d8678` |
+| `uruflow-agent-2.2.2-linux-arm64` | 6.4 MB | `7d9069c2ec3e0d2160de0edf6749ad1667e101c257a7be625ed8700d35746d77` |
 
 `SHA256SUMS.txt` on the release page covers every asset, including the `.tar.gz` archives:
 
