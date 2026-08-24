@@ -284,13 +284,3 @@ func orDash(value string) string {
 	}
 	return value
 }
-
-func (r *Releases) Active() int {
-	active := 0
-	for _, release := range r.releases {
-		if !release.Status.Done() {
-			active++
-		}
-	}
-	return active
-}

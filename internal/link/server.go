@@ -150,19 +150,6 @@ func (s *Server) Online(agentID string) bool {
 	return found && session.ready.Load()
 }
 
-func (s *Server) OnlineAgents() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	agents := make([]string, 0, len(s.sessions))
-	for agentID, session := range s.sessions {
-		if session.ready.Load() {
-			agents = append(agents, agentID)
-		}
-	}
-	return agents
-}
-
 func (s *Server) Request(ctx context.Context, agentID, method string, payload any) (*ufp.Response, error) {
 	s.mu.RLock()
 	session, found := s.sessions[agentID]

@@ -86,10 +86,6 @@ func (c *Client) HasImage(ctx context.Context, image string) bool {
 	return c.get(ctx, "/images/"+url.PathEscape(image)+"/json", nil) == nil
 }
 
-func (c *Client) RemoveImage(ctx context.Context, image string) error {
-	return c.delete(ctx, "/images/"+url.PathEscape(image)+"?force=true")
-}
-
 func SplitTag(image string) (repository, tag string) {
 	if separator := strings.LastIndex(image, "@"); separator >= 0 {
 		return image[:separator], image[separator+1:]

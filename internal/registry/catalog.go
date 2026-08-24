@@ -204,10 +204,6 @@ func (r *Registry) ImageRepository(project string) string {
 	return fmt.Sprintf("%s/%s", r.options.Address, r.RepositoryName(project))
 }
 
-func (r *Registry) ImageRef(project, tag string) string {
-	return fmt.Sprintf("%s:%s", r.ImageRepository(project), tag)
-}
-
 func ShortDigest(digest string) string {
 	_, hash, found := strings.Cut(digest, ":")
 	if !found || len(hash) < 12 {

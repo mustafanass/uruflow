@@ -72,8 +72,6 @@ func (c *Conn) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Conn) Closed() bool { return c.closed.Load() }
-
 func (c *Conn) send(frameType FrameType, data any) error {
 	if c.closed.Load() {
 		return ErrClosed

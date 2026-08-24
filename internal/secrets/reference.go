@@ -45,10 +45,6 @@ func References(value string) []string {
 	return names
 }
 
-func HasReference(value string) bool {
-	return pattern.MatchString(value)
-}
-
 func Names(env map[string]string) []string {
 	unique := make(map[string]bool)
 	for _, value := range env {
@@ -79,10 +75,6 @@ func Resolve(env map[string]string, lookup Lookup) (map[string]string, error) {
 		resolved[key] = expanded
 	}
 	return resolved, nil
-}
-
-func Mask(value string) string {
-	return pattern.ReplaceAllString(value, Masked)
 }
 
 func expand(value string, lookup Lookup) (string, error) {

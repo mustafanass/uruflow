@@ -88,14 +88,6 @@ func Init(logPath string, level string) error {
 	return nil
 }
 
-func Discard() {
-	std = &Logger{
-		level:      INFO,
-		fileOutput: io.Discard,
-		prefix:     "[URUFLOW] ",
-	}
-}
-
 func (l *Logger) log(level Level, format string, args ...interface{}) {
 	if level < l.level {
 		return
@@ -128,16 +120,5 @@ func Warn(format string, args ...interface{}) {
 func Error(format string, args ...interface{}) {
 	if std != nil {
 		std.log(ERROR, format, args...)
-	}
-}
-
-func With(prefix string) *Logger {
-	if std == nil {
-		return nil
-	}
-	return &Logger{
-		level:      std.level,
-		fileOutput: std.fileOutput,
-		prefix:     fmt.Sprintf("%s[%s] ", std.prefix, prefix),
 	}
 }

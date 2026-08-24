@@ -313,7 +313,6 @@ func (s *Server) Store() storage.Store         { return s.store }
 func (s *Server) Link() *link.Server           { return s.link }
 func (s *Server) Registry() *registry.Registry { return s.registry }
 func (s *Server) Pipeline() *pipeline.Pipeline { return s.pipeline }
-func (s *Server) CACertificate() string        { return s.caCert }
 
 func (s *Server) routes() http.Handler {
 	router := mux.NewRouter()
