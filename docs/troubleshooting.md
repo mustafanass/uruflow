@@ -1,7 +1,25 @@
 # Troubleshooting
 
-Symptoms, causes and fixes. Start with the log — the server writes to `<data_dir>/uruflow.log` and
-each agent to its own `log_file`.
+Symptoms, causes and fixes. Start with the log. Both processes write to their log file and stdout, so
+systemd installations can use `journalctl -fu uruflow` or `journalctl -fu uruflow-agent`. The server
+file is `<data_dir>/uruflow.log`; each agent uses `log_file` from `agent.yaml`.
+
+## Console Will Not Open
+
+**`uruflow server is not running (console socket …)`**
+
+The dashboard is a client, not the server. Start the persistent process with `sudo systemctl start
+uruflow`, inspect it with `sudo systemctl status uruflow`, then run `sudo uruflow console` again.
+
+**`permission denied (run with sudo)`**
+
+The local console can deploy and delete workloads, so `<data_dir>/console.sock` is deliberately
+root-only. Run the command with `sudo`.
+
+**`another console is already attached`**
+
+Only one terminal dashboard can own container log streams and interactive actions at a time. Close
+the existing console before attaching another one. This does not affect the server service.
 
 ## Server Will Not Start
 

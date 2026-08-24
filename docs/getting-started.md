@@ -53,11 +53,16 @@ Use a name every agent can reach. `localhost` works only if everything runs on o
 **[server]**
 
 ```bash
-sudo uruflow
+sudo install -m 0644 packaging/systemd/uruflow.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now uruflow
+sudo uruflow console
 ```
 
 On first start it generates a certificate authority, issues certificates for itself and the registry,
-starts `registry:2` with TLS and authentication, then opens the interface.
+and starts `registry:2` with TLS and authentication. `uruflow console` then attaches the interface to
+that running service. If you installed only the binary rather than a source checkout, copy the unit
+from [Operations](operations.md#systemd) first.
 
 Press `5` to confirm the registry reports healthy before continuing.
 
@@ -110,15 +115,21 @@ sudo uruflow-agent init \
   --roles  builder,runner
 ```
 
-`init` creates `/etc/uruflow`, owned by root. Copy the trust root into it in two steps, then start
-the agent:
+`init` creates `/etc/uruflow`, owned by root. Copy the trust root into it in two steps, then install
+and start the agent service:
 
 ```bash
 scp <server>:/var/lib/uruflow/pki/ca.crt /tmp/ca.crt
 sudo mv /tmp/ca.crt /etc/uruflow/ca.crt
 
-sudo uruflow-agent run
+sudo install -m 0644 packaging/systemd/uruflow-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now uruflow-agent
 ```
+
+If the target has only the released agent binary, copy the agent unit from
+[Operations](operations.md#systemd). For a temporary foreground test, `sudo uruflow-agent run` still
+works and now prints the same lines it saves to `/var/log/uruflow-agent.log`.
 
 Within a few seconds the agents view shows it **online** with its roles. If it does not, the agent log
 states why — see [Troubleshooting](troubleshooting.md#agent-will-not-connect).

@@ -6,7 +6,7 @@
   <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.2.1-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
-  <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp%2F3-F5A524?style=flat-square" alt="ufp protocol"></a>
+  <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp-F5A524?style=flat-square" alt="ufp protocol"></a>
 </p>
 
 <br>
@@ -15,8 +15,9 @@ URUFLOW builds a commit once on a builder machine, stores the resulting image in
 runs itself, and releases that exact image across one or more runner machines. Builders and runners are
 separate roles with different authority: builders see source code, runners receive only images.
 
-It is operated from a terminal interface and communicates with agents over UFP, a small binary protocol
-carried on TLS.
+Its control plane runs continuously as a service. A terminal dashboard attaches and detaches without
+restarting that service, while agents communicate with it over UFP, a small binary protocol carried
+on TLS.
 
 <p align="center">
   <a href="assets/uruflow-arch.png">
@@ -143,9 +144,15 @@ Install the binaries first — see [Installation](#installation).
 On the server:
 
 ```bash
-sudo uruflow init     # writes /etc/uruflow/config.yaml
-sudo uruflow          # starts the registry, the agent link, webhooks and the interface
+sudo uruflow init
+sudo install -m 0644 packaging/systemd/uruflow.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now uruflow
+sudo uruflow console  # attach; q detaches without stopping the server
 ```
+
+The unit files ship under `packaging/systemd/`; if you installed only a release binary, copy the unit
+contents from [Operations](docs/operations.md#systemd).
 
 Enrol an agent — press `3` then `n` in the interface, or:
 
@@ -161,7 +168,9 @@ sudo uruflow-agent init --id <id> --key <key> --server uruflow.internal:9001 --r
 scp <server>:/var/lib/uruflow/pki/ca.crt /tmp/ca.crt
 sudo mv /tmp/ca.crt /etc/uruflow/ca.crt
 
-sudo uruflow-agent run
+sudo install -m 0644 packaging/systemd/uruflow-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now uruflow-agent
 ```
 
 Press `2` then `n` to add a project, `ctrl+s` to save, `enter` to deploy.

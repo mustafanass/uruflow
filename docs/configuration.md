@@ -194,8 +194,10 @@ For what to back up and why, see [Operations](operations.md#backup-and-restore).
 
 | Command | Effect |
 | :--- | :--- |
-| `uruflow` | Start the server with the terminal interface |
-| `uruflow --headless` | Start without the interface |
+| `uruflow` | Attach the terminal dashboard to the running server |
+| `uruflow console` | Attach the terminal dashboard to the running server |
+| `uruflow serve` | Run the persistent server in the foreground (used by systemd) |
+| `uruflow --headless` | Compatibility alias for `uruflow serve` |
 | `uruflow init` | Write `config.yaml` |
 | `uruflow agent add <name> --roles builder,runner` | Enrol an agent and print its credentials |
 | `uruflow agent list` | List agents with id, roles, status and version |

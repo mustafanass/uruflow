@@ -5,8 +5,17 @@ do for you.
 
 ## 1. Running the Server
 
-`uruflow` starts the registry, the agent link, the webhook listener and the terminal interface in one
-process. `--headless` starts everything except the interface.
+`uruflow serve` is the persistent control-plane process. It starts the registry, agent link, webhook
+listener and a root-only local console socket. The terminal interface is a detachable client:
+
+```bash
+sudo uruflow console
+```
+
+Bare `sudo uruflow` does the same thing. Leaving the interface with `q` or `ctrl+c` closes only that
+console session. The server keeps running, agents stay connected, and active releases continue.
+`uruflow --headless` remains a compatibility alias for `uruflow serve` so an old unit continues to
+start during an upgrade.
 
 The server runs as root. It reads `/etc/uruflow/config.yaml`, writes `<data_dir>`, and needs the
 Docker socket to host the registry, so every `uruflow` command below is run with `sudo` — or from a
@@ -25,18 +34,33 @@ The server refuses to start if the registry does not answer within 60 seconds.
 
 ### systemd
 
+Install the units shipped in `packaging/systemd/`:
+
+```bash
+sudo install -m 0644 packaging/systemd/uruflow.service /etc/systemd/system/
+sudo install -m 0644 packaging/systemd/uruflow-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+The server unit is:
+
 ```ini
 # /etc/systemd/system/uruflow.service
 [Unit]
-Description=uruflow server
-After=network.target docker.service
+Description=URUFLOW control plane
+Wants=network-online.target
+After=network-online.target docker.service
 Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/uruflow --headless
-Restart=always
+ExecStart=/usr/local/bin/uruflow serve
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=uruflow
 
 [Install]
 WantedBy=multi-user.target
@@ -45,22 +69,35 @@ WantedBy=multi-user.target
 ```ini
 # /etc/systemd/system/uruflow-agent.service
 [Unit]
-Description=uruflow agent
-After=network.target docker.service
+Description=URUFLOW build and release agent
+Wants=network-online.target
+After=network-online.target docker.service
 Requires=docker.service
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/uruflow-agent run
-Restart=always
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=uruflow-agent
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Run `uruflow` on a terminal when you want the interface. Both read the same configuration, but only
-one process may own the listeners at a time — stop the unit first.
+Enable the appropriate unit on each machine:
+
+```bash
+sudo systemctl enable --now uruflow        # server host
+sudo systemctl enable --now uruflow-agent  # each agent host
+```
+
+There is no reason to stop `uruflow.service` to open the interface. `uruflow console` passes the
+current terminal to the running server over `<data_dir>/console.sock`; it does not start another
+server or open the database itself. Only one console can attach at a time.
 
 ## 2. Logs
 
@@ -71,14 +108,22 @@ one process may own the listeners at a time — stop the unit first.
 | Release output | Stored in the database, readable in the releases view |
 | Container output | Streamed live on request; not stored |
 
-The server never writes to stdout while the interface is running — logs would corrupt the display.
-Under `--headless` it writes to the log file, falling back to stdout only if that file cannot be
-opened.
+The server and agent write every process log line to both the configured file and stdout. Under
+systemd, stdout is captured by journald. The attached interface uses its own terminal descriptor, so
+service logs do not corrupt the dashboard.
 
-Follow the server log while using the interface:
+Follow either service without stopping it:
+
+```bash
+sudo journalctl -fu uruflow
+sudo journalctl -fu uruflow-agent
+```
+
+The files remain available for retention, support bundles and environments without journald:
 
 ```bash
 tail -f /var/lib/uruflow/uruflow.log
+tail -f /var/log/uruflow-agent.log
 ```
 
 ## 3. Agents
@@ -91,6 +136,9 @@ sudo uruflow agent remove web-03
 sudo uruflow-agent status                           # on the target machine
 sudo uruflow-agent stop
 ```
+
+For a systemd-managed agent, use `systemctl status|stop|restart uruflow-agent`; the agent CLI status
+and stop commands are intended for foreground/manual runs.
 
 `uruflow` always reads `/etc/uruflow/config.yaml` unless `--config` or `URUFLOW_CONFIG` says
 otherwise, and needs root to reach it and the data directory. The agent's default path depends on the
@@ -129,9 +177,8 @@ Secrets are managed only from the interface. Press `7`, then `n` to store one an
 Values are encrypted with `pki/secrets.key` and cannot be read back — the interface shows names and
 masks only. To change a secret, store it again under the same name.
 
-Because the interface and `--headless` cannot both hold the listeners, changing a secret on a server
-running as a service means stopping the unit, running `uruflow` on a terminal, and starting the unit
-again. Plan secret changes as maintenance rather than as a live operation.
+Attach with `sudo uruflow console` and change secrets while the service remains online. Opening and
+closing the interface does not affect agent connectivity.
 
 For what the store protects and what it does not, see [Security](security.md#7-secrets).
 

@@ -81,7 +81,7 @@ func Init(logPath string, level string) error {
 
 	std = &Logger{
 		level:      logLevel,
-		fileOutput: file,
+		fileOutput: io.MultiWriter(file, os.Stdout),
 		prefix:     "[URUFLOW] ",
 	}
 

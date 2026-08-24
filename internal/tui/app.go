@@ -19,24 +19,108 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/mustafanass/uruflow/internal/api"
+	"github.com/mustafanass/uruflow/internal/console"
 	"github.com/mustafanass/uruflow/internal/tui/components"
+	"github.com/mustafanass/uruflow/internal/tui/theme"
 	"github.com/mustafanass/uruflow/internal/tui/views"
 )
 
 func Run(server *api.Server) error {
 	log.SetOutput(io.Discard)
 
-	program := tea.NewProgram(NewModel(server), tea.WithAltScreen())
+	model := NewModel(server)
+	defer model.Close()
+	program := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
 	}
 	return nil
+}
+
+func RunTerminal(
+	ctx context.Context,
+	server *api.Server,
+	terminal *os.File,
+	environment []string,
+	sizes <-chan console.Size,
+) error {
+	log.SetOutput(io.Discard)
+	restoreRenderer := bindTerminalRenderer(terminal, environment)
+	defer restoreRenderer()
+
+	model := NewModel(server)
+	defer model.Close()
+	program := tea.NewProgram(model,
+		tea.WithContext(ctx),
+		tea.WithInput(terminal),
+		tea.WithOutput(terminal),
+		tea.WithEnvironment(environment),
+		tea.WithAltScreen(),
+		tea.WithoutSignalHandler(),
+	)
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case size, ok := <-sizes:
+				if !ok {
+					return
+				}
+				program.Send(tea.WindowSizeMsg{Width: size.Width, Height: size.Height})
+			}
+		}
+	}()
+
+	if _, err := program.Run(); err != nil && !errors.Is(err, context.Canceled) &&
+		!errors.Is(err, tea.ErrProgramKilled) {
+		return fmt.Errorf("tui: %w", err)
+	}
+	return nil
+}
+
+type attachedEnvironment []string
+
+func (environment attachedEnvironment) Environ() []string {
+	return []string(environment)
+}
+
+func (environment attachedEnvironment) Getenv(key string) string {
+	prefix := key + "="
+	for index := len(environment) - 1; index >= 0; index-- {
+		if strings.HasPrefix(environment[index], prefix) {
+			return strings.TrimPrefix(environment[index], prefix)
+		}
+	}
+	return ""
+}
+
+func bindTerminalRenderer(output io.Writer, environment []string) func() {
+	previous := lipgloss.DefaultRenderer()
+	attached := lipgloss.NewRenderer(output,
+		termenv.WithEnvironment(attachedEnvironment(environment)),
+		termenv.WithTTY(true),
+	)
+
+	lipgloss.SetDefaultRenderer(attached)
+	theme.SetRenderer(attached)
+	return func() {
+		lipgloss.SetDefaultRenderer(previous)
+		theme.SetRenderer(previous)
+	}
 }
 
 func RunSetup(path string) error {

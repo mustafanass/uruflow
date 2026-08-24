@@ -84,6 +84,19 @@ func (s *Server) Subscribe(events Events) {
 	s.subMu.Unlock()
 }
 
+func (s *Server) Unsubscribe(events Events) {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+
+	for index, subscriber := range s.subscribers {
+		if subscriber != events {
+			continue
+		}
+		s.subscribers = append(s.subscribers[:index], s.subscribers[index+1:]...)
+		return
+	}
+}
+
 func (s *Server) Start() error {
 	tlsConfig, err := s.tlsConfig()
 	if err != nil {

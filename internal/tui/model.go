@@ -59,7 +59,7 @@ type Model struct {
 
 func NewModel(server *api.Server) *Model {
 	logs := make(chan views.ContainerLogMsg, logQueue)
-	logBridge := &bridge{logs: logs}
+	logBridge := &bridge{logs: logs, done: make(chan struct{})}
 	server.Link().Subscribe(logBridge)
 
 	return &Model{
@@ -255,11 +255,24 @@ func frame() tea.Cmd {
 }
 
 func (m *Model) listen() tea.Cmd {
-	return func() tea.Msg { return <-m.logs }
+	return func() tea.Msg {
+		select {
+		case message := <-m.logs:
+			return message
+		case <-m.bridge.done:
+			return nil
+		}
+	}
+}
+
+func (m *Model) Close() {
+	m.server.Link().Unsubscribe(m.bridge)
+	close(m.bridge.done)
 }
 
 type bridge struct {
 	logs    chan views.ContainerLogMsg
+	done    chan struct{}
 	dropped atomic.Uint64
 }
 

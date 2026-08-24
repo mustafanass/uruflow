@@ -3,8 +3,10 @@
 The reference for operating URUFLOW day to day. For a guided first run, see
 [Getting Started](getting-started.md).
 
-The interface runs on the server host and owns the terminal while it is open. It needs at least 40
-columns.
+The interface attaches locally to the persistent server with `sudo uruflow console` (bare
+`sudo uruflow` is an alias). It owns only that terminal while it is open and needs at least 40
+columns. Pressing `q` or `ctrl+c` detaches the interface; the server, agents, webhooks and releases
+continue running.
 
 ## Views
 
