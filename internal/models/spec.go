@@ -21,6 +21,7 @@ package models
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -79,15 +80,23 @@ func ValidateHealthcheck(healthcheck *Healthcheck) error {
 		}
 		return validateProbeHealthcheck(healthcheck)
 	case "tcp":
-		if healthcheck.Scheme != "" || healthcheck.Path != "" || healthcheck.StableFor != 0 {
+		if healthcheck.Scheme != "" || healthcheck.Path != "" || healthcheck.StableFor != 0 || len(healthcheck.Command) > 0 {
 			return fmt.Errorf("healthcheck contains fields that are not valid for tcp")
 		}
 		return validateProbeHealthcheck(healthcheck)
+	case "command":
+		if len(healthcheck.Command) < 2 || (healthcheck.Command[0] != "CMD" && healthcheck.Command[0] != "CMD-SHELL") {
+			return fmt.Errorf("healthcheck.command must be a non-empty exec or shell command")
+		}
+		if healthcheck.Scheme != "" || healthcheck.Path != "" || healthcheck.Port != 0 || healthcheck.StableFor != 0 {
+			return fmt.Errorf("healthcheck contains fields that are not valid for command")
+		}
+		return validateProbeTiming(healthcheck)
 	case "running":
 		if healthcheck.StableFor <= 0 {
 			return fmt.Errorf("healthcheck.stable_for must be positive")
 		}
-		if healthcheck.Scheme != "" || healthcheck.Path != "" || healthcheck.Port != 0 || healthcheck.Interval != 0 || healthcheck.Timeout != 0 || healthcheck.Retries != 0 {
+		if healthcheck.Scheme != "" || healthcheck.Path != "" || healthcheck.Port != 0 || healthcheck.Interval != 0 || healthcheck.Timeout != 0 || healthcheck.Retries != 0 || healthcheck.StartPeriod != 0 || len(healthcheck.Command) > 0 {
 			return fmt.Errorf("healthcheck contains fields that are not valid for running")
 		}
 	default:
@@ -100,6 +109,10 @@ func validateProbeHealthcheck(healthcheck *Healthcheck) error {
 	if healthcheck.Port < 1 || healthcheck.Port > 65535 {
 		return fmt.Errorf("healthcheck.port must be between 1 and 65535")
 	}
+	return validateProbeTiming(healthcheck)
+}
+
+func validateProbeTiming(healthcheck *Healthcheck) error {
 	if healthcheck.Interval <= 0 {
 		return fmt.Errorf("healthcheck.interval must be positive")
 	}
@@ -108,6 +121,9 @@ func validateProbeHealthcheck(healthcheck *Healthcheck) error {
 	}
 	if healthcheck.Retries <= 0 {
 		return fmt.Errorf("healthcheck.retries must be positive")
+	}
+	if healthcheck.StartPeriod < 0 {
+		return fmt.Errorf("healthcheck.start_period must not be negative")
 	}
 	return nil
 }
@@ -139,9 +155,17 @@ func parsePort(entry string) (Port, error) {
 		}
 	}
 
-	host, container, found := strings.Cut(spec, ":")
-	if !found {
-		return Port{}, fmt.Errorf("port %q must be host:container", entry)
+	parts := strings.Split(spec, ":")
+	if len(parts) != 2 && len(parts) != 3 {
+		return Port{}, fmt.Errorf("port %q must be host:container in one value, for example 8080:80", entry)
+	}
+	hostIP := ""
+	host, container := parts[0], parts[1]
+	if len(parts) == 3 {
+		hostIP, host, container = parts[0], parts[1], parts[2]
+		if net.ParseIP(strings.TrimSpace(hostIP)) == nil {
+			return Port{}, fmt.Errorf("port %q has an invalid host IP", entry)
+		}
 	}
 
 	hostPort, err := strconv.Atoi(strings.TrimSpace(host))
@@ -156,7 +180,7 @@ func parsePort(entry string) (Port, error) {
 		return Port{}, fmt.Errorf("port %q is outside the valid range", entry)
 	}
 
-	return Port{Host: hostPort, Container: containerPort, Protocol: protocol}, nil
+	return Port{HostIP: strings.TrimSpace(hostIP), Host: hostPort, Container: containerPort, Protocol: protocol}, nil
 }
 
 func ParsePorts(entries []string) ([]Port, error) {
@@ -173,6 +197,9 @@ func ParsePorts(entries []string) ([]Port, error) {
 
 func formatPort(port Port) string {
 	entry := fmt.Sprintf("%d:%d", port.Host, port.Container)
+	if port.HostIP != "" {
+		entry = fmt.Sprintf("%s:%s", port.HostIP, entry)
+	}
 	if port.Protocol != "" && port.Protocol != protocolTCP {
 		entry += "/" + port.Protocol
 	}

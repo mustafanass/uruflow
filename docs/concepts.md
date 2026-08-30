@@ -28,7 +28,7 @@ A single process that owns:
 - the private registry container
 - the UFP listener that agents connect to
 - the HTTPS listener that receives webhooks
-- the terminal interface
+- the root-only local command transport used by the single-page operations workspace
 
 There is exactly one server. It is a single point of failure for *starting* work, not for *running* it.
 

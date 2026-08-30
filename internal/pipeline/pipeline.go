@@ -22,6 +22,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -116,13 +118,16 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 		return nil, err
 	}
 
-	runners, err := p.resolveRunners(project)
-	if err != nil {
-		return nil, err
-	}
-
 	targets := p.buildTargets(project)
-	if len(targets) == 0 {
+	workflow := project.EffectiveWorkflow()
+	var runners []models.Agent
+	if project.NeedsRunners() {
+		runners, err = p.resolveRunners(project)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if workflow == models.WorkflowDeployOnly {
 		services := project.ServiceList()
 		prebuilt := make(map[string]string, len(services))
 		for _, service := range services {
@@ -196,10 +201,31 @@ func (p *Pipeline) validateProject(project *models.Project) error {
 	if !models.ValidResourceName(project.Name) {
 		return fmt.Errorf("invalid project name %q", project.Name)
 	}
-	if strings.TrimSpace(project.GitURL) == "" || strings.TrimSpace(project.Branch) == "" {
-		return fmt.Errorf("project %s requires a git URL and branch", project.Name)
+	if !models.ValidWorkflow(project.Workflow) {
+		return fmt.Errorf("project %s has invalid workflow %q", project.Name, project.Workflow)
+	}
+	workflow := project.EffectiveWorkflow()
+	if project.NeedsBuilder() && strings.TrimSpace(project.Branch) == "" {
+		return fmt.Errorf("project %s build workflow requires a branch", project.Name)
+	}
+	if !project.NeedsBuilder() && project.Builder != "" {
+		return fmt.Errorf("project %s deploy-only workflow must not set a builder", project.Name)
+	}
+	if !project.NeedsRunners() && len(project.Runners) > 0 {
+		return fmt.Errorf("project %s build-only workflow must not set runners", project.Name)
 	}
 	seen := make(map[string]bool, len(project.Services))
+	builtServices := 0
+	for key, resource := range project.Networks {
+		if !models.ValidResourceName(key) || !models.ValidResourceName(resource.Name) {
+			return fmt.Errorf("project %s has invalid network %q", project.Name, key)
+		}
+	}
+	for key, resource := range project.Volumes {
+		if !models.ValidResourceName(key) || !models.ValidResourceName(resource.Name) {
+			return fmt.Errorf("project %s has invalid volume %q", project.Name, key)
+		}
+	}
 	for _, service := range project.ServiceList() {
 		if service.Name != "" && !models.ValidResourceName(service.Name) {
 			return fmt.Errorf("invalid service name %q", service.Name)
@@ -212,8 +238,39 @@ func (p *Pipeline) validateProject(project *models.Project) error {
 			return fmt.Errorf("service %q build paths must stay inside the source directory", service.Name)
 		}
 		for _, port := range service.Ports {
-			if port.Host < 0 || port.Host > 65535 || port.Container < 1 || port.Container > 65535 {
+			if port.Host < 0 || port.Host > 65535 || port.Container < 1 || port.Container > 65535 ||
+				(port.HostIP != "" && net.ParseIP(port.HostIP) == nil) {
 				return fmt.Errorf("service %q has an invalid port", service.Name)
+			}
+		}
+		if service.EffectiveMode() != models.ServiceModeService && service.EffectiveMode() != models.ServiceModeJob {
+			return fmt.Errorf("service %q has invalid mode %q", service.Name, service.Mode)
+		}
+		if !models.ValidRestartPolicy(service.Restart) {
+			return fmt.Errorf("service %q has invalid restart policy %q", service.Name, service.Restart)
+		}
+		if service.GitURL != "" && strings.TrimSpace(service.Branch) == "" {
+			return fmt.Errorf("service %q source requires a branch", service.Name)
+		}
+		if service.Built() {
+			builtServices++
+			if service.GitURL == "" && strings.TrimSpace(project.GitURL) == "" {
+				return fmt.Errorf("service %q requires a project or service git URL", service.Name)
+			}
+		}
+		if service.Resources.MemoryBytes < 0 || service.Resources.CPUs < 0 || service.Resources.PIDs < 0 {
+			return fmt.Errorf("service %q has invalid resource limits", service.Name)
+		}
+		for _, network := range service.Networks {
+			if _, exists := project.Networks[network.Name]; !exists {
+				return fmt.Errorf("service %q uses undeclared network %q", service.Name, network.Name)
+			}
+		}
+		for _, volume := range service.Volumes {
+			if volume.Type == "volume" {
+				if _, exists := project.Volumes[volume.Source]; !exists {
+					return fmt.Errorf("service %q uses undeclared volume %q", service.Name, volume.Source)
+				}
 			}
 		}
 		if !service.Built() && !models.ValidDigestReference(service.Image) {
@@ -229,6 +286,15 @@ func (p *Pipeline) validateProject(project *models.Project) error {
 		if err := models.ValidateLabels(service.Labels); err != nil {
 			return fmt.Errorf("service %q: %w", service.Name, err)
 		}
+	}
+	if workflow == models.WorkflowDeployOnly && builtServices > 0 {
+		return fmt.Errorf("project %s deploy-only workflow requires immutable images", project.Name)
+	}
+	if workflow != models.WorkflowDeployOnly && builtServices == 0 {
+		return fmt.Errorf("project %s %s workflow has nothing to build", project.Name, workflow)
+	}
+	if _, err := models.OrderServices(project.ServiceList()); err != nil {
+		return fmt.Errorf("project %s: %w", project.Name, err)
 	}
 	return nil
 }
@@ -265,8 +331,33 @@ func (p *Pipeline) validateBuildResult(release *models.Release, status ufp.JobSt
 	if !models.ValidGitCommit(status.Commit) {
 		return fmt.Errorf("builder returned an invalid resolved commit")
 	}
-	if release.Commit != "" && status.Commit != release.Commit && !strings.HasPrefix(status.Commit, release.Commit) {
-		return fmt.Errorf("builder resolved commit %s instead of %s", status.Commit, release.Commit)
+	commits := status.Commits
+	if len(commits) == 0 {
+		commits = make(map[string]string, len(expected))
+		for _, service := range release.Spec.ServiceList() {
+			if !service.Built() {
+				continue
+			}
+			if service.GitURL != "" {
+				return fmt.Errorf("builder did not report the commit for service %q", service.Name)
+			}
+			commits[service.Name] = status.Commit
+		}
+	}
+	if len(commits) != len(expected) {
+		return fmt.Errorf("builder returned %d source commits, expected %d", len(commits), len(expected))
+	}
+	for _, service := range release.Spec.ServiceList() {
+		if !service.Built() {
+			continue
+		}
+		commit := commits[service.Name]
+		if !models.ValidGitCommit(commit) {
+			return fmt.Errorf("builder returned an invalid commit for service %q", service.Name)
+		}
+		if service.GitURL == "" && release.Commit != "" && commit != release.Commit && !strings.HasPrefix(commit, release.Commit) {
+			return fmt.Errorf("builder resolved service %q commit %s instead of %s", service.Name, commit, release.Commit)
+		}
 	}
 	return nil
 }
@@ -291,6 +382,7 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 	}
 	spec := *project
 	images := make(map[string]string)
+	commits := make(map[string]string)
 	digest := ""
 	commit := ""
 	if source != nil {
@@ -303,6 +395,7 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 		}
 		digest = source.Digest
 		commit = source.Commit
+		commits = source.Commits
 	} else {
 		if !models.ValidDigestReference(imageRef) {
 			return nil, fmt.Errorf("rollback image must use repository@sha256:digest")
@@ -330,6 +423,7 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 		Project:   project.Name,
 		Branch:    spec.Branch,
 		Commit:    commit,
+		Commits:   commits,
 		Image:     imageRef,
 		Images:    images,
 		Digest:    digest,
@@ -444,6 +538,8 @@ func (p *Pipeline) buildTargets(project *models.Project) []ufp.BuildTarget {
 			Dockerfile: service.BuildFile(),
 			Context:    service.BuildContext(),
 			BuildArgs:  service.BuildArgs,
+			GitURL:     service.GitURL,
+			Branch:     service.Branch,
 		})
 	}
 
@@ -463,9 +559,25 @@ func (p *Pipeline) releaseRequest(release *models.Release, project *models.Proje
 		built = map[string]string{"": release.Image}
 	}
 
-	request := &ufp.ReleaseRequest{JobID: release.ID, Project: project.Name}
+	request := &ufp.ReleaseRequest{JobID: release.ID, Project: project.Name, Networks: make(map[string]ufp.NetworkResource), Volumes: make(map[string]ufp.VolumeResource)}
+	for key, resource := range project.Networks {
+		request.Networks[key] = ufp.NetworkResource{Name: resource.Name, Driver: resource.Driver, External: resource.External, Internal: resource.Internal, Attachable: resource.Attachable, Options: resource.Options, Labels: resource.Labels}
+	}
+	for key, resource := range project.Volumes {
+		request.Volumes[key] = ufp.VolumeResource{Name: resource.Name, Driver: resource.Driver, External: resource.External, Options: resource.Options, Labels: resource.Labels}
+	}
+	if len(request.Networks) == 0 {
+		request.Networks = nil
+	}
+	if len(request.Volumes) == 0 {
+		request.Volumes = nil
+	}
 
-	for _, service := range project.ServiceList() {
+	ordered, err := models.OrderServices(project.ServiceList())
+	if err != nil {
+		return nil, err
+	}
+	for _, service := range ordered {
 		image := service.Image
 		if service.Built() {
 			resolved, ok := built[service.Name]
@@ -481,30 +593,48 @@ func (p *Pipeline) releaseRequest(release *models.Release, project *models.Proje
 		}
 
 		spec := ufp.ServiceSpec{
-			Name:    service.Name,
-			Image:   image,
-			Env:     env,
-			Network: service.Network,
-			Restart: service.RestartPolicy(),
-			Command: service.Command,
-			Labels:  service.Labels,
+			Name:        service.Name,
+			Image:       image,
+			Env:         env,
+			Network:     service.Network,
+			Restart:     service.RestartPolicy(),
+			Command:     service.Command,
+			CommandExec: service.CommandExec,
+			Entrypoint:  service.Entrypoint,
+			Mode:        service.EffectiveMode(),
+			JobTimeout:  service.Job.Timeout,
+			Labels:      service.Labels,
 		}
+		for _, network := range service.EffectiveNetworks() {
+			aliases := append([]string(nil), network.Aliases...)
+			if service.Name != "" && !slices.Contains(aliases, service.Name) {
+				aliases = append(aliases, service.Name)
+			}
+			spec.Networks = append(spec.Networks, ufp.NetworkAttachment{Name: network.Name, Aliases: aliases})
+		}
+		for _, dependency := range service.DependsOn {
+			spec.DependsOn = append(spec.DependsOn, ufp.Dependency{Service: dependency.Service, Condition: dependency.Condition})
+		}
+		spec.Resources = ufp.ResourceLimits{MemoryBytes: service.Resources.MemoryBytes, CPUs: service.Resources.CPUs, PIDs: service.Resources.PIDs}
+		spec.Security = ufp.SecuritySpec{NoNewPrivileges: service.Security.NoNewPrivileges, ReadOnlyRootFS: service.Security.ReadOnlyRootFS, User: service.Security.User, CapAdd: service.Security.CapAdd, CapDrop: service.Security.CapDrop}
+		spec.Logging = ufp.LogConfig{Driver: service.Logging.Driver, Options: service.Logging.Options}
 		if service.Healthcheck != nil {
 			spec.Healthcheck = &ufp.HealthcheckSpec{
 				Type: service.Healthcheck.Type, Scheme: service.Healthcheck.Scheme,
 				Path: service.Healthcheck.Path, Port: service.Healthcheck.Port,
 				Interval: service.Healthcheck.Interval, Timeout: service.Healthcheck.Timeout,
 				Retries: service.Healthcheck.Retries, StableFor: service.Healthcheck.StableFor,
+				Command: service.Healthcheck.Command, StartPeriod: service.Healthcheck.StartPeriod,
 			}
 		}
 		for _, port := range service.Ports {
 			spec.Ports = append(spec.Ports, ufp.PortBinding{
-				Host: port.Host, Container: port.Container, Protocol: port.Protocol,
+				HostIP: port.HostIP, Host: port.Host, Container: port.Container, Protocol: port.Protocol,
 			})
 		}
 		for _, volume := range service.Volumes {
 			spec.Volumes = append(spec.Volumes, ufp.VolumeBinding{
-				Source: volume.Source, Target: volume.Target, ReadOnly: volume.ReadOnly,
+				Type: volume.Type, Source: volume.Source, Target: volume.Target, ReadOnly: volume.ReadOnly, CreateHostPath: volume.CreateHostPath,
 			})
 		}
 

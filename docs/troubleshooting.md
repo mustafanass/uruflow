@@ -4,22 +4,17 @@ Symptoms, causes and fixes. Start with the log. Both processes write to their lo
 systemd installations can use `journalctl -fu uruflow` or `journalctl -fu uruflow-agent`. The server
 file is `<data_dir>/uruflow.log`; each agent uses `log_file` from `agent.yaml`.
 
-## Console Will Not Open
+## Commands Cannot Reach the Server
 
-**`uruflow server is not running (console socket …)`**
+**`uruflow server is not running (control socket …)`**
 
-The dashboard is a client, not the server. Start the persistent process with `sudo systemctl start
-uruflow`, inspect it with `sudo systemctl status uruflow`, then run `sudo uruflow console` again.
+The workspace is a client, not the server. Start the persistent process with `sudo systemctl start
+uruflow`, inspect it with `sudo systemctl status uruflow`, then open `sudo uruflow` and run `status`.
 
 **`permission denied (run with sudo)`**
 
-The local console can deploy and delete workloads, so `<data_dir>/console.sock` is deliberately
-root-only. Run the command with `sudo`.
-
-**`another console is already attached`**
-
-Only one terminal dashboard can own container log streams and interactive actions at a time. Close
-the existing console before attaching another one. This does not affect the server service.
+The local workspace can deploy and delete workloads, so `<data_dir>/control.sock` is deliberately
+root-only. Open it with `sudo`.
 
 ## Server Will Not Start
 
@@ -47,8 +42,8 @@ Read the agent log first; the reason is almost always stated there.
 
 **`agent not registered or invalid key`**
 
-The `agent_id` or `key` in `agent.yaml` does not match the server's record. Re-enrol with
-`uruflow agent add` and rewrite the config with the printed command.
+The `agent_id` or `key` in `agent.yaml` does not match the server's record. Re-enrol with `agent add`
+in the workspace and rewrite the config with the printed command.
 
 **`x509: certificate signed by unknown authority`**
 
@@ -84,8 +79,8 @@ release stuck because an agent vanished — a server restart closes those out.
 
 **`builder agent is offline` / `project has no runner agents`**
 
-The configured builder or runners are not connected, or do not hold the role. Check `uruflow agent
-list`.
+The configured builder or runners are not connected, or do not hold the role. Run `agent list` in
+the workspace.
 
 **Build fails with `failed to fetch anonymous token` or a DNS timeout**
 
@@ -107,8 +102,8 @@ install the registry CA` and run the agent as root.
 **Release succeeded but the container is not running**
 
 Check readiness semantics in [Deployments](deployments.md#readiness). A release only succeeds after
-the container is ready, so this usually means it exited afterwards. Inspect its logs from the agents
-view, or `docker logs uruflow-<project>`.
+the container is ready, so this usually means it exited afterwards. Use `container logs` in the
+workspace, or `docker logs uruflow-<project>`.
 
 **Release failed and the old version is still running**
 
@@ -151,7 +146,7 @@ the container produce nothing here. The empty state distinguishes the two cases.
 **`references "x": secret is not set`**
 
 A project variable references a secret that does not exist. The deploy is refused before any build
-starts. Press `7` in the interface and store it.
+starts. Run `secret set <name>` in the workspace.
 
 **A secret cannot be read back**
 
@@ -173,22 +168,21 @@ A misspelled key. Unknown fields are rejected by name rather than being silently
 **`unknown agent "web-99"` / `does not carry the builder role`**
 
 The file names an agent that does not exist, or one without the required role. Names come from
-`uruflow agent list`.
+`agent list` in the workspace.
 
 **`came from this file, which is gone`**
 
-A file-backed project's file was deleted. The project keeps running; press `d` to remove it, or restore
-the file and press `R`.
+A project file was deleted. The project keeps running; restore the file and run `project reload` in
+the workspace. URUFLOW never deletes a running workload implicitly.
 
 **Edits to project files have no effect**
 
-Files are read on start and when you press `R`. There is no filesystem watcher.
+Files are read on start and by `project reload` in the workspace. There is no filesystem watcher.
 
-**Editing a project lost a field**
+**Editing a project failed validation**
 
-The settings form owns a fixed set of fields. `build_args`, `command`, `restart` and project-level
-`env` are preserved but can only be *changed* by editing the file — through the `config` tab or on
-disk. Comments in YAML are lost when the settings form writes a file back.
+The workspace reports the file and reason. Inline `project apply` restores the previous file when full
+reload validation fails; editor changes remain on disk so you can correct them and reload again.
 
 ## Webhooks
 

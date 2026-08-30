@@ -137,9 +137,15 @@ func (p *Pipeline) onBuildStatus(release *models.Release, status ufp.JobStatus) 
 		}
 		release.Image = status.Image
 		release.Images = status.Images
+		release.Commits = status.Commits
 		release.Digest = status.Digest
 		if status.Commit != "" {
 			release.Commit = status.Commit
+		}
+		if release.Spec.EffectiveWorkflow() == models.WorkflowBuildOnly {
+			p.completeRelease(release, models.StatusSucceeded, "")
+			logger.Info("[PIPELINE] release %s: build completed without deployment", release.ID)
+			return
 		}
 		release.Status = models.StatusReleasing
 		if err := p.store.UpdateRelease(release); err != nil {

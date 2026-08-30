@@ -259,10 +259,11 @@ func (d *Daemon) runBuild(request ufp.BuildRequest, job *activeJob) {
 
 	logger.Info("[AGENT] build %s: pushed %d image(s)", request.JobID, len(result.Images))
 	d.finishJob(request.JobID, ufp.StageBuild, nil, started, ufp.JobStatus{
-		Image:  result.Image,
-		Images: result.Images,
-		Commit: result.Commit,
-		Digest: result.Digest,
+		Image:   result.Image,
+		Images:  result.Images,
+		Commit:  result.Commit,
+		Commits: result.Commits,
+		Digest:  result.Digest,
 	})
 }
 

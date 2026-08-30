@@ -28,10 +28,11 @@ import (
 
 	"github.com/mustafanass/uruflow/internal/api"
 	"github.com/mustafanass/uruflow/internal/config"
-	"github.com/mustafanass/uruflow/internal/console"
+	"github.com/mustafanass/uruflow/internal/control"
+	"github.com/mustafanass/uruflow/internal/ops"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
-	"github.com/mustafanass/uruflow/internal/tui"
 	"github.com/mustafanass/uruflow/internal/version"
+	"github.com/mustafanass/uruflow/internal/workbench"
 	"github.com/mustafanass/uruflow/pkg/helper"
 	"github.com/mustafanass/uruflow/pkg/logger"
 	"github.com/spf13/cobra"
@@ -45,22 +46,23 @@ const (
 var (
 	serverConfigPath string
 	headless         bool
+	noColor          bool
 )
 
 func ExecuteServer() error {
 	root := &cobra.Command{
 		Use:           "uruflow",
-		Short:         "Self-hosted build and release infrastructure",
-		Long:          "uruflow builds images on a builder agent, pushes them to its own registry, then releases those images to runner agents.",
+		Short:         "Open the URUFLOW operations workspace",
+		Long:          "URUFLOW opens one operations workspace for fleet status, commands, live process output, logs, secrets, and project YAML. The persistent control plane runs with `uruflow serve`.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE:          runDefault,
 	}
 
 	root.PersistentFlags().StringVarP(&serverConfigPath, "config", "c", "", "config file path")
+	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable ANSI colors")
 	root.Flags().BoolVar(&headless, "headless", false, "run the server in the foreground (deprecated: use serve)")
 	root.AddCommand(
-		agentCommands(),
 		&cobra.Command{
 			Use:   "serve",
 			Short: "Run the persistent server (for systemd)",
@@ -68,14 +70,10 @@ func ExecuteServer() error {
 		},
 		&cobra.Command{
 			Use:   "console",
-			Short: "Attach the terminal dashboard to the running server",
+			Short: "Open the single-page operations workspace",
 			RunE:  runConsole,
 		},
-		&cobra.Command{
-			Use:   "init",
-			Short: "Create the server configuration",
-			RunE:  runInit,
-		},
+		initCommand(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the uruflow version",
@@ -98,10 +96,6 @@ func configPath() string {
 	return config.DefaultConfigPath
 }
 
-func runInit(*cobra.Command, []string) error {
-	return tui.RunSetup(configPath())
-}
-
 func runDefault(cmd *cobra.Command, args []string) error {
 	if headless {
 		return runServer(cmd, args)
@@ -118,7 +112,7 @@ func runConsole(*cobra.Command, []string) error {
 	if err != nil {
 		return err
 	}
-	return console.Attach(cfg.ConsoleSocketPath())
+	return workbench.Run(cfg.ControlSocketPath(), noColor)
 }
 
 func runServer(*cobra.Command, []string) error {
@@ -160,19 +154,14 @@ func runServer(*cobra.Command, []string) error {
 		return err
 	}
 
-	control, err := console.Listen(cfg.ConsoleSocketPath(), func(
-		ctx context.Context, terminal *os.File, environment []string, sizes <-chan console.Size,
-	) error {
-		logger.Info("[CONSOLE] dashboard attached")
-		defer logger.Info("[CONSOLE] dashboard detached")
-		return tui.RunTerminal(ctx, server, terminal, environment, sizes)
-	})
+	operations := ops.New(server)
+	controlServer, err := control.Listen(cfg.ControlSocketPath(), operations.Execute)
 	if err != nil {
 		shutdown(server)
 		return err
 	}
-	defer control.Close()
-	logger.Info("[CONSOLE] accepting local dashboards on %s", cfg.ConsoleSocketPath())
+	defer controlServer.Close()
+	logger.Info("[CONTROL] accepting local commands on %s", cfg.ControlSocketPath())
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -180,7 +169,7 @@ func runServer(*cobra.Command, []string) error {
 
 	logger.Info("[SERVER] running")
 	<-signals
-	control.Close()
+	controlServer.Close()
 	shutdown(server)
 	return nil
 }

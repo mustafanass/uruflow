@@ -34,17 +34,16 @@ with `sudo` so the paths match what it shows.
 curl -fsSL https://github.com/mustafanass/uruflow/releases/latest/download/uruflow-linux-amd64 -o uruflow
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 
-sudo uruflow init
+sudo uruflow init --advertise uruflow.internal
 ```
 
-`init` asks for four things:
+`init` writes YAML using secure generated registry and webhook credentials:
 
-| Prompt | Meaning |
+| Flag | Meaning |
 | :--- | :--- |
-| server host | The name agents will dial. Goes into the server certificate. |
-| registry host | The name agents will pull from. Defaults to the server host. |
-| ufp port / webhook port | Defaults 9001 and 9000 |
-| data dir | Defaults `/var/lib/uruflow` |
+| `--advertise` | The name agents dial. It is required and enters the server certificate. |
+| `--registry-host` | The name agents pull from. Defaults to `--advertise`. |
+| `--data-dir` | Runtime state location. Defaults to `/var/lib/uruflow`. |
 
 Use a name every agent can reach. `localhost` works only if everything runs on one machine.
 
@@ -56,29 +55,24 @@ Use a name every agent can reach. `localhost` works only if everything runs on o
 sudo install -m 0644 packaging/systemd/uruflow.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now uruflow
-sudo uruflow console
+sudo uruflow
 ```
 
 On first start it generates a certificate authority, issues certificates for itself and the registry,
-and starts `registry:2` with TLS and authentication. `uruflow console` then attaches the interface to
-that running service. If you installed only the binary rather than a source checkout, copy the unit
-from [Operations](operations.md#systemd) first.
+and starts `registry:2` with TLS and authentication. Bare `uruflow` opens the operations workspace;
+type `status` there to query the running service. If you installed only the binary, copy the unit from
+[Operations](operations.md#systemd) first.
 
-Press `5` to confirm the registry reports healthy before continuing.
+Confirm the registry reports healthy before continuing.
 
 ## 4. Enrol an Agent
 
-**[server]** — press `3`, then `n`. Type a name, `tab` to the roles field, toggle roles with `space`,
-then press `enter`.
+**[server]** — for a single machine, enrol both builder and runner roles.
 
-> The agent form submits with `enter`; the project form submits with `ctrl+s`. They differ today.
+URUFLOW prints the exact command to run on the target. Type this in the workspace:
 
-For a single machine, tick both `builder` and `runner`.
-
-URUFLOW prints the exact command to run on the target. The same is available from the shell:
-
-```bash
-sudo uruflow agent add builder-01 --roles builder,runner
+```text
+agent add builder-01 --roles builder,runner
 ```
 
 ```text
@@ -131,41 +125,35 @@ If the target has only the released agent binary, copy the agent unit from
 [Operations](operations.md#systemd). For a temporary foreground test, `sudo uruflow-agent run` still
 works and now prints the same lines it saves to `/var/log/uruflow-agent.log`.
 
-Within a few seconds the agents view shows it **online** with its roles. If it does not, the agent log
-states why — see [Troubleshooting](troubleshooting.md#agent-will-not-connect).
+Within a few seconds, `agent list` in the workspace shows it **online** with its roles. If it does not, the
+agent log states why — see [Troubleshooting](troubleshooting.md#agent-will-not-connect).
 
 Run a builder as root. Without it the registry certificate cannot be installed and pushes fail with a
 certificate error.
 
 ## 6. Create a Project
 
-**[server]** — press `2`, then `n`.
+**[server]** — create `/etc/uruflow/projects/demo/project.yaml` and `prod.yaml` using the examples in
+[Projects](projects.md#3-file-layout). Use `builder-01` as both builder and runner for this
+single-machine example, then validate and load the files:
 
-The first field asks where the project lives. Choose **standalone** for now; you can move to files
-later without changing anything else.
+```text
+project validate /etc/uruflow/projects/demo/prod.yaml
+project reload
+project show demo-prod
+```
 
-| Field | Example |
-| :--- | :--- |
-| name | `demo` |
-| git url | `git@github.com:acme/demo.git` |
-| branch | `main` |
-| dockerfile | `Dockerfile` |
-| context | `.` |
-| builder | pick `builder-01` |
-| runners | tick `builder-01` |
-| ports | `8080:80` |
-| auto deploy | `yes` |
-
-Press `ctrl+t` to reach the `variables` tab and paste a `.env` if your application needs one. Press
-`ctrl+s` to save.
-
-Agent names are picked from a list, so a project cannot reference an agent that does not exist.
+The loader rejects unknown agents, role mismatches, invalid workflows and malformed service models.
 
 ## 7. Deploy
 
-Select the project and press `enter`, then confirm.
+Start the deployment in the workspace. Its response follows live output until completion:
 
-Press `4` to watch it. The pipeline updates as it moves:
+```text
+project deploy demo-prod
+```
+
+The process updates as it moves:
 
 ```text
 ◉ build ── ○ push ── ○ release      cloning and building
@@ -173,14 +161,13 @@ Press `4` to watch it. The pipeline updates as it moves:
 ● build ── ● push ── ● release      live
 ```
 
-Press `enter` on the release to read the full build output as it streams.
+Use `release list` and `release follow <id>` to inspect or reattach later.
 
 ## 8. Verify
 
-**[server]** — press `3`, select the agent, press `enter` to list its containers. The project's
-container should be `running`, and `healthy` if the image declares a `HEALTHCHECK`.
-
-Press `enter` again on a container to stream its logs live.
+**[server]** — `container list` in the workspace should show the project container as `running`, and
+`healthy` if the image declares a `HEALTHCHECK`. Stream application output with `container logs
+builder-01 <container-id> --follow`.
 
 From a shell:
 
@@ -191,7 +178,11 @@ docker ps --filter label=uruflow.managed=true
 
 ## 9. Roll Back
 
-Deploy a second time so there is history, then select the project and press `r`.
+Deploy a second time so there is history, then run:
+
+```text
+project rollback demo-prod
+```
 
 Rollback re-releases the image from the last successful release. It does not rebuild, so what returns
 is byte-identical to what ran before.

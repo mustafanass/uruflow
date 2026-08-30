@@ -54,8 +54,11 @@ CREATE TABLE IF NOT EXISTS projects (
 	builder     TEXT NOT NULL DEFAULT '',
 	runners     TEXT NOT NULL DEFAULT '[]',
 	auto_deploy INTEGER NOT NULL DEFAULT 1,
+	workflow    TEXT NOT NULL DEFAULT '',
 	runtime     TEXT NOT NULL DEFAULT '{}',
+	services    TEXT NOT NULL DEFAULT '[]',
 	env         TEXT NOT NULL DEFAULT '',
+	resources   TEXT NOT NULL DEFAULT '{}',
 	source      TEXT NOT NULL DEFAULT '',
 	created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -65,6 +68,7 @@ CREATE TABLE IF NOT EXISTS releases (
 	project      TEXT NOT NULL,
 	branch       TEXT NOT NULL DEFAULT '',
 	commit_sha   TEXT NOT NULL DEFAULT '',
+	commits      TEXT NOT NULL DEFAULT '{}',
 	image        TEXT NOT NULL DEFAULT '',
 	images       TEXT NOT NULL DEFAULT '{}',
 	digest       TEXT NOT NULL DEFAULT '',

@@ -93,68 +93,89 @@ type Metrics struct {
 }
 
 type Project struct {
-	Name       string            `json:"name"`
-	GitURL     string            `json:"git_url"`
-	Branch     string            `json:"branch"`
-	Dockerfile string            `json:"dockerfile"`
-	Context    string            `json:"context"`
-	BuildArgs  map[string]string `json:"build_args,omitempty"`
-	Builder    string            `json:"builder"`
-	Runners    []string          `json:"runners"`
-	AutoDeploy bool              `json:"auto_deploy"`
-	Runtime    Runtime           `json:"runtime"`
-	Services   []Service         `json:"services,omitempty"`
-	Env        string            `json:"env,omitempty"`
-	Source     string            `json:"source,omitempty"`
-	CreatedAt  time.Time         `json:"created_at"`
+	Name       string                     `json:"name"`
+	GitURL     string                     `json:"git_url"`
+	Branch     string                     `json:"branch"`
+	Dockerfile string                     `json:"dockerfile"`
+	Context    string                     `json:"context"`
+	BuildArgs  map[string]string          `json:"build_args,omitempty"`
+	Builder    string                     `json:"builder"`
+	Runners    []string                   `json:"runners"`
+	AutoDeploy bool                       `json:"auto_deploy"`
+	Workflow   string                     `json:"workflow,omitempty"`
+	Runtime    Runtime                    `json:"runtime"`
+	Services   []Service                  `json:"services,omitempty"`
+	Networks   map[string]NetworkResource `json:"networks,omitempty"`
+	Volumes    map[string]VolumeResource  `json:"volumes,omitempty"`
+	Env        string                     `json:"env,omitempty"`
+	Source     string                     `json:"source,omitempty"`
+	CreatedAt  time.Time                  `json:"created_at"`
 }
 
 type Service struct {
-	Name        string            `json:"name"`
-	Image       string            `json:"image,omitempty"`
-	Dockerfile  string            `json:"dockerfile,omitempty"`
-	Context     string            `json:"context,omitempty"`
-	BuildArgs   map[string]string `json:"build_args,omitempty"`
-	Command     string            `json:"command,omitempty"`
-	Ports       []Port            `json:"ports,omitempty"`
-	Volumes     []Volume          `json:"volumes,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	Network     string            `json:"network,omitempty"`
-	Restart     string            `json:"restart,omitempty"`
-	Healthcheck *Healthcheck      `json:"healthcheck,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty"`
+	Name        string              `json:"name"`
+	Image       string              `json:"image,omitempty"`
+	Dockerfile  string              `json:"dockerfile,omitempty"`
+	Context     string              `json:"context,omitempty"`
+	BuildArgs   map[string]string   `json:"build_args,omitempty"`
+	GitURL      string              `json:"git_url,omitempty"`
+	Branch      string              `json:"branch,omitempty"`
+	Command     string              `json:"command,omitempty"`
+	CommandExec []string            `json:"command_exec,omitempty"`
+	Entrypoint  []string            `json:"entrypoint,omitempty"`
+	Ports       []Port              `json:"ports,omitempty"`
+	Volumes     []Volume            `json:"volumes,omitempty"`
+	Env         map[string]string   `json:"env,omitempty"`
+	Network     string              `json:"network,omitempty"`
+	Networks    []NetworkAttachment `json:"networks,omitempty"`
+	Restart     string              `json:"restart,omitempty"`
+	Mode        string              `json:"mode,omitempty"`
+	DependsOn   []Dependency        `json:"depends_on,omitempty"`
+	Resources   ResourceLimits      `json:"resources,omitempty"`
+	Security    Security            `json:"security,omitempty"`
+	Logging     LogConfig           `json:"logging,omitempty"`
+	Job         Job                 `json:"job,omitempty"`
+	Healthcheck *Healthcheck        `json:"healthcheck,omitempty"`
+	Labels      map[string]string   `json:"labels,omitempty"`
 }
 
 type Healthcheck struct {
-	Type      string        `json:"type"`
-	Scheme    string        `json:"scheme,omitempty"`
-	Path      string        `json:"path,omitempty"`
-	Port      int           `json:"port,omitempty"`
-	Interval  time.Duration `json:"interval,omitempty"`
-	Timeout   time.Duration `json:"timeout,omitempty"`
-	Retries   int           `json:"retries,omitempty"`
-	StableFor time.Duration `json:"stable_for,omitempty"`
+	Type        string        `json:"type"`
+	Scheme      string        `json:"scheme,omitempty"`
+	Path        string        `json:"path,omitempty"`
+	Port        int           `json:"port,omitempty"`
+	Interval    time.Duration `json:"interval,omitempty"`
+	Timeout     time.Duration `json:"timeout,omitempty"`
+	Retries     int           `json:"retries,omitempty"`
+	StableFor   time.Duration `json:"stable_for,omitempty"`
+	Command     []string      `json:"command,omitempty"`
+	Shell       bool          `json:"shell,omitempty"`
+	StartPeriod time.Duration `json:"start_period,omitempty"`
 }
 
 type Runtime struct {
-	Ports   []Port            `json:"ports,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	Volumes []Volume          `json:"volumes,omitempty"`
-	Network string            `json:"network,omitempty"`
-	Restart string            `json:"restart,omitempty"`
-	Command string            `json:"command,omitempty"`
+	Ports       []Port            `json:"ports,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	Volumes     []Volume          `json:"volumes,omitempty"`
+	Network     string            `json:"network,omitempty"`
+	Restart     string            `json:"restart,omitempty"`
+	Command     string            `json:"command,omitempty"`
+	CommandExec []string          `json:"command_exec,omitempty"`
 }
 
 type Port struct {
+	HostIP    string `json:"host_ip,omitempty"`
 	Host      int    `json:"host"`
 	Container int    `json:"container"`
 	Protocol  string `json:"protocol,omitempty"`
 }
 
 type Volume struct {
-	Source   string `json:"source"`
-	Target   string `json:"target"`
-	ReadOnly bool   `json:"read_only,omitempty"`
+	Type           string `json:"type,omitempty"`
+	Source         string `json:"source"`
+	Target         string `json:"target"`
+	ReadOnly       bool   `json:"read_only,omitempty"`
+	CreateHostPath bool   `json:"create_host_path,omitempty"`
 }
 
 type Release struct {
@@ -162,6 +183,7 @@ type Release struct {
 	Project     string            `json:"project"`
 	Branch      string            `json:"branch"`
 	Commit      string            `json:"commit"`
+	Commits     map[string]string `json:"commits,omitempty"`
 	Image       string            `json:"image"`
 	Images      map[string]string `json:"images,omitempty"`
 	Digest      string            `json:"digest"`
@@ -308,16 +330,17 @@ func (p *Project) ServiceList() []Service {
 	}
 
 	return []Service{{
-		Name:       "",
-		Dockerfile: p.Dockerfile,
-		Context:    p.Context,
-		BuildArgs:  p.BuildArgs,
-		Command:    p.Runtime.Command,
-		Ports:      p.Runtime.Ports,
-		Volumes:    p.Runtime.Volumes,
-		Env:        p.Runtime.Env,
-		Network:    p.Runtime.Network,
-		Restart:    p.Runtime.Restart,
+		Name:        "",
+		Dockerfile:  p.Dockerfile,
+		Context:     p.Context,
+		BuildArgs:   p.BuildArgs,
+		Command:     p.Runtime.Command,
+		CommandExec: p.Runtime.CommandExec,
+		Ports:       p.Runtime.Ports,
+		Volumes:     p.Runtime.Volumes,
+		Env:         p.Runtime.Env,
+		Network:     p.Runtime.Network,
+		Restart:     p.Runtime.Restart,
 	}}
 }
 

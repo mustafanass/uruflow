@@ -118,7 +118,7 @@ func TestLoaderExpandsEnvironmentsIntoProjects(t *testing.T) {
 	}
 }
 
-func TestEnvPrecedenceDefaultsThenProjectThenYamlThenDotEnv(t *testing.T) {
+func TestEnvPrecedenceDefaultsThenProjectThenYAMLThenDotEnv(t *testing.T) {
 	result := NewLoader(seedTree(t), fakeAgents()).Load()
 
 	byName := map[string]models.Project{}
@@ -165,7 +165,7 @@ func TestLoaderReportsBadFilesWithoutLosingGoodOnes(t *testing.T) {
 	}
 
 	joined := result.Problems[0].Error() + result.Problems[1].Error()
-	if !strings.Contains(joined, "unknown agent") || !strings.Contains(joined, "git is required") {
+	if !strings.Contains(joined, "unknown agent") || !strings.Contains(joined, "no environment files found") {
 		t.Fatalf("problems did not explain themselves: %v", result.Problems)
 	}
 }
@@ -252,6 +252,45 @@ func TestServicesLoadFromTheEnvironmentFile(t *testing.T) {
 	}
 	if shop.ServiceEnv(byName["worker"])["ROLE"] != "" {
 		t.Error("service env leaked between services")
+	}
+}
+
+func TestNativeResourcesAndInterpolationLoadAsOneProjectModel(t *testing.T) {
+	root := seedTree(t)
+	write(t, filepath.Join(root, "projects", "native", "project.yaml"), "git: git@host:native.git\n")
+	write(t, filepath.Join(root, "projects", "native", "prod.env"),
+		"NETWORK_NAME=native-edge\nHOST_IP=127.0.0.1\nDB_ALIAS=postgres\nDB_IMAGE=postgres@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n")
+	write(t, filepath.Join(root, "projects", "native", "prod.yaml"),
+		"branch: main\nbuilder: builder-01\nrunners: [web-01]\n"+
+			"resources:\n  networks:\n    data:\n      name: ${NETWORK_NAME:?network required}\n      internal: true\n  volumes:\n    state: {}\n"+
+			"services:\n  database:\n    image: ${DB_IMAGE:?image required}\n    ports: [\"${HOST_IP}:5432:5432\"]\n    networks:\n      data:\n        aliases: [\"${DB_ALIAS:-database}\"]\n    mounts:\n      - type: volume\n        source: state\n        target: /var/lib/postgresql/data\n    healthcheck:\n      type: command\n      command: [pg_isready]\n      interval: 1s\n      timeout: 1s\n      retries: 3\n  api:\n    dockerfile: Dockerfile\n    networks:\n      data: {}\n    depends_on:\n      database: healthy\n")
+
+	result := NewLoader(root, fakeAgents()).Load()
+	if len(result.Problems) != 0 {
+		t.Fatalf("problems: %v", result.Problems)
+	}
+	var native *models.Project
+	for index := range result.Projects {
+		if result.Projects[index].Name == "native-prod" {
+			native = &result.Projects[index]
+		}
+	}
+	if native == nil {
+		t.Fatal("native-prod was not loaded")
+	}
+	if native.Networks["data"].Name != "native-edge" || !native.Networks["data"].Internal || native.Volumes["state"].Name != "native-prod-state" {
+		t.Fatalf("resources = networks:%#v volumes:%#v", native.Networks, native.Volumes)
+	}
+	byName := map[string]models.Service{}
+	for _, service := range native.Services {
+		byName[service.Name] = service
+	}
+	if byName["database"].Ports[0].HostIP != "127.0.0.1" || byName["database"].Networks[0].Aliases[0] != "postgres" || byName["database"].Volumes[0].Type != "volume" || byName["database"].Healthcheck.Type != "command" {
+		t.Fatalf("database = %#v", byName["database"])
+	}
+	ordered, err := models.OrderServices(native.Services)
+	if err != nil || ordered[0].Name != "database" || ordered[1].Name != "api" {
+		t.Fatalf("dependency order = %#v, %v", ordered, err)
 	}
 }
 

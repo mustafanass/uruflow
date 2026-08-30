@@ -41,7 +41,7 @@ const (
 	RegistryImage     = "registry:2"
 	DatabaseFile      = "uruflow.db"
 	LogFile           = "uruflow.log"
-	ConsoleSocketFile = "console.sock"
+	ControlSocketFile = "control.sock"
 )
 
 type Config struct {
@@ -240,8 +240,8 @@ func (c *Config) LogPath() string {
 	return filepath.Join(c.Server.DataDir, LogFile)
 }
 
-func (c *Config) ConsoleSocketPath() string {
-	return filepath.Join(c.Server.DataDir, ConsoleSocketFile)
+func (c *Config) ControlSocketPath() string {
+	return filepath.Join(c.Server.DataDir, ControlSocketFile)
 }
 
 func (c *Config) PKIDir() string {

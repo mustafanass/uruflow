@@ -29,17 +29,17 @@ import (
 type Level int
 
 const (
-	DEBUG Level = iota
-	INFO
-	WARN
-	ERROR
+	LevelDebug Level = iota
+	LevelInfo
+	LevelWarn
+	LevelError
 )
 
 var levelNames = map[Level]string{
-	DEBUG: "DEBUG",
-	INFO:  "INFO",
-	WARN:  "WARN",
-	ERROR: "ERROR",
+	LevelDebug: "DEBUG",
+	LevelInfo:  "INFO",
+	LevelWarn:  "WARN",
+	LevelError: "ERROR",
 }
 
 type Logger struct {
@@ -51,14 +51,14 @@ type Logger struct {
 var std *Logger
 
 func Init(logPath string, level string) error {
-	logLevel := INFO
+	logLevel := LevelInfo
 	switch level {
 	case "debug":
-		logLevel = DEBUG
+		logLevel = LevelDebug
 	case "warn":
-		logLevel = WARN
+		logLevel = LevelWarn
 	case "error":
-		logLevel = ERROR
+		logLevel = LevelError
 	}
 
 	if logPath == "" {
@@ -70,11 +70,11 @@ func Init(logPath string, level string) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return fmt.Errorf("create log directory: %w", err)
 	}
 
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("open log file: %w", err)
 	}
@@ -88,7 +88,7 @@ func Init(logPath string, level string) error {
 	return nil
 }
 
-func (l *Logger) log(level Level, format string, args ...interface{}) {
+func (l *Logger) log(level Level, format string, args ...any) {
 	if level < l.level {
 		return
 	}
@@ -99,26 +99,26 @@ func (l *Logger) log(level Level, format string, args ...interface{}) {
 	fmt.Fprintf(l.fileOutput, "%s %-5s %s%s\n", timestamp, levelStr, l.prefix, message)
 }
 
-func Debug(format string, args ...interface{}) {
+func Debug(format string, args ...any) {
 	if std != nil {
-		std.log(DEBUG, format, args...)
+		std.log(LevelDebug, format, args...)
 	}
 }
 
-func Info(format string, args ...interface{}) {
+func Info(format string, args ...any) {
 	if std != nil {
-		std.log(INFO, format, args...)
+		std.log(LevelInfo, format, args...)
 	}
 }
 
-func Warn(format string, args ...interface{}) {
+func Warn(format string, args ...any) {
 	if std != nil {
-		std.log(WARN, format, args...)
+		std.log(LevelWarn, format, args...)
 	}
 }
 
-func Error(format string, args ...interface{}) {
+func Error(format string, args ...any) {
 	if std != nil {
-		std.log(ERROR, format, args...)
+		std.log(LevelError, format, args...)
 	}
 }

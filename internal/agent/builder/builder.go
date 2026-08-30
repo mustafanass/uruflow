@@ -20,6 +20,7 @@ package builder
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,10 +41,11 @@ type Builder struct {
 }
 
 type Result struct {
-	Image  string
-	Images map[string]string
-	Commit string
-	Digest string
+	Image   string
+	Images  map[string]string
+	Commit  string
+	Commits map[string]string
+	Digest  string
 }
 
 func New(workDir string) *Builder {
@@ -55,21 +57,46 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 	if request.Project == "" || filepath.Base(request.Project) != request.Project || request.Project == "." {
 		return nil, fmt.Errorf("invalid project name %q", request.Project)
 	}
-	sourceDir := filepath.Join(b.workDir, request.Project)
-
-	log(ufp.StreamStdout, fmt.Sprintf("fetching source (%s)", request.Branch))
-	if err := b.sync(ctx, sourceDir, request, log); err != nil {
-		return nil, err
+	result := &Result{Images: make(map[string]string, len(request.Targets)), Commits: make(map[string]string, len(request.Targets)), Commit: request.Commit}
+	type sourceCheckout struct {
+		dir    string
+		commit string
 	}
-
-	commit, err := capture(ctx, sourceDir, gitBinary, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Result{Commit: commit, Images: make(map[string]string, len(request.Targets))}
+	checkouts := make(map[string]sourceCheckout)
 
 	for _, target := range request.Targets {
+		gitURL, branch, requestedCommit, primary := targetSource(request, target)
+		key := gitURL + "\x00" + branch + "\x00" + requestedCommit
+		checkout, ok := checkouts[key]
+		if !ok {
+			sourceDir := filepath.Join(b.workDir, request.Project)
+			if gitURL != request.GitURL || branch != request.Branch || requestedCommit != request.Commit {
+				digest := sha256.Sum256([]byte(gitURL + "\x00" + branch))
+				sourceDir = filepath.Join(b.workDir, request.Project+"-sources", fmt.Sprintf("%x", digest[:8]))
+			}
+			log(ufp.StreamStdout, fmt.Sprintf("fetching source %s (%s)", gitURL, branch))
+			sourceRequest := request
+			sourceRequest.GitURL, sourceRequest.Branch, sourceRequest.Commit = gitURL, branch, requestedCommit
+			if err := b.sync(ctx, sourceDir, sourceRequest, log); err != nil {
+				return nil, err
+			}
+			commit, err := capture(ctx, sourceDir, gitBinary, "rev-parse", "HEAD")
+			if err != nil {
+				return nil, err
+			}
+			checkout = sourceCheckout{dir: sourceDir, commit: commit}
+			checkouts[key] = checkout
+		}
+		sourceDir, commit := checkout.dir, checkout.commit
+		result.Commits[target.Service] = commit
+		if primary {
+			result.Commit = commit
+		} else if result.Commit == "" {
+			// Manual releases normally provide a resolved primary commit. Keep a
+			// valid status even for a project whose build targets all use secondary
+			// sources when an older caller omitted it.
+			result.Commit = commit
+		}
 		if _, err := safeBuildPath(sourceDir, target.Dockerfile); err != nil {
 			return nil, fmt.Errorf("dockerfile for %s: %w", target.Service, err)
 		}
@@ -107,6 +134,24 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 	}
 
 	return result, nil
+}
+
+func targetSource(request ufp.BuildRequest, target ufp.BuildTarget) (gitURL, branch, commit string, primary bool) {
+	gitURL, branch = request.GitURL, request.Branch
+	if target.GitURL != "" {
+		gitURL = target.GitURL
+	}
+	if target.Branch != "" {
+		branch = target.Branch
+	}
+	primary = gitURL == request.GitURL && branch == request.Branch
+	if primary {
+		commit = request.Commit
+	}
+	if target.Commit != "" {
+		commit = target.Commit
+	}
+	return gitURL, branch, commit, primary
 }
 
 func (b *Builder) digestReference(ctx context.Context, sourceDir, repository, tagged string) (string, error) {

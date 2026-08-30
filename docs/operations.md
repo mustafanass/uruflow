@@ -6,20 +6,20 @@ do for you.
 ## 1. Running the Server
 
 `uruflow serve` is the persistent control-plane process. It starts the registry, agent link, webhook
-listener and a root-only local console socket. The terminal interface is a detachable client:
+listener and a root-only local control socket. The operations workspace is a detachable client:
 
 ```bash
 sudo uruflow console
 ```
 
-Bare `sudo uruflow` does the same thing. Leaving the interface with `q` or `ctrl+c` closes only that
-console session. The server keeps running, agents stay connected, and active releases continue.
+Bare `sudo uruflow` does the same thing. `Ctrl+D` closes the workspace; `Ctrl+C` detaches a live
+stream. The server keeps running, agents stay connected, and active releases continue.
 `uruflow --headless` remains a compatibility alias for `uruflow serve` so an old unit continues to
 start during an upgrade.
 
 The server runs as root. It reads `/etc/uruflow/config.yaml`, writes `<data_dir>`, and needs the
-Docker socket to host the registry, so every `uruflow` command below is run with `sudo` — or from a
-unit, which already runs as root.
+Docker socket to host the registry, so open its workspace with `sudo`. The systemd unit already runs
+the persistent process as root.
 
 Startup order matters and is fixed:
 
@@ -95,9 +95,9 @@ sudo systemctl enable --now uruflow        # server host
 sudo systemctl enable --now uruflow-agent  # each agent host
 ```
 
-There is no reason to stop `uruflow.service` to open the interface. `uruflow console` passes the
-current terminal to the running server over `<data_dir>/console.sock`; it does not start another
-server or open the database itself. Only one console can attach at a time.
+There is no reason to stop `uruflow.service` to operate it. The workspace connects to
+`<data_dir>/control.sock`; it does not start another server or open the database itself. Closing the
+workspace leaves the service and all running operations intact.
 
 ## 2. Logs
 
@@ -105,12 +105,12 @@ server or open the database itself. Only one console can attach at a time.
 | :--- | :--- |
 | Server | `<data_dir>/uruflow.log` |
 | Agent | `log_file` from `agent.yaml`, by default `/var/log/uruflow-agent.log` |
-| Release output | Stored in the database, readable in the releases view |
+| Release output | Stored in the database, readable with `release logs` in the workspace |
 | Container output | Streamed live on request; not stored |
 
 The server and agent write every process log line to both the configured file and stdout. Under
-systemd, stdout is captured by journald. The attached interface uses its own terminal descriptor, so
-service logs do not corrupt the dashboard.
+systemd, stdout is captured by journald. Workspace process streams are delivered separately through
+the local control socket.
 
 Follow either service without stopping it:
 
@@ -128,11 +128,17 @@ tail -f /var/log/uruflow-agent.log
 
 ## 3. Agents
 
-```bash
-sudo uruflow agent list                             # on the server
-sudo uruflow agent add web-03 --roles runner
-sudo uruflow agent remove web-03
+In the server workspace:
 
+```text
+agent list
+agent add web-03 --roles runner
+agent remove web-03
+```
+
+On the target machine:
+
+```bash
 sudo uruflow-agent status                           # on the target machine
 sudo uruflow-agent stop
 ```
@@ -172,13 +178,13 @@ server side when one drops.
 
 ## 4. Secrets
 
-Secrets are managed only from the interface. Press `7`, then `n` to store one and `d` to remove one.
+Use `secret set <name>`, `secret list`, and `secret remove <name>` in the workspace. Values are read
+from a masked prompt and never passed as command arguments.
 
-Values are encrypted with `pki/secrets.key` and cannot be read back — the interface shows names and
-masks only. To change a secret, store it again under the same name.
+Values are encrypted with `pki/secrets.key` and cannot be read back—the workspace shows names and
+references only. To change a secret, store it again under the same name.
 
-Attach with `sudo uruflow console` and change secrets while the service remains online. Opening and
-closing the interface does not affect agent connectivity.
+Commands operate while the service remains online and do not affect agent connectivity.
 
 For what the store protects and what it does not, see [Security](security.md#7-secrets).
 
@@ -218,7 +224,7 @@ until you do this. Schedule it.
 | :--- | :--- | :--- |
 | `<data_dir>/pki/ca.key` | The trust root | Every agent and the registry must be reissued and the new CA redistributed to every machine |
 | `<data_dir>/pki/secrets.key` | The secret encryption key | **Every stored secret becomes unrecoverable.** They must be set again from their original source. |
-| `<data_dir>/uruflow.db` | Agents, projects, releases | Every agent must be re-enrolled by hand; standalone projects and all history are gone |
+| `<data_dir>/uruflow.db` | Agents, loaded projects, releases | Every agent must be re-enrolled and runtime history is gone; project YAML can be reloaded |
 | `<config_dir>/projects/` | File-backed projects | Recoverable from version control if you keep them there |
 | `<config_dir>/config.yaml` | Server settings, registry password, webhook secret | Reissue the password and update every git host |
 | `<data_dir>/registry/` | Image blobs | Rollback targets are gone; the next build repopulates only the current commit |
@@ -241,8 +247,8 @@ To restore onto a new host: put `config.yaml`, `projects/`, `pki/` and `uruflow.
 start the server. Because the CA and agent keys are preserved, existing agents reconnect without being
 re-enrolled.
 
-There is no `export` or `apply` command. File-backed projects can live in version control, but agents
-and standalone projects exist only in the database — which is why the database is worth backing up
+There is no database `export` command. Project files can live in version control, but agents
+and release history exists only in the database—which is why the database is worth backing up
 even if all your projects are files.
 
 ## 7. Release History and Retention
@@ -270,7 +276,7 @@ Alerts are raised from agent metrics, evaluated on every push (default every 10 
 | Disk | 85% | 95% |
 
 A managed container in any state other than `running` raises a critical alert. An agent going offline
-raises one too. Alerts resolve automatically when the condition clears; view them with `6`.
+raises one too. Alerts resolve automatically when the condition clears; view them in `5 SYSTEM`.
 
 ## 9. Upgrading the Binaries
 

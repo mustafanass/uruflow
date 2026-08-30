@@ -145,6 +145,7 @@ non-root agent cannot install the registry CA into `/etc/docker/certs.d`. See
 ## 4. Project Service Specification
 
 Services are declared under `services` in an environment YAML file. Unknown keys are rejected.
+The complete model and a production-sized example are in [Native Build Model](native-build-model.md).
 
 | Field | Type | Meaning |
 | :--- | :--- | :--- |
@@ -152,18 +153,38 @@ Services are declared under `services` in an environment YAML file. Unknown keys
 | `dockerfile` | string | Build file inside the source directory |
 | `context` | string | Build context inside the source directory; defaults to `.` |
 | `build_args` | `map[string]string` | Docker build arguments |
-| `command` | string | Container command override |
-| `ports` | string list | `host:container[/protocol]` bindings |
+| `git`, `branch` | string | Optional source repository and branch override |
+| `entrypoint` | string list | Exact OCI entrypoint override |
+| `command` | string or string list | Shell command or exact OCI command override |
+| `mode` | string | `service` (default) or one-shot `job` |
+| `timeout` | duration | Maximum runtime for a job; defaults to 10 minutes |
+| `depends_on` | `map[string]string` | Dependency conditions: `started`, `healthy`, `completed` |
+| `ports` | string list | `host:container` or `host-ip:host:container`, optional `/tcp` or `/udp` |
 | `volumes` | string list | `source:target[:ro]` mounts |
+| `mounts` | object list | Typed `bind`, `volume`, or `tmpfs` mounts |
 | `env` | `map[string]string` | Service environment merged over project environment |
 | `network` | string | Docker network |
+| `networks` | map | Declared logical networks and optional aliases |
 | `restart` | string | Restart policy; defaults to `unless-stopped` |
-| `healthcheck` | object | Native `http`, `tcp` or `running` release readiness |
+| `resources` | object | `memory`, fractional `cpus`, and `pids` limits |
+| `security` | object | User, read-only root, no-new-privileges, capability add/drop |
+| `logging` | object | Docker log driver and options |
+| `healthcheck` | object | Native `http`, `tcp`, `command`, or `running` readiness |
 | `labels` | `map[string]string` | Generic Docker labels; `uruflow.*` is reserved |
 
-`http` accepts `scheme`, `path`, `port`, `interval`, `timeout` and `retries`. `scheme` defaults to
-`http`; timing defaults are `5s`, `3s` and `10`. `tcp` accepts `port` and the same timing fields.
-`running` accepts only the required positive `stable_for` duration.
+`http` accepts `scheme`, `path`, `port`, `interval`, `timeout`, `retries`, and `start_period`.
+`scheme` defaults to `http`; timing defaults are `5s`, `3s`, and 10 attempts. `tcp` accepts `port`
+and the same timing fields. `command` accepts a shell string or exact command list and the probe
+timings. `running` accepts only the required positive `stable_for` duration.
+
+Top-level `resources.networks` and `resources.volumes` define Docker resources. A missing `name`
+becomes `<project>-<environment>-<logical-key>`, preventing accidental collisions. An explicit name
+is used exactly, and `external: true` requires it to exist already. Named services receive their own
+service name as a DNS alias on every attached network.
+
+The environment's `<name>.env` file supplies `${NAME}`, `${NAME:-default}`, and
+`${NAME:?error message}` interpolation. `$$` emits a literal dollar. `${secret:name}` is preserved
+for release-time resolution by the encrypted URUFLOW secret store.
 
 ## 5. Data Directory Layout
 
@@ -194,17 +215,16 @@ For what to back up and why, see [Operations](operations.md#backup-and-restore).
 
 | Command | Effect |
 | :--- | :--- |
-| `uruflow` | Attach the terminal dashboard to the running server |
-| `uruflow console` | Attach the terminal dashboard to the running server |
+| `uruflow` | Open the single-page operations workspace |
+| `uruflow console` | Open the workspace explicitly |
 | `uruflow serve` | Run the persistent server in the foreground (used by systemd) |
 | `uruflow --headless` | Compatibility alias for `uruflow serve` |
-| `uruflow init` | Write `config.yaml` |
-| `uruflow agent add <name> --roles builder,runner` | Enrol an agent and print its credentials |
-| `uruflow agent list` | List agents with id, roles, status and version |
-| `uruflow agent remove <name>` | Remove an agent |
+| `uruflow init --advertise <host>` | Write `config.yaml` |
 | `uruflow version` | Print the version |
 
-`--config` / `-c` selects a configuration file for any of these, or set `URUFLOW_CONFIG`.
+Fleet operations such as `status`, `events`, `agent add`, `project deploy`, and `release logs` are
+typed inside the workspace. They are not separate shell subcommands. `--config` / `-c` selects a
+configuration file, or set `URUFLOW_CONFIG`.
 
 ### Agent Commands
 

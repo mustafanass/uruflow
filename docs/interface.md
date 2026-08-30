@@ -1,184 +1,171 @@
-# Terminal Interface
+# Operations Workspace
 
-The reference for operating URUFLOW day to day. For a guided first run, see
-[Getting Started](getting-started.md).
+URUFLOW is operated from one full-screen terminal workspace. The workspace owns the prompt, command
+history, live output, tables, confirmations, secret entry, and inline YAML editor. Operational
+commands are deliberately not duplicated as external shell subcommands.
 
-The interface attaches locally to the persistent server with `sudo uruflow console` (bare
-`sudo uruflow` is an alias). It owns only that terminal while it is open and needs at least 40
-columns. Pressing `q` or `ctrl+c` detaches the interface; the server, agents, webhooks and releases
-continue running.
+The persistent server still owns live agent sessions, the pipeline, SQLite, and the registry. The
+workspace reaches it through a root-only Unix control socket, so closing the interface never stops
+the server or a running release. YAML files remain authoritative for project configuration.
 
-## Views
+## Open the workspace
 
-```text
-◆ URUFLOW   1 overview  2 projects  3 agents  4 releases  5 registry  6 alerts  7 secrets    ● 2/2 agents   ◈ uruflow.internal:5000
+```bash
+sudo uruflow
+# explicit equivalent
+sudo uruflow console
 ```
 
-| Key | View | Shows |
-| :--- | :--- | :--- |
-| `1` | Overview | Fleet summary, agent resources, recent releases |
-| `2` | Projects | Every project, its environment, source, and last release |
-| `3` | Agents | Roles, status, resources; drill into containers and their logs |
-| `4` | Releases | History and live pipelines; drill into per-runner outcome and logs |
-| `5` | Registry | Repositories, tags, digests and sizes |
-| `6` | Alerts | Active and resolved alerts |
-| `7` | Secrets | Stored secret names, masked, with their reference form |
-
-## Global Keys
-
-| Key | Action |
-| :--- | :--- |
-| `1`–`7` | Jump to a view |
-| `tab` / `shift+tab` | Cycle views |
-| `↑` `↓` or `k` `j` | Move the selection |
-| `enter` | Open or act on the selection |
-| `esc` | Leave a form or drill-down |
-| `?` | Key help and the release flow |
-| `q` | Quit |
-| `ctrl+c` | Quit from anywhere, including forms |
-
-Inside a form or a drill-down, view switching is disabled — the view consumes the keys until you press
-`esc`.
-
-## Confirmations
-
-Deploying, rolling back, stopping and every delete ask first:
-
-| Key | Action |
-| :--- | :--- |
-| `y` | Confirm |
-| `n` or `esc` | Cancel |
-
-The footer names what each answer does for the action in front of you, so a `d` pressed on the wrong
-row costs nothing.
-
-## Projects
-
-| Key | Action |
-| :--- | :--- |
-| `n` | New project |
-| `e` | Edit the selected project |
-| `enter` | Deploy |
-| `r` | Roll back to the last successful image |
-| `s` | Stop on every runner |
-| `d` | Delete the project and its containers |
-| `R` | Reload project files from disk |
-| `ctrl+t` | Cycle the detail panel below the list |
-
-The detail panel has three tabs:
-
-| Tab | Shows |
-| :--- | :--- |
-| `overview` | Build settings, runners, and a compact summary of every service: source, image or Dockerfile, ports, network, healthcheck and label count |
-| `variables` | Effective environment variables after merging |
-| `config` | The `<env>.yaml` file, for file-backed projects |
-
-### Create and Edit
-
-The form has its own tabs, cycled with `ctrl+t`:
-
-| Tab | Contents |
-| :--- | :--- |
-| `settings` | Fields and pickers |
-| `variables` | The `.env` file — paste or type |
-| `services` | Native multi-service list and editor |
-| `config` | File mode only: paste `<env>.yaml` to use instead of the settings tab |
-
-| Key | Action |
-| :--- | :--- |
-| `tab` / `shift+tab` | Next or previous field |
-| `←` `→` | Change a picker value |
-| `space` | Toggle a checkbox |
-| `ctrl+t` | Next tab |
-| `ctrl+s` | Validate and save |
-| `esc` | Cancel; press twice to discard unsaved changes |
-
-Fields that accept only known values are pickers rather than text: `stored as`, `builder`, `runners`
-and `auto deploy`. `builder` and `runners` list only agents that hold the matching role.
-
-In `services`, use `n` to add, `e` or `enter` to edit, and `d` to remove. The nested editor splits
-settings, runtime, health timing, build arguments, service environment and labels into compact tabs.
-`ctrl+s` saves the service into the project draft; save the project itself with `ctrl+s` from the
-services list.
-
-## Agents
-
-| Key | Action |
-| :--- | :--- |
-| `n` | Enrol an agent |
-| `d` | Remove the selected agent |
-| `enter` | List that agent's managed containers |
-| `enter` (on a container) | Stream its logs live |
-| `esc` | Back |
-
-The enrolment form submits with **`enter`**, not `ctrl+s`. Toggle roles with `space`.
-
-After enrolling, URUFLOW shows the exact `uruflow-agent init` command and the path of the CA
-certificate to copy. That screen is shown once — the key is not displayed again.
-
-Selecting an agent shows its CPU, memory and disk with usage bars.
-
-## Releases
-
-| Key | Action |
-| :--- | :--- |
-| `enter` | Open the release |
-| `f` | Toggle log following |
-| `esc` | Back |
-
-A release shows its stage inline:
+The layout stays intentionally small: one header, one scrollable response transcript, and one prompt.
+It opens with a compact welcome card instead of immediately dumping fleet tables. Type a command and
+its complete response appears in the same transcript. Long-running commands append new lines in real
+time without replacing the rest of the view.
 
 ```text
-● build ── ● push ── ◉ release      building, rolling out
-● build ── ● push ── ● release      live
-✘ build ── – push ── ○ release      failed during build
+status
+deploy api-prod
+logs <release-id> --follow
+events
+help
 ```
 
-Opening one shows status, image, commit, digest, per-runner outcome, and the full log with build and
-release output interleaved in arrival order.
+The command area filters suggestions as each character is typed and displays a short explanation for
+every match. Type `/` to open the complete command palette or `show`/`help` to print the complete
+reference in the transcript. Use `↑` and `↓` to select, `Tab` to complete, `Enter` to run, and `Esc`
+to close suggestions. When the prompt is empty, `↑` and `↓` browse history.
 
-Container log following remains non-blocking. If the in-memory bridge fills, the log view reports
-`▲ <count> log lines dropped` instead of stalling agent protocol event handling.
+Completion is contextual rather than a flat list. `project ` shows project subcommands; `deploy `,
+`rollback `, and `stop ` query the daemon and show actual loaded projects. Agent inspection/removal
+shows actual agents, while release inspection/log commands show real release IDs. Selecting a command
+that needs an argument advances to that argument instead of repeatedly offering the same command.
 
-## Registry
+`deploy`, `rollback`, and `logs` are short forms for their namespaced commands. Use `PgUp` and `PgDn`
+to inspect the transcript, `Ctrl+L` or `clear` to clear it, and `Ctrl+D`, `quit`, or `exit` to close
+the workspace. New stream lines do not pull the view away while you are reading older output.
+`Ctrl+C` detaches the visible live stream without cancelling a durable server-side release.
 
-| Key | Action |
+Set `NO_COLOR=1` or open with `uruflow --no-color` when ANSI color is not wanted.
+
+## Status and live activity
+
+```text
+status
+events
+```
+
+`status` returns a compact fleet card followed by agent and project tables. `events` behaves like a
+fleet-wide `tail -f`: it follows new releases, build output, state changes, and alerts until detached.
+A new stream starts at the present; it does not replay every line from completed historical releases.
+Starting it clears the ordinary transcript and opens a focused live-activity page with timestamped,
+source-labelled output.
+
+## Creation and guided input
+
+The input surface matches the size and sensitivity of the value:
+
+- Short values such as a new agent name stay in the command box with a labeled next-step prompt.
+- Existing resources such as projects, agents, and releases are selected from daemon-backed choices.
+- Secret values switch to masked entry and never enter command history.
+- Project YAML uses the multiline editor because it benefits from paste, line numbers, and validation.
+
+`deploy` does not have a `create` subcommand: it operates on an already loaded project. Create or edit
+the authoritative project YAML, run `project reload`, and then `deploy ` will offer that project.
+
+## Projects and YAML
+
+```text
+project list
+project show api-prod
+project edit api-prod
+project validate /etc/uruflow/projects/api/prod.yaml
+project apply api prod /etc/uruflow/projects/api/prod.yaml
+project reload
+```
+
+`project edit` temporarily opens the authoritative environment file in `$VISUAL`, then `$EDITOR`,
+falling back to `vi`. The workspace returns to the same page and reloads YAML when the editor exits.
+
+To keep the whole edit inside the workspace, use:
+
+```text
+project apply api prod -
+```
+
+The prompt becomes a multiline YAML editor. Paste or write the document, press `Ctrl+S` to validate
+and apply it, or `Esc` to cancel. URUFLOW writes through a temporary file and atomically replaces the
+environment file. If full project validation fails, it restores the previous file.
+
+Project definitions remain normal files at `projects/<name>/project.yaml`, so they work naturally
+with Git, any editor, and configuration management. The interface never creates a competing project
+definition in SQLite.
+
+## Command reference
+
+These commands are typed at the workspace prompt, without a leading `uruflow`:
+
+```text
+agent list
+agent show builder-01
+agent add builder-01 --roles builder,runner
+agent remove builder-01
+
+container list
+container logs web-01 <container-id> --tail 200
+container logs web-01 <container-id> --follow
+
+project deploy api-prod
+project deploy api-prod --no-follow
+project rollback api-prod
+project stop api-prod
+
+release list --limit 50
+release show <release-id>
+release logs <release-id>
+release logs <release-id> --follow
+release follow <release-id>
+
+registry list
+registry remove <repository> <tag>
+alert list
+alert resolve <id>
+secret list
+secret set api_db
+secret remove api_db
+```
+
+For guided enrollment, type `agent add NAME`. As soon as the name is present, the command area offers
+`runner`, `builder`, and `builder,runner`; selecting one completes the command. The result card prints
+the one-time agent initialization command and the server trust-root path.
+
+Deploy and rollback follow their process by default. Reattach to durable work later with `release
+follow`. Container logs stream over the existing agent connection; no extra SSH session is opened.
+
+`secret set` changes the prompt to masked entry. The value is never put in the command line,
+transcript, or history. Removing agents, stopping projects, deleting registry manifests, and removing
+secrets require an in-page confirmation.
+
+## External lifecycle commands
+
+Only process lifecycle and setup stay outside the workspace:
+
+| Shell command | Purpose |
 | :--- | :--- |
-| `r` | Refresh the catalog |
-| `d` | Delete the selected tag |
+| `uruflow` | Open the operations workspace |
+| `uruflow console` | Open it explicitly |
+| `uruflow serve` | Run the persistent server for systemd |
+| `uruflow init --advertise <host>` | Create server YAML and credentials |
+| `uruflow version` | Print the installed version |
 
-Deleting a tag removes its manifest. It does **not** reclaim disk — see
-[Operations](operations.md#garbage-collection).
+## Configuration ownership
 
-## Alerts
-
-| Key | Action |
+| Data | Authority |
 | :--- | :--- |
-| `r` | Resolve the selected alert |
-| `a` | Toggle between active and all |
+| Server and registry settings | `config.yaml` |
+| Project definitions | `projects/<name>/project.yaml` |
+| Environment definitions | `projects/<name>/<env>.yaml` |
+| Environment overlays | `.env` files |
+| Agent local settings | `agent.yaml` |
+| Enrollment, releases, logs, metrics, alerts, and secrets | SQLite/runtime state |
 
-Alerts resolve on their own when the condition clears.
-
-## Secrets
-
-| Key | Action |
-| :--- | :--- |
-| `n` | Store a new secret |
-| `d` | Remove the selected secret |
-
-The value field is masked while typing and the value is never displayed again. The view shows each
-secret's reference form, `${secret:name}`, which is what you paste into a project variable.
-
-## Reading Status
-
-| Symbol | Meaning |
-| :--- | :--- |
-| `●` | Online, running, or a completed stage |
-| `○` | Offline, or a stage not started |
-| `◉` | A stage in progress |
-| `✔` `✘` | Succeeded, failed |
-| `▲` | Warning, or an unsaved editor tab |
-| `–` | Skipped or not applicable |
-| `▍` | The selected row |
-
-The header always shows how many agents are online and the registry address.
+Files describe desired state; the database records observed state and history. The workspace is a
+controlled view over those systems, not another source of truth.

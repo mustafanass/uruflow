@@ -109,9 +109,9 @@ and branch match. Treat the secret as a deployment credential.
 
 ## 7. Secrets
 
-URUFLOW provides a secret store for values that must not appear in files or on screen. Secrets are
-stored from the interface only — press `7`, then `n` — so a value is never passed on a command line
-and never enters shell history.
+URUFLOW provides a secret store for values that must not appear in files or on screen. `uruflow
+secret set <name>` reads the value from a masked terminal prompt or stdin, so it is never passed as a
+command argument and never enters workspace history.
 
 A project references it as `${secret:api_db_url}` in an ordinary variable. The reference is resolved
 when a release is dispatched.
@@ -124,7 +124,7 @@ when a release is dispatched.
 | Key storage | `<data_dir>/pki/secrets.key`, mode `0600`, generated on first use |
 | Not deterministic | A fresh nonce per value, so identical secrets have different ciphertext |
 | Tamper detection | GCM authentication rejects modified ciphertext |
-| Never displayed | The interface shows the reference and a mask, never the value |
+| Never displayed | The workspace shows only the reference, never the value |
 | Never in files | Project files carry the reference, so they are safe to commit |
 | Not in logs | Resolution happens at dispatch; values never enter a release log |
 | Fails closed | A missing secret fails the deploy before any build starts |
@@ -167,8 +167,8 @@ its host.
 
 URUFLOW has **no user accounts, no roles for humans, and no audit log.**
 
-The control surface is the terminal interface, which runs on the server host. Access control is
-therefore whoever can log into that host — a small, simple, and easily reasoned-about model, provided
+The control surface is a root-only Unix socket on the server host. Access control is therefore
+whoever can log into that host and open the workspace with sufficient permission—a small model, provided
 you treat server shell access as equivalent to full deployment authority.
 
 The HTTPS listener exposes only two routes: the webhook path and `/health`. There is no HTTP API for
