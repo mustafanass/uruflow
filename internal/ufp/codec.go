@@ -31,7 +31,7 @@ import (
 const (
 	MagicHigh      byte = 0x55
 	MagicLow       byte = 0x46
-	Version        byte = 0x03
+	Version        byte = 0x04
 	HeaderSize          = 8
 	MaxPayloadSize      = 16 * 1024 * 1024
 )

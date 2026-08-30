@@ -1,7 +1,18 @@
 # Upgrading
 
-How to move between URUFLOW versions. Version 2.2 updates the UFP wire format and requires coordinated server
-and agent replacement. Moving from 1.x remains a rebuild.
+How to move between URUFLOW versions. Protocol-changing releases require coordinated server and agent
+replacement. Moving from 1.x remains a rebuild.
+
+## From 2.2.2 to 2.3.1
+
+The native multi-service build model uses UFP protocol byte `0x04`. It carries resource definitions,
+dependency and job semantics, exact commands, security and resource controls, and per-service source
+commits. These fields change deployment meaning, so a protocol `0x03` agent is deliberately rejected
+instead of being allowed to ignore them.
+
+To upgrade to `2.3.1`, wait for active releases to finish, replace the server and every agent,
+then start the server followed by the agents. Existing containers continue running while the control
+plane is stopped. Do not mix 2.3.1 and 2.2.2 server or agent binaries.
 
 ## From 2.0 or 2.1 to 2.2
 
@@ -16,7 +27,7 @@ and agent replacement. Moving from 1.x remains a rebuild.
 Database schema changes are applied automatically when the database is opened — missing columns are
 added in place, so no migration step is needed and existing data is preserved.
 
-The current UFP wire format uses protocol byte `0x03` and TLS 1.3. A 2.0 or 2.1 agent cannot connect to a 2.2 server, and a
+Version 2.2 uses protocol byte `0x03` and TLS 1.3. A 2.0 or 2.1 agent cannot connect to a 2.2 server, and a
 2.2 agent cannot connect to an older server. Running containers are unaffected during the coordinated
 upgrade.
 
@@ -47,7 +58,7 @@ database schema carries across.
 | Transport | Optional TLS | TLS always |
 | Registry | None | Bundled and managed |
 | Agent roles | None | `builder` and `runner`, enforced |
-| Configuration | Agents and repositories in `config.yaml` | Agents in the database, projects in the database or files |
+| Configuration | Agents and repositories in `config.yaml` | Agents in the database, projects in authoritative YAML files |
 | Rollback | Rebuild from a commit | Re-release a stored image |
 
 A 1.x agent is rejected at the first frame because the version byte differs. There is no partial
@@ -60,10 +71,10 @@ compatibility to manage.
 3. install the 2.0 binaries
 4. `uruflow init` — write a fresh `config.yaml`; the old one is not read
 5. start the server and let it generate its PKI and registry
-6. re-enrol each agent with `uruflow agent add`, assigning roles deliberately: machines that only run
+6. open the workspace with `uruflow` and re-enrol each agent with `agent add`, assigning roles deliberately: machines that only run
    workloads should get `runner` alone
 7. install the 2.0 agent binary and configuration on each machine, copying the new CA certificate
-8. re-create each project, either in the interface or as files
+8. re-create each project as authoritative YAML files
 9. deploy each project once to populate the registry — there is no history to roll back to until you
    have a successful release
 

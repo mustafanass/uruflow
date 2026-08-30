@@ -19,8 +19,7 @@ go build -o uruflow-agent ./cmd/uruflow-agent
 There are two suites. The fast one runs anywhere:
 
 ```bash
-go test ./...
-go vet ./...
+make check
 ```
 
 The second builds real images and starts real containers, and is gated behind an environment variable
@@ -30,10 +29,8 @@ so it never runs by accident:
 URUFLOW_DOCKER_TESTS=1 go test ./...
 ```
 
-The gate guards the tests in `internal/docker`, `internal/registry`, `internal/agent/runner`,
-`internal/api`, `internal/tui` and `internal/tui/views` — everything that needs a real daemon, a real
-registry, or a fully wired server. Run it before changing the release path, the Docker client, the
-registry lifecycle or the composition root.
+The gate guards tests that need a real daemon, registry, or fully wired server. Run it before changing
+the release path, Docker client, registry lifecycle, or composition root.
 
 ## Where a Change Belongs
 
@@ -43,8 +40,8 @@ that owns it. Two boundaries are worth knowing before you start:
 - **`internal/ufp` imports nothing else in the repository.** It is the contract both the server and
   the agent implement. Adding an import there is a design change, not a refactor — raise it in an
   issue first.
-- **`internal/tui` holds no logic.** It reads through the composition root in `internal/api` and never
-  reaches into storage or the pipeline directly.
+- **`internal/workbench` holds no operational logic.** It sends commands through `internal/control`
+  and renders the resulting event stream.
 
 Changing the wire protocol means changing [docs/protocol.md](docs/protocol.md) in the same pull
 request. Adding a method or topic is backward compatible; changing what an existing one means is not,
@@ -55,12 +52,16 @@ and needs a version bump.
 The codebase is deliberately plain Go. Match what is already there:
 
 - `gofmt` output, no exceptions
-- no explanatory comments — only the MIT header block at the top of each file. Names carry the
-  meaning; if a line needs a comment to be understood, rewrite the line
+- Go initialisms stay uppercase in names (`ID`, `URL`, `HTTP`, `YAML`)
+- use `any`, not `interface{}`, for unconstrained values
+- comments explain non-obvious intent or constraints; names carry routine meaning
 - named constants instead of inline literals, especially for anything that appears on the wire, in a
   path, or in a policy decision
 - errors wrapped with context (`fmt.Errorf("read config: %w", err)`), never discarded silently
 - new files start with the same MIT header block as every existing file
+
+Run `make fmt` after editing Go and `make check` before committing. CI runs the same check for every
+push and pull request.
 
 Prefer the smallest change that does the job. A new package or abstraction should be able to justify
 itself.
@@ -75,7 +76,7 @@ keep deep detail in `docs/` and link to it rather than expanding the README.
 ## Pull Requests
 
 - one concern per pull request
-- `go build ./...`, `go test ./...` and `go vet ./...` clean before you open it
+- `make build` and `make check` clean before you open it
 - say what you changed and why; if it touches the protocol, the schema or the file format, say what
   stays compatible and what does not
 - commit subjects in this repository follow `Verb | short description`, for example

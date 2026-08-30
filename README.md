@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.2.2-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.3.1-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
   <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp-F5A524?style=flat-square" alt="ufp protocol"></a>
@@ -15,9 +15,9 @@ URUFLOW builds a commit once on a builder machine, stores the resulting image in
 runs itself, and releases that exact image across one or more runner machines. Builders and runners are
 separate roles with different authority: builders see source code, runners receive only images.
 
-Its control plane runs continuously as a service. A terminal dashboard attaches and detaches without
-restarting that service, while agents communicate with it over UFP, a small binary protocol carried
-on TLS.
+Its control plane runs continuously as a service. Operators use one full-screen terminal workspace
+for commands, status, YAML input, and live process output; the workspace reaches the service through
+a root-only local control socket. Agents communicate over UFP, a small binary protocol carried on TLS.
 
 <p align="center">
   <a href="assets/uruflow-arch.png">
@@ -50,28 +50,32 @@ URUFLOW builds once and ships the artifact:
 
 A release runs in two stages.
 
-**Build.** The server sends `build.run` to the project's builder. The builder clones the repository,
-checks out the commit, runs `docker build`, tags the image with the 12-character commit SHA and with
-`latest`, pushes both to the registry, and records the resulting immutable digest. Build output streams back as it happens.
+**Build.** The server sends `build.run` to the project's builder. The builder checks out the primary
+repository and any per-service source overrides, builds every source-backed service, tags its image
+with the resolved commit and `latest`, pushes it, and records an immutable digest and source commit
+for each service. Build output streams back as it happens.
 
-**Release.** The server validates the registry digest and sends `release.run` to every runner. Each pulls that exact image and replaces
-its container under the safety procedure below. A release completes when every runner has reported.
+**Release.** The server validates every registry digest and sends one `release.run` model to every
+runner. Each runner prepares declared resources, runs jobs and replaces long-running services in
+dependency order under the safety procedure below. A release completes when every runner has
+reported.
 
 Rollback skips the build stage entirely and re-releases the image recorded on an earlier successful
 release, so what returns is byte-identical to what ran before.
 
-For the complete lifecycle and every failure boundary, see [Deployments](docs/deployments.md).
+For the complete lifecycle and every failure boundary, see [Deployments](docs/deployments.md). For
+the production project schema, see [Native Build Model](docs/native-build-model.md).
 
 ## Installation
 
-Latest release: **v2.2.2** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
+Latest release: **v2.3.1** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
 
 There are **two different binaries and they are not interchangeable** — installing the wrong one on a
 machine is the most common setup mistake:
 
 | Binary | Install on | Role |
 | :--- | :--- | :--- |
-| `uruflow` | the server, one machine | control plane, private registry, terminal interface |
+| `uruflow` | the server, one machine | control plane, private registry, and operations workspace |
 | `uruflow-agent` | every builder and runner machine | runs builds, pulls images, releases containers |
 
 Check the architecture of each machine before downloading:
@@ -85,16 +89,16 @@ uname -m      # x86_64 -> amd64      aarch64 / arm64 -> arm64
 **linux/amd64**
 
 ```bash
-curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-2.2.2-linux-amd64
-echo "c2fea65c07bd616182ece56e99ca2afac80323d784734b44fb97bea20932e789  uruflow" | sha256sum -c -
+curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-2.3.1-linux-amd64
+echo "cdb4c2d92101986e281be17e4c9721b6ebc4b88a6431ce61b8c158622e31e3f0  uruflow" | sha256sum -c -
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-2.2.2-linux-arm64
-echo "52d9d743cf5b21d64ae7379594b1d0f6d8b4347c4360cc935b73a17c1d544148  uruflow" | sha256sum -c -
+curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-2.3.1-linux-arm64
+echo "632575ee7f0943e5368c698a7f65c3b34f55ad67055018ff28e95eed44d38c61  uruflow" | sha256sum -c -
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 ```
 
@@ -103,16 +107,16 @@ chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 **linux/amd64**
 
 ```bash
-curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-agent-2.2.2-linux-amd64
-echo "ec05f8ec2dd6cbf30eb08949b2db04d7b6b27218b6d68c15328d81e0ef697742  uruflow-agent" | sha256sum -c -
+curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-agent-2.3.1-linux-amd64
+echo "ee215f153d6b2c009fa3dee3ad074b0186f82c008400f6d2bf394dfb062e95b3  uruflow-agent" | sha256sum -c -
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.2.2/uruflow-agent-2.2.2-linux-arm64
-echo "f0b0f8e5a55b7d7a25094d901d1ae00bb5f55da6565f78985d09e59368945f99  uruflow-agent" | sha256sum -c -
+curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-agent-2.3.1-linux-arm64
+echo "d36deaf7ac30ef2d1ffa40d48d9ba706df352d387e294e65985927f743918447  uruflow-agent" | sha256sum -c -
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 ```
 
@@ -120,10 +124,10 @@ chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 
 | Asset | Size | SHA-256 |
 | :--- | ---: | :--- |
-| `uruflow-2.2.2-linux-amd64` | 18.4 MB | `373a7f439d852a2eda12ba3164504f7d5583702aa10a5b1db86562ac77cbc1eb` |
-| `uruflow-2.2.2-linux-arm64` | 18.0 MB | `fc4db2b0e00ed22bb6b9c740c5b754eae760c1e0629c2bf1ddb26a9096562a70` |
-| `uruflow-agent-2.2.2-linux-amd64` | 6.9 MB | `3b98183985c7b0257f8f83d0b9b29eecf121f8f28e366d2235ee4ebaa38d8678` |
-| `uruflow-agent-2.2.2-linux-arm64` | 6.4 MB | `7d9069c2ec3e0d2160de0edf6749ad1667e101c257a7be625ed8700d35746d77` |
+| `uruflow-2.3.1-linux-amd64` | 10.9 MiB | `cdb4c2d92101986e281be17e4c9721b6ebc4b88a6431ce61b8c158622e31e3f0` |
+| `uruflow-2.3.1-linux-arm64` | 10.2 MiB | `632575ee7f0943e5368c698a7f65c3b34f55ad67055018ff28e95eed44d38c61` |
+| `uruflow-agent-2.3.1-linux-amd64` | 6.9 MiB | `ee215f153d6b2c009fa3dee3ad074b0186f82c008400f6d2bf394dfb062e95b3` |
+| `uruflow-agent-2.3.1-linux-arm64` | 6.5 MiB | `d36deaf7ac30ef2d1ffa40d48d9ba706df352d387e294e65985927f743918447` |
 
 `SHA256SUMS.txt` on the release page covers every asset, including the `.tar.gz` archives:
 
@@ -144,20 +148,22 @@ Install the binaries first — see [Installation](#installation).
 On the server:
 
 ```bash
-sudo uruflow init
+sudo uruflow init --advertise uruflow.internal
 sudo install -m 0644 packaging/systemd/uruflow.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now uruflow
-sudo uruflow console  # attach; q detaches without stopping the server
+sudo uruflow
 ```
+
+At the workspace prompt, run `status` to confirm the service and registry are healthy.
 
 The unit files ship under `packaging/systemd/`; if you installed only a release binary, copy the unit
 contents from [Operations](docs/operations.md#systemd).
 
-Enrol an agent — press `3` then `n` in the interface, or:
+Enrol an agent from the workspace:
 
-```bash
-sudo uruflow agent add builder-01 --roles builder,runner
+```text
+agent add builder-01 --roles builder,runner
 ```
 
 URUFLOW prints the exact command to run on the target machine, then:
@@ -173,7 +179,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now uruflow-agent
 ```
 
-Press `2` then `n` to add a project, `ctrl+s` to save, `enter` to deploy.
+Create project YAML under `/etc/uruflow/projects`, then validate, reload, and deploy it from the same
+workspace:
+
+```text
+project validate /etc/uruflow/projects/api/prod.yaml
+project reload
+project deploy api-prod
+```
 
 The full walkthrough, including rollback, is in [Getting Started](docs/getting-started.md).
 
@@ -258,7 +271,8 @@ DATABASE_URL=postgres://dev-host/api
 A push to `develop` deploys `api-dev` automatically. A push to `main` does nothing, because production
 is released deliberately.
 
-Projects can equally be created in the interface without writing files. See [Projects](docs/projects.md).
+The workspace can validate, edit, and atomically apply these files without introducing another source
+of truth. See [Projects](docs/projects.md).
 
 ## Features
 
@@ -269,14 +283,14 @@ Projects can equally be created in the interface without writing files. See [Pro
 - Roles that constrain authority — a runner cannot be asked to build
 - Health-gated releases that restore the previous container on failure
 - Rollback by re-releasing a stored image, without rebuilding
-- Environments as separate projects, defined by files or in the interface
+- Environments as separate projects, defined by authoritative YAML files
 - Environment variables merged from shared defaults down to a per-environment `.env`
 - Encrypted secret storage, referenced as `${secret:name}` so project files stay safe to commit
 - Multi-service projects — an app, a worker and a prebuilt dependency in one project
 - Webhook deployment matched on git URL and branch, so one repository can feed several projects
 - Live streaming of build output and container logs over a persistent connection
 - One release per project at a time, enforced across restarts
-- A terminal interface that works over SSH with no port forwarding
+- One colored command workspace with controlled input and live output over an ordinary SSH session
 
 ## Documentation
 
@@ -284,8 +298,9 @@ Projects can equally be created in the interface without writing files. See [Pro
 | :--- | :--- |
 | [Getting Started](docs/getting-started.md) | Installing and reaching a first deployment |
 | [Core Concepts](docs/concepts.md) | The vocabulary and the two planes |
-| [Terminal Interface](docs/interface.md) | Views, keys and status symbols |
+| [Operations Workspace](docs/interface.md) | Commands, live streams, YAML input, and key bindings |
 | [Projects](docs/projects.md) | Defining projects, environments and variables |
+| [Native Build Model](docs/native-build-model.md) | Multi-source builds, resources, jobs and runtime policy |
 | [Configuration](docs/configuration.md) | Every file, field, command and webhook setting |
 | [Deployments](docs/deployments.md) | The release lifecycle, safety and failure boundaries |
 | [Operations](docs/operations.md) | Services, logs, state, backup and maintenance |
@@ -334,7 +349,9 @@ URUFLOW_DOCKER_TESTS=1 go test ./...   # adds tests against a real Docker daemon
 | `internal/docker` | Docker Engine API client, shared by server and agent |
 | `internal/storage` | Persistence contract and SQLite implementation |
 | `internal/agent` | Agent daemon, builder, runner, metrics |
-| `internal/tui` | Terminal interface |
+| `internal/ops` | Operational commands and typed response events |
+| `internal/control` | Root-only local command transport |
+| `internal/workbench` | Single-page terminal workspace |
 
 `internal/ufp` depends on nothing else in the repository. It defines the contract both sides
 implement, and adding an import there should be treated as a design change.

@@ -26,15 +26,15 @@ import (
 	"github.com/mustafanass/uruflow/internal/storage"
 )
 
-const releaseColumns = `id, project, branch, commit_sha, image, images, digest, status,
+const releaseColumns = `id, project, branch, commit_sha, commits, image, images, digest, status,
 	builder, builder_name, trigger_type, message, spec, started_at, ended_at, duration_ms`
 
 func (s *Store) CreateRelease(release *models.Release) error {
 	_, err := s.db.Exec(`
-		INSERT INTO releases (id, project, branch, commit_sha, image, images, digest, status,
+		INSERT INTO releases (id, project, branch, commit_sha, commits, image, images, digest, status,
 		                      builder, builder_name, trigger_type, message, spec, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		release.ID, release.Project, release.Branch, release.Commit, release.Image,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		release.ID, release.Project, release.Branch, release.Commit, encodeJSON(release.Commits), release.Image,
 		encodeJSON(release.Images), release.Digest, release.Status, release.Builder,
 		release.BuilderName, release.Trigger, release.Message, encodeJSON(release.Spec), release.StartedAt)
 	return err
@@ -48,10 +48,10 @@ func (s *Store) ClaimRelease(release *models.Release, targets []models.ReleaseTa
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(`
-		INSERT INTO releases (id, project, branch, commit_sha, image, images, digest, status,
+		INSERT INTO releases (id, project, branch, commit_sha, commits, image, images, digest, status,
 		                      builder, builder_name, trigger_type, message, spec, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		release.ID, release.Project, release.Branch, release.Commit, release.Image,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		release.ID, release.Project, release.Branch, release.Commit, encodeJSON(release.Commits), release.Image,
 		encodeJSON(release.Images), release.Digest, release.Status, release.Builder,
 		release.BuilderName, release.Trigger, release.Message, encodeJSON(release.Spec), release.StartedAt); err != nil {
 		return err
@@ -74,10 +74,10 @@ func (s *Store) ClaimRelease(release *models.Release, targets []models.ReleaseTa
 func (s *Store) UpdateRelease(release *models.Release) error {
 	_, err := s.db.Exec(`
 		UPDATE releases
-		SET commit_sha = ?, image = ?, images = ?, digest = ?, status = ?, message = ?,
+		SET commit_sha = ?, commits = ?, image = ?, images = ?, digest = ?, status = ?, message = ?,
 		    ended_at = ?, duration_ms = ?
 		WHERE id = ?`,
-		release.Commit, release.Image, encodeJSON(release.Images), release.Digest,
+		release.Commit, encodeJSON(release.Commits), release.Image, encodeJSON(release.Images), release.Digest,
 		release.Status, release.Message, nullTime(release.EndedAt), release.Duration, release.ID)
 	return err
 }
@@ -103,8 +103,8 @@ func (s *Store) ListReleases(limit int) ([]models.Release, error) {
 
 func (s *Store) ListActiveReleases() ([]models.Release, error) {
 	return s.queryReleases(`SELECT `+releaseColumns+`
-		FROM releases WHERE status NOT IN (?, ?) ORDER BY started_at`,
-		models.StatusSucceeded, models.StatusFailed)
+		FROM releases WHERE status NOT IN (?, ?, ?) ORDER BY started_at`,
+		models.StatusSucceeded, models.StatusFailed, models.StatusSkipped)
 }
 
 func (s *Store) ListReleasesByProject(project string, limit int) ([]models.Release, error) {
@@ -115,8 +115,8 @@ func (s *Store) ListReleasesByProject(project string, limit int) ([]models.Relea
 func (s *Store) ProjectHasActiveRelease(project string) (bool, error) {
 	var active bool
 	err := s.db.QueryRow(`SELECT EXISTS(
-		SELECT 1 FROM releases WHERE project = ? AND status NOT IN (?, ?)
-	)`, project, models.StatusSucceeded, models.StatusFailed).Scan(&active)
+		SELECT 1 FROM releases WHERE project = ? AND status NOT IN (?, ?, ?)
+	)`, project, models.StatusSucceeded, models.StatusFailed, models.StatusSkipped).Scan(&active)
 	return active, err
 }
 
@@ -185,9 +185,9 @@ func (s *Store) queryReleases(query string, args ...any) ([]models.Release, erro
 func scanRelease(row scanner) (*models.Release, error) {
 	var release models.Release
 	var endedAt sql.NullTime
-	var images, spec string
+	var commits, images, spec string
 
-	err := row.Scan(&release.ID, &release.Project, &release.Branch, &release.Commit,
+	err := row.Scan(&release.ID, &release.Project, &release.Branch, &release.Commit, &commits,
 		&release.Image, &images, &release.Digest, &release.Status, &release.Builder,
 		&release.BuilderName, &release.Trigger, &release.Message, &spec,
 		&release.StartedAt, &endedAt, &release.Duration)
@@ -199,6 +199,7 @@ func scanRelease(row scanner) (*models.Release, error) {
 	}
 
 	decodeJSON(images, &release.Images)
+	decodeJSON(commits, &release.Commits)
 	decodeJSON(spec, &release.Spec)
 	release.EndedAt = timePointer(endedAt)
 	return &release, nil

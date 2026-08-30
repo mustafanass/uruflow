@@ -71,27 +71,68 @@ type Container struct {
 }
 
 type Spec struct {
-	Name    string
-	Image   string
-	Command []string
-	Env     map[string]string
-	Ports   []PortBinding
-	Mounts  []Mount
-	Labels  map[string]string
-	Network string
-	Restart string
+	Name        string
+	Image       string
+	Entrypoint  []string
+	Command     []string
+	Env         map[string]string
+	Ports       []PortBinding
+	Mounts      []Mount
+	Labels      map[string]string
+	Network     string
+	Networks    []NetworkAttachment
+	Restart     string
+	Resources   ResourceLimits
+	Security    Security
+	Logging     LogConfig
+	Healthcheck *Healthcheck
 }
 
 type PortBinding struct {
+	HostIP    string
 	Host      int
 	Container int
 	Protocol  string
 }
 
+type NetworkAttachment struct {
+	Name    string
+	Aliases []string
+}
+
+type ResourceLimits struct {
+	MemoryBytes int64
+	CPUs        float64
+	PIDs        int64
+}
+
+type Security struct {
+	NoNewPrivileges bool
+	ReadOnlyRootFS  bool
+	User            string
+	CapAdd          []string
+	CapDrop         []string
+}
+
+type LogConfig struct {
+	Driver  string
+	Options map[string]string
+}
+
+type Healthcheck struct {
+	Test        []string
+	Interval    time.Duration
+	Timeout     time.Duration
+	Retries     int
+	StartPeriod time.Duration
+}
+
 type Mount struct {
-	Source   string
-	Target   string
-	ReadOnly bool
+	Type           string
+	Source         string
+	Target         string
+	ReadOnly       bool
+	CreateHostPath bool
 }
 
 type listEntry struct {
@@ -298,12 +339,28 @@ func (c *Client) Create(ctx context.Context, spec Spec) (string, error) {
 		"Labels":     spec.Labels,
 		"HostConfig": hostConfig(spec),
 	}
+	if len(spec.Entrypoint) > 0 {
+		body["Entrypoint"] = spec.Entrypoint
+	}
 
 	if len(spec.Command) > 0 {
 		body["Cmd"] = spec.Command
 	}
 	if len(spec.Env) > 0 {
 		body["Env"] = environment(spec.Env)
+	}
+	if spec.Security.User != "" {
+		body["User"] = spec.Security.User
+	}
+	if spec.Healthcheck != nil {
+		body["Healthcheck"] = map[string]any{
+			"Test": spec.Healthcheck.Test, "Interval": spec.Healthcheck.Interval.Nanoseconds(),
+			"Timeout": spec.Healthcheck.Timeout.Nanoseconds(), "Retries": spec.Healthcheck.Retries,
+			"StartPeriod": spec.Healthcheck.StartPeriod.Nanoseconds(),
+		}
+	}
+	if endpoints := networkEndpoints(spec); len(endpoints) > 0 {
+		body["NetworkingConfig"] = map[string]any{"EndpointsConfig": endpoints}
 	}
 	if exposed := exposedPorts(spec.Ports); len(exposed) > 0 {
 		body["ExposedPorts"] = exposed
@@ -432,7 +489,7 @@ func (c *Client) Run(ctx context.Context, spec Spec) (string, error) {
 
 func hostConfig(spec Spec) map[string]any {
 	config := map[string]any{
-		"RestartPolicy": map[string]any{"Name": restartPolicy(spec.Restart)},
+		"RestartPolicy": restartPolicy(spec.Restart),
 	}
 
 	if bindings := portBindings(spec.Ports); len(bindings) > 0 {
@@ -441,18 +498,52 @@ func hostConfig(spec Spec) map[string]any {
 	if binds := mountBinds(spec.Mounts); len(binds) > 0 {
 		config["Binds"] = binds
 	}
+	if mounts := mountSpecs(spec.Mounts); len(mounts) > 0 {
+		config["Mounts"] = mounts
+	}
 	if spec.Network != "" {
 		config["NetworkMode"] = spec.Network
+	} else if len(spec.Networks) > 0 {
+		config["NetworkMode"] = spec.Networks[0].Name
+	}
+	if spec.Resources.MemoryBytes > 0 {
+		config["Memory"] = spec.Resources.MemoryBytes
+	}
+	if spec.Resources.CPUs > 0 {
+		config["NanoCpus"] = int64(spec.Resources.CPUs * 1_000_000_000)
+	}
+	if spec.Resources.PIDs > 0 {
+		config["PidsLimit"] = spec.Resources.PIDs
+	}
+	if spec.Security.NoNewPrivileges {
+		config["SecurityOpt"] = []string{"no-new-privileges"}
+	}
+	if spec.Security.ReadOnlyRootFS {
+		config["ReadonlyRootfs"] = true
+	}
+	if len(spec.Security.CapAdd) > 0 {
+		config["CapAdd"] = spec.Security.CapAdd
+	}
+	if len(spec.Security.CapDrop) > 0 {
+		config["CapDrop"] = spec.Security.CapDrop
+	}
+	if spec.Logging.Driver != "" {
+		config["LogConfig"] = map[string]any{"Type": spec.Logging.Driver, "Config": spec.Logging.Options}
 	}
 
 	return config
 }
 
-func restartPolicy(policy string) string {
+func restartPolicy(policy string) map[string]any {
 	if policy == "" {
-		return "unless-stopped"
+		policy = "unless-stopped"
 	}
-	return policy
+	name, maximum := policy, 0
+	if before, after, found := strings.Cut(policy, ":"); found {
+		name = before
+		maximum, _ = strconv.Atoi(after)
+	}
+	return map[string]any{"Name": name, "MaximumRetryCount": maximum}
 }
 
 func environment(env map[string]string) []string {
@@ -484,15 +575,33 @@ func portBindings(ports []PortBinding) map[string]any {
 	bindings := make(map[string]any, len(ports))
 	for _, port := range ports {
 		bindings[portKey(port)] = []map[string]string{
-			{"HostPort": fmt.Sprint(port.Host)},
+			{"HostIp": port.HostIP, "HostPort": fmt.Sprint(port.Host)},
 		}
 	}
 	return bindings
 }
 
+func networkEndpoints(spec Spec) map[string]any {
+	attachments := spec.Networks
+	if len(attachments) == 0 && spec.Network != "" {
+		attachments = []NetworkAttachment{{Name: spec.Network}}
+	}
+	endpoints := make(map[string]any, len(attachments))
+	for _, network := range attachments {
+		if network.Name == "" {
+			continue
+		}
+		endpoints[network.Name] = map[string]any{"Aliases": network.Aliases}
+	}
+	return endpoints
+}
+
 func mountBinds(mounts []Mount) []string {
 	binds := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
+		if mount.Type != "" {
+			continue
+		}
 		bind := mount.Source + ":" + mount.Target
 		if mount.ReadOnly {
 			bind += ":ro"
@@ -500,6 +609,24 @@ func mountBinds(mounts []Mount) []string {
 		binds = append(binds, bind)
 	}
 	return binds
+}
+
+func mountSpecs(mounts []Mount) []map[string]any {
+	result := make([]map[string]any, 0, len(mounts))
+	for _, mount := range mounts {
+		if mount.Type == "" {
+			continue
+		}
+		entry := map[string]any{"Type": mount.Type, "Target": mount.Target, "ReadOnly": mount.ReadOnly}
+		if mount.Source != "" {
+			entry["Source"] = mount.Source
+		}
+		if mount.Type == "bind" {
+			entry["BindOptions"] = map[string]any{"CreateMountpoint": mount.CreateHostPath}
+		}
+		result = append(result, entry)
+	}
+	return result
 }
 
 func containerName(names []string) string {

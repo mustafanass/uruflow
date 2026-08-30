@@ -27,13 +27,13 @@ import (
 )
 
 const projectColumns = `name, git_url, branch, dockerfile, context, build_args,
-	builder, runners, auto_deploy, runtime, services, env, source, created_at`
+	builder, runners, auto_deploy, workflow, runtime, services, env, resources, source, created_at`
 
 func (s *Store) SaveProject(project *models.Project) error {
 	_, err := s.db.Exec(`
 		INSERT INTO projects (name, git_url, branch, dockerfile, context, build_args,
-		                      builder, runners, auto_deploy, runtime, services, env, source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                      builder, runners, auto_deploy, workflow, runtime, services, env, resources, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			git_url = excluded.git_url,
 			branch = excluded.branch,
@@ -43,14 +43,16 @@ func (s *Store) SaveProject(project *models.Project) error {
 			builder = excluded.builder,
 			runners = excluded.runners,
 			auto_deploy = excluded.auto_deploy,
+			workflow = excluded.workflow,
 			runtime = excluded.runtime,
 			services = excluded.services,
 			env = excluded.env,
+			resources = excluded.resources,
 			source = excluded.source`,
 		project.Name, project.GitURL, project.Branch, project.Dockerfile, project.Context,
 		encodeJSON(project.BuildArgs), project.Builder, encodeJSON(project.Runners),
-		project.AutoDeploy, encodeJSON(project.Runtime), encodeJSON(project.Services),
-		project.Env, project.Source)
+		project.AutoDeploy, project.Workflow, encodeJSON(project.Runtime), encodeJSON(project.Services),
+		project.Env, encodeJSON(models.ProjectResources{Networks: project.Networks, Volumes: project.Volumes}), project.Source)
 	return err
 }
 
@@ -89,11 +91,11 @@ func (s *Store) DeleteProject(name string) error {
 
 func scanProject(row scanner) (*models.Project, error) {
 	var project models.Project
-	var buildArgs, runners, runtime, services string
+	var buildArgs, runners, runtime, services, resources string
 
 	err := row.Scan(&project.Name, &project.GitURL, &project.Branch, &project.Dockerfile,
 		&project.Context, &buildArgs, &project.Builder, &runners,
-		&project.AutoDeploy, &runtime, &services, &project.Env, &project.Source, &project.CreatedAt)
+		&project.AutoDeploy, &project.Workflow, &runtime, &services, &project.Env, &resources, &project.Source, &project.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, storage.ErrNotFound
 	}
@@ -105,5 +107,9 @@ func scanProject(row scanner) (*models.Project, error) {
 	decodeJSON(runners, &project.Runners)
 	decodeJSON(runtime, &project.Runtime)
 	decodeJSON(services, &project.Services)
+	var projectResources models.ProjectResources
+	decodeJSON(resources, &projectResources)
+	project.Networks = projectResources.Networks
+	project.Volumes = projectResources.Volumes
 	return &project, nil
 }

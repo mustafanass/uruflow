@@ -73,6 +73,8 @@ func TestProjectRuntimeRoundTrip(t *testing.T) {
 			Ports: []models.Port{{Host: 8080, Container: 80}},
 			Env:   map[string]string{"MODE": "prod"},
 		},
+		Networks: map[string]models.NetworkResource{"data": {Name: "api-data", Internal: true}},
+		Volumes:  map[string]models.VolumeResource{"state": {Name: "api-state", Driver: "local"}},
 	}
 	if err := store.SaveProject(project); err != nil {
 		t.Fatalf("save project: %v", err)
@@ -96,6 +98,9 @@ func TestProjectRuntimeRoundTrip(t *testing.T) {
 	if loaded.Runtime.Env["MODE"] != "prod" {
 		t.Fatalf("env = %v", loaded.Runtime.Env)
 	}
+	if !loaded.Networks["data"].Internal || loaded.Volumes["state"].Name != "api-state" {
+		t.Fatalf("resources = networks:%#v volumes:%#v", loaded.Networks, loaded.Volumes)
+	}
 }
 
 func TestReleaseTargetsLogsAndRollbackSource(t *testing.T) {
@@ -105,7 +110,8 @@ func TestReleaseTargetsLogsAndRollbackSource(t *testing.T) {
 		Roles: []models.Role{models.RoleRunner}})
 
 	release := &models.Release{ID: "r1", Project: "api", Branch: "main",
-		Status: models.StatusPending, Builder: "a1", BuilderName: "runner-01",
+		Commits: map[string]string{"api": "0123456789abcdef0123456789abcdef01234567"},
+		Status:  models.StatusPending, Builder: "a1", BuilderName: "runner-01",
 		Trigger: models.TriggerManual, StartedAt: time.Now()}
 	if err := store.CreateRelease(release); err != nil {
 		t.Fatalf("create release: %v", err)
@@ -136,6 +142,9 @@ func TestReleaseTargetsLogsAndRollbackSource(t *testing.T) {
 	}
 	if loaded.EndedAt == nil {
 		t.Fatal("ended_at was not persisted")
+	}
+	if loaded.Commits["api"] != release.Commits["api"] {
+		t.Fatalf("commits = %#v", loaded.Commits)
 	}
 
 	logs, _ := store.ListLogs("r1")
@@ -197,6 +206,21 @@ func TestReplaceContainersAndStats(t *testing.T) {
 	store.ResolveAlert("al1")
 	if active, _ := store.ListActiveAlerts(); len(active) != 0 {
 		t.Fatalf("alert was not resolved: %+v", active)
+	}
+}
+
+func TestSkippedReleaseIsNotActive(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.CreateRelease(&models.Release{ID: "skipped", Project: "api", Status: models.StatusSkipped, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.ListActiveReleases()
+	if err != nil || len(active) != 0 {
+		t.Fatalf("active=%+v err=%v", active, err)
+	}
+	hasActive, err := store.ProjectHasActiveRelease("api")
+	if err != nil || hasActive {
+		t.Fatalf("hasActive=%v err=%v", hasActive, err)
 	}
 }
 

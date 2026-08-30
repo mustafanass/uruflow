@@ -7,9 +7,9 @@ traffic, and what happens when each step fails. For the vocabulary, see [Core Co
 
 | Trigger | Source | Recorded as |
 | :--- | :--- | :--- |
-| Manual | `enter` on a project in the terminal interface | `manual` |
+| Manual | `project deploy <name>` in the workspace | `manual` |
 | Webhook | A push matching a project's git URL and branch | `webhook` |
-| Rollback | `r` on a project | `rollback` |
+| Rollback | `project rollback <name>` in the workspace | `rollback` |
 
 Before a release is created the server checks, in order:
 
@@ -124,12 +124,24 @@ fails while the old container is still serving.
 
 ### Multiple Services
 
-When a project declares several services, each is replaced by the same procedure, in order. If any
+When a project declares several services, URUFLOW validates the dependency graph and replaces them in
+dependency order. If any
 service fails to become ready, every service already replaced in that release is restored in reverse
 order before the release is reported failed.
 
 A runner therefore either moves the whole project forward or leaves it exactly as it was. It never
 ends up serving a mixture of old and new services.
+
+Declared networks and volumes are checked or created idempotently before any image pull or container
+replacement. External resources must already exist. URUFLOW does not delete networks or volumes when
+a project is deleted because persistent data and shared networks are outside container rollback.
+
+Services with `mode: job` run once with restart policy `no`. A `completed` dependency waits for a job
+to exit zero; a non-zero exit or timeout fails the release before dependants start. Successful job
+output is copied to the release log, and job containers are removed after completion or failure. Job
+side effects, such as a completed database migration, cannot be rolled
+back when a later service fails, so migrations must remain backward-compatible with the previous
+application version.
 
 ### Readiness
 
@@ -137,6 +149,7 @@ When a service declares a native URUFLOW `healthcheck`, it is authoritative for 
 
 - `http` sends `GET` to the configured path and accepts a `2xx` response
 - `tcp` requires a successful TCP connection
+- `command` uses Docker health status for the declared `CMD` or `CMD-SHELL` probe
 - `running` requires an uninterrupted running period equal to `stable_for`
 
 HTTP and TCP resolve the configured container port to its published host binding when present,

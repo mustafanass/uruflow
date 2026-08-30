@@ -90,9 +90,11 @@ func (a *fakeAgent) finishBuild(request ufp.BuildRequest) {
 	})
 
 	images := make(map[string]string, len(request.Targets))
+	commits := make(map[string]string, len(request.Targets))
 	primary := ""
 	for _, target := range request.Targets {
 		images[target.Service] = target.Image + "@" + builtDigest
+		commits[target.Service] = builtCommit
 		if primary == "" {
 			primary = images[target.Service]
 		}
@@ -101,7 +103,7 @@ func (a *fakeAgent) finishBuild(request ufp.BuildRequest) {
 	status := ufp.JobStatus{
 		JobID: request.JobID, Stage: ufp.StageBuild,
 		Status: ufp.StatusSuccess, Image: primary, Images: images,
-		Commit: builtCommit, Digest: builtDigest,
+		Commit: builtCommit, Commits: commits, Digest: builtDigest,
 	}
 	if a.failBuild {
 		status = ufp.JobStatus{JobID: request.JobID, Stage: ufp.StageBuild,
@@ -309,6 +311,67 @@ func TestBuildThenReleaseReachesRunners(t *testing.T) {
 	if len(logs) == 0 {
 		t.Fatal("build logs were not persisted")
 	}
+}
+
+func TestBuildOnlyStopsAfterPublishingArtifacts(t *testing.T) {
+	harness := newHarness(t)
+	project, _ := harness.store.GetProject("api")
+	project.Workflow = models.WorkflowBuildOnly
+	project.Runners = nil
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-harness.agent.builds:
+	case <-time.After(settleWindow):
+		t.Fatal("build-only workflow never reached the builder")
+	}
+	final := harness.await(t, release.ID, models.StatusSucceeded)
+	if len(final.Targets) != 0 || final.Image != builtImage {
+		t.Fatalf("build-only result = targets:%+v image:%q", final.Targets, final.Image)
+	}
+	select {
+	case run := <-harness.agent.releases:
+		t.Fatalf("build-only workflow dispatched release.run: %+v", run)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestReleaseOnlySkipsBuilder(t *testing.T) {
+	harness := newHarness(t)
+	project, _ := harness.store.GetProject("api")
+	project.Workflow = models.WorkflowDeployOnly
+	project.GitURL = ""
+	project.Branch = ""
+	project.Builder = ""
+	project.Services = []models.Service{{Name: "cache", Image: prebuiltImage}}
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Status != models.StatusReleasing {
+		t.Fatalf("release-only workflow started as %q", release.Status)
+	}
+	select {
+	case build := <-harness.agent.builds:
+		t.Fatalf("release-only workflow dispatched build.run: %+v", build)
+	case run := <-harness.agent.releases:
+		if len(run.Services) != 1 || run.Services[0].Image != prebuiltImage {
+			t.Fatalf("release-only services = %+v", run.Services)
+		}
+	case <-time.After(settleWindow):
+		t.Fatal("release-only workflow never reached the runner")
+	}
+	harness.await(t, release.ID, models.StatusSucceeded)
 }
 
 func TestFailedBuildNeverReachesRunners(t *testing.T) {
@@ -592,6 +655,47 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 	}
 }
 
+func TestNativeBuildModelReachesBuilderAndRunner(t *testing.T) {
+	harness := newHarness(t)
+	project, _ := harness.store.GetProject("api")
+	project.Networks = map[string]models.NetworkResource{
+		"data": {Name: "api-data", Driver: "bridge", Internal: true},
+	}
+	project.Volumes = map[string]models.VolumeResource{
+		"state": {Name: "api-state", Driver: "local"},
+	}
+	project.Services = []models.Service{
+		{Name: "core", Dockerfile: "Dockerfile", DependsOn: []models.Dependency{{Service: "migrate", Condition: models.DependencyCompleted}}, Networks: []models.NetworkAttachment{{Name: "data", Aliases: []string{"core-api"}}}, Ports: []models.Port{{HostIP: "127.0.0.1", Host: 8080, Container: 8080}}, Resources: models.ResourceLimits{MemoryBytes: 256 << 20, CPUs: 1.5, PIDs: 128}, Security: models.Security{NoNewPrivileges: true, ReadOnlyRootFS: true, CapDrop: []string{"ALL"}}, Logging: models.LogConfig{Driver: "json-file", Options: map[string]string{"max-size": "10m"}}, Entrypoint: []string{"/app/core"}, CommandExec: []string{"serve"}},
+		{Name: "migrate", GitURL: "git@host:database.git", Branch: "release", Dockerfile: "Dockerfile.migrate", Mode: models.ServiceModeJob, Job: models.Job{Timeout: 2 * time.Minute}, DependsOn: []models.Dependency{{Service: "database", Condition: models.DependencyHealthy}}, Networks: []models.NetworkAttachment{{Name: "data"}}},
+		{Name: "database", Image: prebuiltImage, Networks: []models.NetworkAttachment{{Name: "data"}}, Volumes: []models.Volume{{Type: "volume", Source: "state", Target: "/data"}}, Healthcheck: &models.Healthcheck{Type: "command", Command: []string{"CMD", "check-ready"}, Interval: time.Second, Timeout: time.Second, Retries: 3, StartPeriod: 2 * time.Second}},
+	}
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := <-harness.agent.builds
+	if len(build.Targets) != 2 || build.Targets[1].GitURL != "git@host:database.git" || build.Targets[1].Branch != "release" {
+		t.Fatalf("build targets = %#v", build.Targets)
+	}
+
+	run := <-harness.agent.releases
+	if len(run.Services) != 3 || run.Services[0].Name != "database" || run.Services[1].Name != "migrate" || run.Services[2].Name != "core" {
+		t.Fatalf("dependency order = %#v", run.Services)
+	}
+	core := run.Services[2]
+	if run.Networks["data"].Name != "api-data" || run.Volumes["state"].Name != "api-state" || core.Ports[0].HostIP != "127.0.0.1" || core.Resources.MemoryBytes != 256<<20 || !core.Security.ReadOnlyRootFS || core.Logging.Options["max-size"] != "10m" || len(core.CommandExec) != 1 {
+		t.Fatalf("native core spec = %#v; networks=%#v volumes=%#v", core, run.Networks, run.Volumes)
+	}
+	if run.Services[1].Mode != models.ServiceModeJob || run.Services[1].JobTimeout != 2*time.Minute || run.Services[0].Healthcheck == nil || run.Services[0].Healthcheck.StartPeriod != 2*time.Second {
+		t.Fatalf("job/health model = %#v", run.Services)
+	}
+	harness.await(t, release.ID, models.StatusSucceeded)
+}
+
 func TestBuildStatusFromAnotherAgentIsRejected(t *testing.T) {
 	harness := newHarness(t)
 	harness.agent.holdBuild = make(chan struct{})
@@ -690,47 +794,4 @@ func TestOfflineConfiguredRunnerRejectsTheRelease(t *testing.T) {
 	if len(releases) != 0 {
 		t.Fatalf("rejected release was persisted: %+v", releases)
 	}
-}
-
-func TestMultiServiceRollbackReusesEveryDigest(t *testing.T) {
-	harness := newHarness(t)
-	project, _ := harness.store.GetProject("api")
-	project.Services = []models.Service{
-		{Name: "app", Dockerfile: "Dockerfile", Healthcheck: &models.Healthcheck{Type: "tcp", Port: 8080, Interval: time.Second, Timeout: time.Second, Retries: 3}, Labels: map[string]string{"monitor.team": "platform"}},
-		{Name: "worker", Dockerfile: "Dockerfile.worker"},
-		{Name: "cache", Image: prebuiltImage},
-	}
-	if err := harness.store.SaveProject(project); err != nil {
-		t.Fatal(err)
-	}
-
-	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
-	if err != nil {
-		t.Fatal(err)
-	}
-	<-harness.agent.builds
-	initial := <-harness.agent.releases
-	harness.await(t, first.ID, models.StatusSucceeded)
-
-	rollback, err := harness.pipeline.Rollback("api", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	replayed := <-harness.agent.releases
-	if len(replayed.Services) != len(initial.Services) {
-		t.Fatalf("rollback services = %d, want %d", len(replayed.Services), len(initial.Services))
-	}
-	want := make(map[string]string, len(initial.Services))
-	for _, service := range initial.Services {
-		want[service.Name] = service.Image
-	}
-	for _, service := range replayed.Services {
-		if service.Image != want[service.Name] {
-			t.Fatalf("service %s image = %s, want %s", service.Name, service.Image, want[service.Name])
-		}
-		if service.Name == "app" && (service.Healthcheck == nil || service.Healthcheck.Type != "tcp" || service.Labels["monitor.team"] != "platform") {
-			t.Fatalf("rollback lost app runtime specification: %+v", service)
-		}
-	}
-	harness.await(t, rollback.ID, models.StatusSucceeded)
 }

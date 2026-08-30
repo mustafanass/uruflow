@@ -46,7 +46,7 @@ type Draft struct {
 func (l *Loader) Paths(project, env string) (definition, environment, variables string) {
 	dir := filepath.Join(l.dir, project)
 	return filepath.Join(dir, ProjectFile),
-		filepath.Join(dir, env+YamlSuffix),
+		filepath.Join(dir, env+YAMLSuffix),
 		filepath.Join(dir, env+EnvSuffix)
 }
 
@@ -106,7 +106,7 @@ func (l *Loader) Remove(project, env string) error {
 		return nil
 	}
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), YamlSuffix) && entry.Name() != ProjectFile {
+		if strings.HasSuffix(entry.Name(), YAMLSuffix) && entry.Name() != ProjectFile {
 			return nil
 		}
 	}
@@ -114,7 +114,7 @@ func (l *Loader) Remove(project, env string) error {
 }
 
 func EnvPathFor(source string) string {
-	return strings.TrimSuffix(source, YamlSuffix) + EnvSuffix
+	return strings.TrimSuffix(source, YAMLSuffix) + EnvSuffix
 }
 
 func mergeDefinition(path string, incoming Definition) Definition {
@@ -145,6 +145,7 @@ func mergeEnvironment(path string, incoming Environment) Environment {
 	}
 
 	existing.Branch = incoming.Branch
+	existing.Workflow = incoming.Workflow
 	existing.Builder = incoming.Builder
 	existing.Runners = incoming.Runners
 	existing.Ports = incoming.Ports
@@ -156,7 +157,7 @@ func mergeEnvironment(path string, incoming Environment) Environment {
 	if incoming.Restart != "" {
 		existing.Restart = incoming.Restart
 	}
-	if incoming.Command != "" {
+	if incoming.Command.Shell != "" || len(incoming.Command.Exec) > 0 {
 		existing.Command = incoming.Command
 	}
 	if len(incoming.Env) > 0 {
@@ -164,6 +165,15 @@ func mergeEnvironment(path string, incoming Environment) Environment {
 	}
 	if incoming.Services != nil {
 		existing.Services = incoming.Services
+	}
+	if incoming.Networks != nil {
+		existing.Networks = incoming.Networks
+	}
+	if incoming.VolumeResources != nil {
+		existing.VolumeResources = incoming.VolumeResources
+	}
+	if incoming.Resources.Networks != nil || incoming.Resources.Volumes != nil {
+		existing.Resources = incoming.Resources
 	}
 	return existing
 }

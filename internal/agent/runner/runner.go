@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/docker"
+	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
@@ -63,6 +64,15 @@ type engine interface {
 	ListContainers(context.Context, bool) ([]docker.Container, error)
 }
 
+type resourceEngine interface {
+	EnsureNetwork(context.Context, docker.NetworkResource) error
+	EnsureVolume(context.Context, docker.VolumeResource) error
+}
+
+type logEngine interface {
+	StreamLogs(context.Context, string, int, bool, func(string, string)) error
+}
+
 type replacement struct {
 	project       string
 	name          string
@@ -84,6 +94,13 @@ func ContainerName(project, service string) string {
 }
 
 func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log ufp.LogFunc) error {
+	if err := validateReleaseRequest(request); err != nil {
+		return fmt.Errorf("invalid release request: %w", err)
+	}
+	if err := r.ensureResources(ctx, request); err != nil {
+		return err
+	}
+	resolveResourceNames(&request)
 	for _, service := range request.Services {
 		log(ufp.StreamStdout, "pulling "+service.Image)
 		if err := r.pull(ctx, service.Image, log); err != nil {
@@ -94,6 +111,15 @@ func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log uf
 	done := make([]replacement, 0, len(request.Services))
 
 	for _, service := range request.Services {
+		if service.Mode == "job" {
+			if err := r.runJob(ctx, request, service, log); err != nil {
+				restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+				restoreErr := r.rollback(restoreCtx, done, log)
+				cancel()
+				return errors.Join(err, restoreErr)
+			}
+			continue
+		}
 		state, err := r.replace(ctx, request, service, log)
 		done = append(done, state)
 
@@ -118,6 +144,203 @@ func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log uf
 
 	log(ufp.StreamStdout, fmt.Sprintf("%s is live (%d service(s))", request.Project, len(request.Services)))
 	return nil
+}
+
+func validateReleaseRequest(request ufp.ReleaseRequest) error {
+	if !models.ValidResourceName(request.Project) {
+		return fmt.Errorf("invalid project name %q", request.Project)
+	}
+	if len(request.Services) == 0 {
+		return errors.New("release contains no services")
+	}
+	for key, resource := range request.Networks {
+		if !models.ValidResourceName(key) || !models.ValidResourceName(resource.Name) {
+			return fmt.Errorf("invalid network %q", key)
+		}
+	}
+	for key, resource := range request.Volumes {
+		if !models.ValidResourceName(key) || !models.ValidResourceName(resource.Name) {
+			return fmt.Errorf("invalid volume %q", key)
+		}
+	}
+
+	indices := make(map[string]int, len(request.Services))
+	modes := make(map[string]string, len(request.Services))
+	for index, service := range request.Services {
+		if service.Name == "" && len(request.Services) != 1 {
+			return errors.New("every service in a multi-service release must have a name")
+		}
+		if service.Name != "" && !models.ValidResourceName(service.Name) {
+			return fmt.Errorf("invalid service name %q", service.Name)
+		}
+		if _, exists := indices[service.Name]; exists {
+			return fmt.Errorf("service %q is duplicated", service.Name)
+		}
+		indices[service.Name] = index
+		mode := service.Mode
+		if mode == "" {
+			mode = models.ServiceModeService
+		}
+		if mode != models.ServiceModeService && mode != models.ServiceModeJob {
+			return fmt.Errorf("service %q has invalid mode %q", service.Name, service.Mode)
+		}
+		modes[service.Name] = mode
+		if !models.ValidDigestReference(service.Image) {
+			return fmt.Errorf("service %q image is not an immutable digest", service.Name)
+		}
+		if !models.ValidRestartPolicy(service.Restart) {
+			return fmt.Errorf("service %q has invalid restart policy %q", service.Name, service.Restart)
+		}
+		if service.Resources.MemoryBytes < 0 || service.Resources.CPUs < 0 || service.Resources.PIDs < 0 {
+			return fmt.Errorf("service %q has invalid resource limits", service.Name)
+		}
+		if service.Command != "" && len(service.CommandExec) > 0 {
+			return fmt.Errorf("service %q sets both shell and exec commands", service.Name)
+		}
+		if service.Healthcheck != nil {
+			health := &models.Healthcheck{
+				Type: service.Healthcheck.Type, Scheme: service.Healthcheck.Scheme,
+				Path: service.Healthcheck.Path, Port: service.Healthcheck.Port,
+				Interval: service.Healthcheck.Interval, Timeout: service.Healthcheck.Timeout,
+				Retries: service.Healthcheck.Retries, StableFor: service.Healthcheck.StableFor,
+				Command: service.Healthcheck.Command, StartPeriod: service.Healthcheck.StartPeriod,
+			}
+			if err := models.ValidateHealthcheck(health); err != nil {
+				return fmt.Errorf("service %q: %w", service.Name, err)
+			}
+		}
+	}
+
+	for index, service := range request.Services {
+		for _, dependency := range service.DependsOn {
+			dependencyIndex, exists := indices[dependency.Service]
+			if !exists {
+				return fmt.Errorf("service %q depends on unknown service %q", service.Name, dependency.Service)
+			}
+			if dependencyIndex >= index {
+				return fmt.Errorf("service %q is not ordered after dependency %q", service.Name, dependency.Service)
+			}
+			if dependency.Condition != models.DependencyStarted && dependency.Condition != models.DependencyHealthy && dependency.Condition != models.DependencyCompleted {
+				return fmt.Errorf("service %q dependency %q has invalid condition %q", service.Name, dependency.Service, dependency.Condition)
+			}
+			if dependency.Condition == models.DependencyCompleted && modes[dependency.Service] != models.ServiceModeJob {
+				return fmt.Errorf("service %q requires non-job %q to complete", service.Name, dependency.Service)
+			}
+		}
+		for _, network := range service.Networks {
+			if _, exists := request.Networks[network.Name]; !exists {
+				return fmt.Errorf("service %q uses undeclared network %q", service.Name, network.Name)
+			}
+		}
+		for _, volume := range service.Volumes {
+			if volume.Type == "volume" {
+				if _, exists := request.Volumes[volume.Source]; !exists {
+					return fmt.Errorf("service %q uses undeclared volume %q", service.Name, volume.Source)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (r *Runner) ensureResources(ctx context.Context, request ufp.ReleaseRequest) error {
+	if len(request.Networks) == 0 && len(request.Volumes) == 0 {
+		return nil
+	}
+	engine, ok := r.docker.(resourceEngine)
+	if !ok {
+		return fmt.Errorf("docker engine cannot manage declared resources")
+	}
+	for _, network := range request.Networks {
+		if err := engine.EnsureNetwork(ctx, docker.NetworkResource{Name: network.Name, Driver: network.Driver, External: network.External, Internal: network.Internal, Attachable: network.Attachable, Options: network.Options, Labels: network.Labels}); err != nil {
+			return fmt.Errorf("ensure network %s: %w", network.Name, err)
+		}
+	}
+	for _, volume := range request.Volumes {
+		if err := engine.EnsureVolume(ctx, docker.VolumeResource{Name: volume.Name, Driver: volume.Driver, External: volume.External, Options: volume.Options, Labels: volume.Labels}); err != nil {
+			return fmt.Errorf("ensure volume %s: %w", volume.Name, err)
+		}
+	}
+	return nil
+}
+
+func resolveResourceNames(request *ufp.ReleaseRequest) {
+	for index := range request.Services {
+		service := &request.Services[index]
+		for networkIndex := range service.Networks {
+			if resource, ok := request.Networks[service.Networks[networkIndex].Name]; ok {
+				service.Networks[networkIndex].Name = resource.Name
+			}
+		}
+		for volumeIndex := range service.Volumes {
+			if resource, ok := request.Volumes[service.Volumes[volumeIndex].Source]; ok {
+				service.Volumes[volumeIndex].Source = resource.Name
+			}
+		}
+	}
+}
+
+func (r *Runner) runJob(ctx context.Context, request ufp.ReleaseRequest, service ufp.ServiceSpec, log ufp.LogFunc) error {
+	name := ContainerName(request.Project, service.Name)
+	if err := r.removeOwnedIfExists(ctx, name, request.Project); err != nil {
+		return fmt.Errorf("remove previous job %s: %w", name, err)
+	}
+	container, err := spec(name, request, service)
+	if err != nil {
+		return err
+	}
+	container.Restart = "no"
+	id, err := r.docker.Run(ctx, container)
+	if err != nil {
+		return fmt.Errorf("start job %s: %w", name, err)
+	}
+	timeout := service.JobTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		state, err := r.docker.State(ctx, id)
+		if err != nil {
+			return errors.Join(err, r.cleanupJob(name, request.Project))
+		}
+		if state.Status == docker.StateExited || state.Status == docker.StateDead {
+			r.streamJobLogs(ctx, id, log)
+			cleanupErr := r.cleanupJob(name, request.Project)
+			if state.ExitCode != 0 {
+				return errors.Join(fmt.Errorf("job %s exited with code %d", name, state.ExitCode), cleanupErr)
+			}
+			log(ufp.StreamStdout, "job "+name+" completed")
+			return cleanupErr
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(ctx.Err(), r.cleanupJob(name, request.Project))
+		case <-deadline.C:
+			r.streamJobLogs(context.Background(), id, log)
+			return errors.Join(fmt.Errorf("job %s did not complete within %s", name, timeout), r.cleanupJob(name, request.Project))
+		case <-time.After(readinessPoll):
+		}
+	}
+}
+
+func (r *Runner) streamJobLogs(ctx context.Context, id string, log ufp.LogFunc) {
+	engine, ok := r.docker.(logEngine)
+	if !ok {
+		return
+	}
+	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := engine.StreamLogs(logCtx, id, 0, false, log); err != nil {
+		log(ufp.StreamStderr, "could not read job logs: "+err.Error())
+	}
+}
+
+func (r *Runner) cleanupJob(name, project string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), inspectTimeout)
+	defer cancel()
+	return r.removeOwnedIfExists(cleanupCtx, name, project)
 }
 
 func (r *Runner) replace(ctx context.Context, request ufp.ReleaseRequest, service ufp.ServiceSpec, log ufp.LogFunc) (replacement, error) {
@@ -300,25 +523,37 @@ func spec(name string, request ufp.ReleaseRequest, service ufp.ServiceSpec) (doc
 		return docker.Spec{}, fmt.Errorf("service %q: %w", service.Name, err)
 	}
 	container := docker.Spec{
-		Name:    name,
-		Image:   service.Image,
-		Env:     service.Env,
-		Network: service.Network,
-		Restart: service.Restart,
-		Labels:  labels,
+		Name:       name,
+		Image:      service.Image,
+		Env:        service.Env,
+		Network:    service.Network,
+		Restart:    service.Restart,
+		Labels:     labels,
+		Entrypoint: service.Entrypoint,
+		Resources:  docker.ResourceLimits{MemoryBytes: service.Resources.MemoryBytes, CPUs: service.Resources.CPUs, PIDs: service.Resources.PIDs},
+		Security:   docker.Security{NoNewPrivileges: service.Security.NoNewPrivileges, ReadOnlyRootFS: service.Security.ReadOnlyRootFS, User: service.Security.User, CapAdd: service.Security.CapAdd, CapDrop: service.Security.CapDrop},
+		Logging:    docker.LogConfig{Driver: service.Logging.Driver, Options: service.Logging.Options},
 	}
 
-	if service.Command != "" {
+	if len(service.CommandExec) > 0 {
+		container.Command = service.CommandExec
+	} else if service.Command != "" {
 		container.Command = []string{"sh", "-c", service.Command}
+	}
+	for _, network := range service.Networks {
+		container.Networks = append(container.Networks, docker.NetworkAttachment{Name: network.Name, Aliases: network.Aliases})
+	}
+	if service.Healthcheck != nil && service.Healthcheck.Type == "command" {
+		container.Healthcheck = &docker.Healthcheck{Test: service.Healthcheck.Command, Interval: service.Healthcheck.Interval, Timeout: service.Healthcheck.Timeout, Retries: service.Healthcheck.Retries, StartPeriod: service.Healthcheck.StartPeriod}
 	}
 	for _, port := range service.Ports {
 		container.Ports = append(container.Ports, docker.PortBinding{
-			Host: port.Host, Container: port.Container, Protocol: port.Protocol,
+			HostIP: port.HostIP, Host: port.Host, Container: port.Container, Protocol: port.Protocol,
 		})
 	}
 	for _, volume := range service.Volumes {
 		container.Mounts = append(container.Mounts, docker.Mount{
-			Source: volume.Source, Target: volume.Target, ReadOnly: volume.ReadOnly,
+			Type: volume.Type, Source: volume.Source, Target: volume.Target, ReadOnly: volume.ReadOnly, CreateHostPath: volume.CreateHostPath,
 		})
 	}
 
@@ -331,6 +566,9 @@ func (r *Runner) waitReady(ctx context.Context, id string, healthcheck *ufp.Heal
 	}
 	if healthcheck.Type == "running" {
 		return r.waitRunning(ctx, id, healthcheck.StableFor)
+	}
+	if healthcheck.Type == "command" {
+		return r.docker.WaitReady(ctx, id, settleWindow, readyTimeout)
 	}
 	return r.waitProbe(ctx, id, healthcheck)
 }
@@ -368,6 +606,11 @@ func (r *Runner) waitRunning(ctx context.Context, id string, stableFor time.Dura
 }
 
 func (r *Runner) waitProbe(ctx context.Context, id string, healthcheck *ufp.HealthcheckSpec) error {
+	if healthcheck.StartPeriod > 0 {
+		if err := wait(ctx, healthcheck.StartPeriod); err != nil {
+			return err
+		}
+	}
 	restarts := -1
 	var lastErr error
 	for attempt := 1; attempt <= healthcheck.Retries; attempt++ {

@@ -1,46 +1,40 @@
 # Projects
 
-A project is one repository deployed to one set of runners. This page covers how to define one, how
+For the complete production schema—multi-repository services, managed Docker resources, dependency
+graphs, jobs, structured commands, security/resource controls and command probes—see
+[Native Build Model](native-build-model.md).
+
+A project is one release unit deployed to one set of runners. It has a primary repository and may
+override the repository and branch for individual services. This page covers how to define one, how
 environments work, and how environment variables resolve.
 
-## 1. Two Ways to Define a Project
+## 1. One Authoritative Definition
 
-| | Standalone | File-backed |
-| :--- | :--- | :--- |
-| Stored in | The database | `projects/<name>/` plus the database |
-| Created by | The terminal interface | The interface, or by writing files |
-| Version control | No | Yes |
-| Best for | A single deployment, quick experiments | Several environments, review, reproducibility |
+Every project is defined by version-controlled YAML under `projects/<name>/`. The database holds the
+loaded effective model and runtime history, but it is never a competing configuration source.
 
-Both produce identical projects. The interface marks which is which, and can create either — you
-never have to write files by hand.
+Create files with any editor, `project edit` in the operations workspace, configuration management,
+or inline YAML input in the same page. Validate and reload them from its prompt.
 
-## 2. Creating a Project in the Interface
+## 2. Creating and Operating a Project
 
-Press `2`, then `n`. The first field chooses where it lives (all keys are listed in
-[Terminal Interface](interface.md)):
+The stage is explicit and derived from build targets and release targets:
+
+| Workflow | Builder | Runners | Result |
+| :--- | :---: | :---: | :--- |
+| `build_only` | Required | Not used | Build and publish immutable artifacts |
+| `deploy_only` | Not used | Required | Release already-pinned images |
+| `build_deploy` | Required | Required | Build, publish, then release together |
 
 ```text
-▸ stored as     ○ standalone  ◉ file       ‹ › to change
+project validate projects/api/prod.yaml
+project reload
+project show api-prod
+project deploy api-prod
 ```
 
-The form tabs are cycled with `ctrl+t`:
-
-| Tab | Contents |
-| :--- | :--- |
-| `settings` | Name, git URL, branch, Dockerfile, context, ports, volumes, network, and pickers for builder, runners and auto-deploy |
-| `variables` | The `.env` file — paste one in, or type `KEY=VALUE` lines |
-| `services` | Add, edit and remove native project services |
-| `config` | File mode only. Paste `<env>.yaml` to use it instead of the settings tab. |
-
-`ctrl+s` validates before writing anything. YAML must parse; the `.env` must parse, with the offending
-line reported. You are moved to the tab that failed and nothing touches disk.
-
-Agent names are never typed. `builder` is a radio list and `runners` are checkboxes, both drawn from
-agents that actually hold the role, so a project cannot reference an agent that does not exist.
-
-When the `config` tab has pasted content, only **name**, **environment** and **git url** are required
-from the settings tab — branch, builder, runners and the rest come from your YAML.
+The loader resolves builder and runner names against enrolled agents and verifies their roles.
+Branch, workflow, services, variables and runtime policy always come from the files.
 
 ## 3. File Layout
 
@@ -66,7 +60,7 @@ What every environment shares.
 
 ```yaml
 name: api                            # optional; defaults to the directory name
-git: git@github.com:acme/api.git     # required
+git: git@github.com:acme/api.git     # required by build workflows
 dockerfile: Dockerfile               # optional; defaults to Dockerfile
 context: .                           # optional; defaults to .
 build_args:                          # optional; passed to docker build
@@ -83,6 +77,7 @@ What differs per environment.
 branch: develop                      # required
 builder: builder-01                  # required; agent name, must hold the builder role
 runners: [web-01, web-02]            # required; agent names, must hold the runner role
+workflow: build_deploy                # build_deploy, build_only, or deploy_only
 auto_deploy: true                    # optional; defaults to true
 ports: ["8081:80"]                   # optional; host:container[/protocol]
 volumes: ["/srv/api:/data:ro"]       # optional; source:target[:ro]
@@ -156,13 +151,14 @@ Declaring both is rejected. Prebuilt images must use an immutable `repository@sh
 reference; mutable tags are rejected. Built services get their own image repository,
 `<registry>/<namespace>/<project>-<service>`, so each is versioned independently by commit.
 
-Every field a single-service project supports is available per service: `command`, `ports`,
-`volumes`, `env`, `network`, `restart` and `build_args`. Services also support native
-`healthcheck` readiness and generic Docker `labels`.
+Every field a single-service project supports is available per service. Multi-service projects also
+support source overrides, dependency conditions, jobs, exact commands, typed mounts, multiple
+networks, resource/security/logging controls, native readiness, and generic Docker labels. See the
+[Native Build Model](native-build-model.md) for the full schema.
 
 ### Service Healthchecks
 
-Three deliberately small readiness policies are supported:
+Four readiness policies are supported:
 
 ```yaml
 services:
@@ -183,11 +179,19 @@ services:
     healthcheck:
       type: running
       stable_for: 10s
+  database:
+    healthcheck:
+      type: command
+      command: [pg_isready]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 ```
 
-HTTP accepts only `2xx`. HTTP and TCP require a valid port and use finite attempts. `running`
-requires the container to remain running without a restart for `stable_for`. Durations must be
-positive. Unknown types, fields and malformed paths are rejected with the service field path.
+HTTP accepts only `2xx`. HTTP and TCP require a valid port and use finite attempts. `command` becomes
+a Docker `CMD` or `CMD-SHELL` healthcheck. `running` requires the container to remain running without
+a restart for `stable_for`. Probe checks accept `start_period`; durations must be positive. Unknown
+types, fields and malformed paths are rejected with the service field path.
 
 See [Deployments](deployments.md#readiness) for runtime precedence and failure behavior.
 
@@ -221,9 +225,10 @@ A variable set on one service is invisible to the others.
 
 ### All or Nothing
 
-Services are replaced in order, and **if any service fails to become ready, every service already
-replaced in that release is restored**. A release either moves the whole project forward on a runner
-or leaves it exactly as it was. See [Deployments](deployments.md#3-release-safety).
+Services are replaced in dependency order, and **if any service fails to become ready, every
+long-running service already replaced in that release is restored**. Completed job side effects
+cannot be reversed, so migrations must be backward-compatible. See
+[Deployments](deployments.md#3-release-safety).
 
 ### Single-Service Projects Are Unchanged
 
@@ -287,15 +292,13 @@ With the `dev.env` above, `api-dev` receives:
 `defaults.yaml` is not created by `uruflow init`. Create it yourself next to `config.yaml` when you
 want shared variables.
 
-To read a project's effective variables, select it and press `ctrl+t` to cycle the detail panel to
-`variables`.
+Use `project show <name>` in the workspace to inspect the loaded effective project.
 
 ### Secrets
 
 Values that must not be readable in a file or on screen are stored separately and referenced:
 
-Press `7` in the interface, then `n`, and store the value under a name such as `api_db_url`. The
-value is masked while you type and never displayed again.
+Store a value from the masked workspace prompt with `secret set api_db_url`. It is never displayed again.
 
 ```ini
 # projects/api/prod.env — safe to commit
@@ -305,33 +308,22 @@ LOG_LEVEL=info
 
 URUFLOW resolves the reference when a release is dispatched. The value is encrypted at rest, never
 written to a project file, never shown in the interface, and never appears in a release log. A
-reference to a secret that does not exist fails the deploy **before** any build starts.
-
-Secrets live in the `7` view, where `n` stores one and `d` removes one.
+reference to a secret that does not exist fails the deploy **before** any build starts. Use
+Use `secret list` and `secret remove <name>` in the workspace to manage stored names.
 
 > Variables that are not secret references are stored in plaintext in `.env` files and in the
 > database, and are visible in the interface. See [Security](security.md#7-secrets).
 
 ## 7. Editing Safely
 
-A file-backed project can be edited in the interface. The `settings` tab owns git URL, Dockerfile,
-context, branch, builder, runners, ports, volumes, network and auto-deploy.
-
-The `services` tab owns the service list and exposes source mode, build and runtime fields,
-healthcheck, build arguments, environment and labels. Complex maps use focused sheet editors. File
-mode writes these structured changes through the native project writer. Raw `config` changes and
-structured service changes cannot be saved together in one operation, preventing two competing
-representations.
-
-Other project-level fields are **preserved** on save, including `build_args`, `command`, `restart`
-and project-level `env`.
-
-Comments in YAML files are lost when the settings tab writes them back. Content pasted into the
-`config` tab is written verbatim, so comments survive that path.
+`project edit <name>` in the workspace opens the authoritative environment YAML in `$VISUAL` or
+`$EDITOR` and reloads after the editor closes. It also accepts `project apply <project> <env> -`; paste
+YAML and press `Ctrl+S` to validate and save it atomically. Failed full validation restores the
+previous file, so invalid desired state is not left behind.
 
 ## 8. Reloading
 
-Press `R` in the projects view to re-read `projects/` from disk. Files edited outside URUFLOW are not
+Run `project reload` in the workspace to re-read `projects/` from disk. Files edited outside URUFLOW are not
 noticed until you do.
 
 Loading never deletes. If a file disappears, the project keeps running and is reported as orphaned:

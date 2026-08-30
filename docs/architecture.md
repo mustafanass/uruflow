@@ -34,8 +34,10 @@ Two properties define the system:
 | `internal/storage` | Persistence contract and SQLite implementation | The database schema |
 | `internal/agent` | Agent daemon, builder, runner, metrics | Execution on a target machine |
 | `internal/api` | Composition root, HTTP webhooks, project reload | Wiring |
-| `internal/console` | Root-only local dashboard attachment | Unix socket and terminal handoff |
-| `internal/tui` | Terminal interface | Presentation only |
+| `internal/ops` | Shared operational command engine | Typed command events |
+| `internal/control` | Root-only local command transport | Unix socket and JSON event stream |
+| `internal/cliui` | Human-readable operation output | Tables, panels, color and logs |
+| `internal/workbench` | Single-page operations workspace | Transcript, prompt, confirmation and inline YAML input |
 
 ### Dependency Rules
 
@@ -43,14 +45,13 @@ Two properties define the system:
 sides implement, and a dependency from the protocol onto server or agent internals would make the two
 sides impossible to evolve separately. Adding an import there should be treated as a design change.
 
-`internal/tui` reads through `internal/api` and never reaches into storage or the pipeline directly.
-It reaches the rest of the system through a handful of accessors on the composition root, which is
-what makes an HTTP API a mechanical addition rather than a rewrite.
+`internal/ops` reads through `internal/api`. The workbench consumes its typed event stream through
+`internal/control`; presentation does not own pipeline behavior. Operational commands exist inside
+that one interface instead of being duplicated as external shell subcommands.
 
-The server process is always the owner of the database, listeners, live agent sessions and TUI
-actions. `uruflow console` passes its terminal descriptor to that process over the root-only local
-socket; it does not construct a second server. Detaching therefore removes only the presentation
-subscriber and cannot interrupt agent connections or a release.
+The server process is always the owner of the database, listeners, live agent sessions and command
+actions. Clients send requests over the root-only local socket and receive JSON events. Detaching
+removes only that subscriber and cannot interrupt agent connections or a release.
 
 `internal/docker` is shared by the server (to run the registry) and the agent (to run workloads).
 It knows nothing about projects or releases.
@@ -146,9 +147,9 @@ time, so registry access is a consequence of agent enrolment rather than a separ
 
 ## 8. Project Loading
 
-Project files are expanded into ordinary projects at load time and written to the database. Nothing
-downstream distinguishes a file-backed project from one created in the interface, except a `source`
-column recording the path.
+Project files are expanded into ordinary projects at load time and written to the database. The
+`source` column records their authoritative environment path; there is no second editable project
+model in the interface.
 
 This is the key simplification: environments are a *loader* concern. `projects/api/dev.yaml` and
 `projects/api/prod.yaml` become `api-dev` and `api-prod`, and the pipeline sees two ordinary projects.
@@ -196,10 +197,10 @@ Constraints that shaped the implementation and should be preserved:
 3. **Never delete implicitly.** Removing a project file, or losing an agent, does not tear down
    workloads.
 4. **Only labelled containers are touched.** URUFLOW is a guest on machines that may run other things.
-5. **Configuration has one authoritative location.** Agents and projects live in the database or in
-   files, never both; `config.yaml` holds neither.
-6. **Presentation holds no logic.** The terminal interface reads through the composition root, which
-   is why it could be replaced or supplemented without touching the pipeline.
+5. **Configuration has one authoritative location.** Project YAML is desired state; the database
+   contains its loaded model and observed runtime state, never a competing editable definition.
+6. **Presentation holds no pipeline logic.** The workbench renders typed command events and owns only
+   interaction concerns such as history, confirmation, masked input and layout.
 
 ## 12. Where a Change Belongs
 
@@ -210,4 +211,4 @@ Constraints that shaped the implementation and should be preserved:
 | New field in a project file | `internal/projects` schema, then `internal/models` |
 | Different container runtime behaviour | `internal/agent/runner` and `internal/docker` |
 | New persisted fact | `internal/storage` contract, then `internal/storage/sqlite` |
-| New view or key binding | `internal/tui` only |
+| New workspace behavior or key binding | `internal/workbench` only |

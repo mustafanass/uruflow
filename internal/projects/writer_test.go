@@ -77,7 +77,7 @@ func TestWrittenFilesLoadBackIdentically(t *testing.T) {
 	}
 }
 
-func TestRawYamlIsWrittenVerbatim(t *testing.T) {
+func TestRawYAMLIsWrittenVerbatim(t *testing.T) {
 	root := t.TempDir()
 	loader := NewLoader(root, fakeAgents())
 

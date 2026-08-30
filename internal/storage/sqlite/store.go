@@ -45,7 +45,10 @@ var addedColumns = []column{
 	{table: "projects", name: "env", spec: "TEXT NOT NULL DEFAULT ''"},
 	{table: "projects", name: "source", spec: "TEXT NOT NULL DEFAULT ''"},
 	{table: "projects", name: "services", spec: "TEXT NOT NULL DEFAULT '[]'"},
+	{table: "projects", name: "workflow", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "projects", name: "resources", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "releases", name: "images", spec: "TEXT NOT NULL DEFAULT '{}'"},
+	{table: "releases", name: "commits", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "releases", name: "spec", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "containers", name: "service", spec: "TEXT NOT NULL DEFAULT ''"},
 }

@@ -81,48 +81,114 @@ type BuildTarget struct {
 	Dockerfile string            `json:"dockerfile"`
 	Context    string            `json:"context"`
 	BuildArgs  map[string]string `json:"build_args,omitempty"`
+	GitURL     string            `json:"git_url,omitempty"`
+	Branch     string            `json:"branch,omitempty"`
+	Commit     string            `json:"commit,omitempty"`
 }
 
 type ReleaseRequest struct {
-	JobID    string        `json:"job_id"`
-	Project  string        `json:"project"`
-	Services []ServiceSpec `json:"services"`
+	JobID    string                     `json:"job_id"`
+	Project  string                     `json:"project"`
+	Services []ServiceSpec              `json:"services"`
+	Networks map[string]NetworkResource `json:"networks,omitempty"`
+	Volumes  map[string]VolumeResource  `json:"volumes,omitempty"`
 }
 
 type ServiceSpec struct {
-	Name        string            `json:"name"`
-	Image       string            `json:"image"`
-	Ports       []PortBinding     `json:"ports,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	Volumes     []VolumeBinding   `json:"volumes,omitempty"`
-	Network     string            `json:"network,omitempty"`
-	Restart     string            `json:"restart,omitempty"`
-	Command     string            `json:"command,omitempty"`
-	Healthcheck *HealthcheckSpec  `json:"healthcheck,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty"`
+	Name        string              `json:"name"`
+	Image       string              `json:"image"`
+	Ports       []PortBinding       `json:"ports,omitempty"`
+	Env         map[string]string   `json:"env,omitempty"`
+	Volumes     []VolumeBinding     `json:"volumes,omitempty"`
+	Network     string              `json:"network,omitempty"`
+	Networks    []NetworkAttachment `json:"networks,omitempty"`
+	Restart     string              `json:"restart,omitempty"`
+	Command     string              `json:"command,omitempty"`
+	CommandExec []string            `json:"command_exec,omitempty"`
+	Entrypoint  []string            `json:"entrypoint,omitempty"`
+	Mode        string              `json:"mode,omitempty"`
+	DependsOn   []Dependency        `json:"depends_on,omitempty"`
+	Resources   ResourceLimits      `json:"resources,omitempty"`
+	Security    SecuritySpec        `json:"security,omitempty"`
+	Logging     LogConfig           `json:"logging,omitempty"`
+	JobTimeout  time.Duration       `json:"job_timeout,omitempty"`
+	Healthcheck *HealthcheckSpec    `json:"healthcheck,omitempty"`
+	Labels      map[string]string   `json:"labels,omitempty"`
 }
 
 type HealthcheckSpec struct {
-	Type      string        `json:"type"`
-	Scheme    string        `json:"scheme,omitempty"`
-	Path      string        `json:"path,omitempty"`
-	Port      int           `json:"port,omitempty"`
-	Interval  time.Duration `json:"interval,omitempty"`
-	Timeout   time.Duration `json:"timeout,omitempty"`
-	Retries   int           `json:"retries,omitempty"`
-	StableFor time.Duration `json:"stable_for,omitempty"`
+	Type        string        `json:"type"`
+	Scheme      string        `json:"scheme,omitempty"`
+	Path        string        `json:"path,omitempty"`
+	Port        int           `json:"port,omitempty"`
+	Interval    time.Duration `json:"interval,omitempty"`
+	Timeout     time.Duration `json:"timeout,omitempty"`
+	Retries     int           `json:"retries,omitempty"`
+	StableFor   time.Duration `json:"stable_for,omitempty"`
+	Command     []string      `json:"command,omitempty"`
+	StartPeriod time.Duration `json:"start_period,omitempty"`
 }
 
 type PortBinding struct {
+	HostIP    string `json:"host_ip,omitempty"`
 	Host      int    `json:"host"`
 	Container int    `json:"container"`
 	Protocol  string `json:"protocol,omitempty"`
 }
 
+type NetworkAttachment struct {
+	Name    string   `json:"name"`
+	Aliases []string `json:"aliases,omitempty"`
+}
+
+type Dependency struct {
+	Service   string `json:"service"`
+	Condition string `json:"condition"`
+}
+
+type ResourceLimits struct {
+	MemoryBytes int64   `json:"memory_bytes,omitempty"`
+	CPUs        float64 `json:"cpus,omitempty"`
+	PIDs        int64   `json:"pids,omitempty"`
+}
+
+type SecuritySpec struct {
+	NoNewPrivileges bool     `json:"no_new_privileges,omitempty"`
+	ReadOnlyRootFS  bool     `json:"read_only_rootfs,omitempty"`
+	User            string   `json:"user,omitempty"`
+	CapAdd          []string `json:"cap_add,omitempty"`
+	CapDrop         []string `json:"cap_drop,omitempty"`
+}
+
+type LogConfig struct {
+	Driver  string            `json:"driver,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
+}
+
+type NetworkResource struct {
+	Name       string            `json:"name"`
+	Driver     string            `json:"driver,omitempty"`
+	External   bool              `json:"external,omitempty"`
+	Internal   bool              `json:"internal,omitempty"`
+	Attachable bool              `json:"attachable,omitempty"`
+	Options    map[string]string `json:"options,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
+}
+
+type VolumeResource struct {
+	Name     string            `json:"name"`
+	Driver   string            `json:"driver,omitempty"`
+	External bool              `json:"external,omitempty"`
+	Options  map[string]string `json:"options,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+}
+
 type VolumeBinding struct {
-	Source   string `json:"source"`
-	Target   string `json:"target"`
-	ReadOnly bool   `json:"read_only,omitempty"`
+	Type           string `json:"type,omitempty"`
+	Source         string `json:"source"`
+	Target         string `json:"target"`
+	ReadOnly       bool   `json:"read_only,omitempty"`
+	CreateHostPath bool   `json:"create_host_path,omitempty"`
 }
 
 type ProjectRef struct {
@@ -147,6 +213,7 @@ type JobStatus struct {
 	Images   map[string]string `json:"images,omitempty"`
 	Digest   string            `json:"digest,omitempty"`
 	Commit   string            `json:"commit,omitempty"`
+	Commits  map[string]string `json:"commits,omitempty"`
 	Duration int64             `json:"duration"`
 }
 

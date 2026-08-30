@@ -36,7 +36,7 @@ Every message is an 8-byte header followed by a JSON payload.
 ```text
  0        1        2        3        4                                7
  ┌────────┬────────┬────────┬────────┬────────────────────────────────┐
- │  0x55  │  0x46  │  0x03  │  type  │      payload length (u32 BE)   │
+ │  0x55  │  0x46  │  0x04  │  type  │      payload length (u32 BE)   │
  │  'U'   │  'F'   │  ver   │        │                                │
  └────────┴────────┴────────┴────────┴────────────────────────────────┘
 ```
@@ -44,11 +44,11 @@ Every message is an 8-byte header followed by a JSON payload.
 | Field | Size | Value |
 | :--- | :--- | :--- |
 | Magic | 2 bytes | `0x55 0x46` |
-| Version | 1 byte | `0x03` |
+| Version | 1 byte | `0x04` |
 | Frame type | 1 byte | See below |
 | Payload length | 4 bytes | Unsigned, big-endian |
 
-A frame is rejected if the magic does not match, the version is not `0x03`, or the declared length
+A frame is rejected if the magic does not match, the version is not `0x04`, or the declared length
 exceeds **16 MiB**. Payloads are JSON, so frames remain readable in a packet capture.
 
 ## 4. Frame Types
@@ -107,10 +107,10 @@ All are server to agent.
 
 | Method | Effect |
 | :--- | :--- |
-| `build.run` | Clone, build, tag, push; report through `job.status` |
-| `release.run` | Pull an image and replace the running container |
-| `release.stop` | Stop a project's container |
-| `release.remove` | Remove a project's container |
+| `build.run` | Resolve one or more Git sources, build targets, push digests; report images and commits through `job.status` |
+| `release.run` | Ensure resources, pull immutable images, execute jobs, and replace services in dependency order |
+| `release.stop` | Stop every managed container for a project |
+| `release.remove` | Remove every managed container for a project; persistent resources remain |
 | `logs.follow` | Begin streaming a container's output as `container.log` |
 | `logs.stop` | Stop streaming |
 
@@ -202,8 +202,9 @@ stream is no longer aligned.
 
 ## 10. Versioning
 
-The version byte is `0x03`. A peer speaking `0x01` or `0x02` is rejected at the first frame, so an
-older agent cannot half-connect to a 2.2 server.
+The version byte is `0x04`. A peer speaking `0x01`, `0x02`, or `0x03` is rejected at the first frame,
+so an older agent cannot half-connect and silently ignore native resource, dependency, job, command,
+security, or multi-source fields.
 
 Within UFP, compatibility is managed through names:
 
