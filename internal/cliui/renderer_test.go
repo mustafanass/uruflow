@@ -20,10 +20,8 @@ package cliui
 
 import (
 	"bytes"
-	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mustafanass/uruflow/internal/ops"
@@ -102,20 +100,64 @@ func TestAgentEnrollmentRendersCopyableCommand(t *testing.T) {
 	}
 }
 
-func TestPreviewStatus(t *testing.T) {
-	if os.Getenv("PREVIEW") == "" {
-		t.Skip("set PREVIEW=1")
+func TestBrandPaletteMatchesPublishedIdentity(t *testing.T) {
+	want := map[string]string{
+		"navy": BrandNavy, "blue": BrandBlue, "gold": BrandGold,
+		"ivory": BrandIvory, "steel": BrandSteel,
 	}
-	renderer := New(os.Stdout, os.Getenv("NO_COLOR") == "")
-	renderer.Width = 110
-	_ = renderer.Render(ops.Event{Type: ops.EventResult, Title: "fleet", Data: map[string]any{
-		"agents_online": 2, "agents_total": 3, "projects": 5, "containers_running": 12,
-		"releases_active": 1, "alerts": 0, "registry": "healthy",
-	}})
-	_ = renderer.Render(ops.Table("agents", []string{"NAME", "ROLES", "STATE", "CTR", "CPU", "MEMORY", "DISK", "SEEN"}, [][]string{
-		{"builder-01", "builder,runner", "online", "4", "34%", "8.7 GB/14.9 GB", "81%", "now"},
-		{"web-01", "runner", "online", "3", "12%", "2.1 GB/8 GB", "42%", "now"},
-		{"web-02", "runner", "offline", "0", "–", "–", "–", "3m"},
-	}))
-	_ = renderer.Render(ops.Event{Type: ops.EventLog, Time: time.Date(2026, 8, 27, 14, 3, 10, 0, time.Local), Title: "web-01", Message: "container healthy in 8s"})
+	expected := map[string]string{
+		"navy": "#0B2444", "blue": "#1D3E6B", "gold": "#EDC35D",
+		"ivory": "#F5F1E9", "steel": "#9FB3D1",
+	}
+	for name, value := range want {
+		if value != expected[name] {
+			t.Fatalf("%s = %s, want %s", name, value, expected[name])
+		}
+	}
+	if got := Wordmark(false); got != PlainWordmark {
+		t.Fatalf("plain wordmark = %q, want %q", got, PlainWordmark)
+	}
+	if PlainWordmark != "uruflow" {
+		t.Fatalf("terminal wordmark = %q", PlainWordmark)
+	}
+	colored := Wordmark(true)
+	if !strings.Contains(colored, "\x1b["+ANSIAccentBold+"m") || !strings.Contains(colored, "\x1b["+ANSITextBold+"m") {
+		t.Fatalf("colored wordmark does not use the brand palette: %q", colored)
+	}
+}
+
+func TestColoredPanelsUseBrandAccentAndBorder(t *testing.T) {
+	renderer := New(nil, true)
+	renderer.Width = 48
+	output := renderer.RenderString(ops.Table("agents", []string{"NAME", "STATE"}, [][]string{{"runner-01", "online"}}))
+	for _, code := range []string{ANSIAccentBold, ANSIBorder, ANSISuccess} {
+		if !strings.Contains(output, "\x1b["+code+"m") {
+			t.Fatalf("panel does not contain palette code %q:\n%s", code, output)
+		}
+	}
+}
+
+func TestRendererStripsTerminalInstructionsFromUntrustedOutput(t *testing.T) {
+	renderer := New(nil, true)
+	renderer.Width = 72
+	attack := "safe\x1b[2J\x1b]52;c;stolen\a spoof\rhidden\u202e"
+	for _, event := range []ops.Event{
+		{Type: ops.EventLog, Title: attack, Message: attack},
+		ops.Table(attack, []string{attack}, [][]string{{attack}}),
+		{Type: ops.EventResult, Title: "result", Data: map[string]any{"detail": attack, "nested": map[string]any{"value": attack}}},
+	} {
+		output := renderer.RenderString(event)
+		for _, forbidden := range []string{"\x1b[2J", "]52;", "\a", "\r", "\u202e"} {
+			if strings.Contains(output, forbidden) {
+				t.Fatalf("rendered terminal control %q in %q", forbidden, output)
+			}
+		}
+		if !strings.Contains(output, "safe") || !strings.Contains(output, "spoof") {
+			t.Fatalf("printable output was lost: %q", output)
+		}
+	}
+	colored := renderer.RenderString(ops.Event{Type: ops.EventMessage, Level: "success", Message: attack})
+	if !strings.Contains(colored, "\x1b["+ANSISuccess+"m") {
+		t.Fatalf("renderer-owned color was removed: %q", colored)
+	}
 }

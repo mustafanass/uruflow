@@ -2,7 +2,7 @@
 
 URUFLOW is operated from one full-screen terminal workspace. The workspace owns the prompt, command
 history, live output, tables, confirmations, secret entry, and inline YAML editor. Operational
-commands are deliberately not duplicated as external shell subcommands.
+commands stay inside this workspace.
 
 The persistent server still owns live agent sessions, the pipeline, SQLite, and the registry. The
 workspace reaches it through a root-only Unix control socket, so closing the interface never stops
@@ -16,35 +16,35 @@ sudo uruflow
 sudo uruflow console
 ```
 
-The layout stays intentionally small: one header, one scrollable response transcript, and one prompt.
+The layout has one header, one scrollable response transcript, and one prompt.
 It opens with a compact welcome card instead of immediately dumping fleet tables. Type a command and
 its complete response appears in the same transcript. Long-running commands append new lines in real
 time without replacing the rest of the view.
 
 ```text
 status
-deploy api-prod
-logs <release-id> --follow
+project deploy api-prod
+release logs <release-id> --follow
 events
 help
 ```
 
-The command area filters suggestions as each character is typed and displays a short explanation for
-every match. Type `/` to open the complete command palette or `show`/`help` to print the complete
-reference in the transcript. Use `↑` and `↓` to select, `Tab` to complete, `Enter` to run, and `Esc`
-to close suggestions. When the prompt is empty, `↑` and `↓` browse history.
+The command area filters suggestions as you type. Type `/` for the command palette or `help` for the
+same list in the transcript. Use `↑` and `↓` to select, `Tab` to complete, and `Esc` to close the
+list. `Enter continue` advances to the next argument; `Enter run` executes the command.
 
-Completion is contextual rather than a flat list. `project ` shows project subcommands; `deploy `,
-`rollback `, and `stop ` query the daemon and show actual loaded projects. Agent inspection/removal
-shows actual agents, while release inspection/log commands show real release IDs. Selecting a command
-that needs an argument advances to that argument instead of repeatedly offering the same command.
+Argument choices come from the server. A container choice fills its agent and container ID together;
+a registry choice fills its repository and tag. The stage line shows the current position, for
+example `DEPLOY › PROJECT › MODE`. Loading, empty, and failed requests are shown in the command area.
+When the prompt is empty, `↑` and `↓` browse saved non-sensitive history.
 
-`deploy`, `rollback`, and `logs` are short forms for their namespaced commands. Use `PgUp` and `PgDn`
-to inspect the transcript, `Ctrl+L` or `clear` to clear it, and `Ctrl+D`, `quit`, or `exit` to close
-the workspace. New stream lines do not pull the view away while you are reading older output.
+Use `PgUp` and `PgDn` to inspect the transcript, `Ctrl+L` or `clear` to clear it, and `Ctrl+D` or
+`exit` to close the workspace. New stream lines do not pull the view away while you are reading older output.
 `Ctrl+C` detaches the visible live stream without cancelling a durable server-side release.
 
 Set `NO_COLOR=1` or open with `uruflow --no-color` when ANSI color is not wanted.
+The palette uses the URUFLOW navy, gold, ivory, and steel-blue colors. Green and red are reserved for
+health and failures.
 
 ## Status and live activity
 
@@ -53,28 +53,35 @@ status
 events
 ```
 
-`status` returns a compact fleet card followed by agent and project tables. `events` behaves like a
-fleet-wide `tail -f`: it follows new releases, build output, state changes, and alerts until detached.
-A new stream starts at the present; it does not replay every line from completed historical releases.
-Starting it clears the ordinary transcript and opens a focused live-activity page with timestamped,
-source-labelled output.
+`status` returns the fleet summary, agents, and projects. `events` follows releases, build output,
+state changes, agent connectivity, and alerts. A new stream starts at the current sequence. Detaching
+prints a cursor that can resume the stream:
+
+```text
+events --after 142
+```
+
+The server keeps the latest 8192 entries in memory. If the requested sequence is older, the workspace
+reports the gap and resumes from the oldest retained entry.
 
 ## Creation and guided input
 
-The input surface matches the size and sensitivity of the value:
+Input depends on the value:
 
 - Short values such as a new agent name stay in the command box with a labeled next-step prompt.
 - Existing resources such as projects, agents, and releases are selected from daemon-backed choices.
 - Secret values switch to masked entry and never enter command history.
 - Project YAML uses the multiline editor because it benefits from paste, line numbers, and validation.
 
-`deploy` does not have a `create` subcommand: it operates on an already loaded project. Create or edit
-the authoritative project YAML, run `project reload`, and then `deploy ` will offer that project.
+`project deploy` does not create configuration: it operates on an already loaded project. Use `project
+create PROJECT ENV` for a new project, or manage the same authoritative files with any external
+editor. Once loaded, `project deploy ` offers the project.
 
 ## Projects and YAML
 
 ```text
 project list
+project create api prod
 project show api-prod
 project edit api-prod
 project validate /etc/uruflow/projects/api/prod.yaml
@@ -84,6 +91,11 @@ project reload
 
 `project edit` temporarily opens the authoritative environment file in `$VISUAL`, then `$EDITOR`,
 falling back to `vi`. The workspace returns to the same page and reloads YAML when the editor exits.
+
+`project create api prod` opens the full-width project editor with a project, environment, and service
+template. It supports paste, scrolling, line numbers, automatic YAML indentation, `Tab` and
+`Shift+Tab`. Press `Ctrl+S` to format, validate, write both project files, and reload them. A validation
+error returns to the editor without losing the text.
 
 To keep the whole edit inside the workspace, use:
 
@@ -137,12 +149,20 @@ For guided enrollment, type `agent add NAME`. As soon as the name is present, th
 `runner`, `builder`, and `builder,runner`; selecting one completes the command. The result card prints
 the one-time agent initialization command and the server trust-root path.
 
+For container output, type `container logs ` and select a row. The choice fills `AGENT CONTAINER`,
+then offers recent output, fixed tail sizes, or live follow. Registry rows are marked `system` and
+project workloads are marked `service`. A full local log buffer pauses the producer instead of
+silently dropping lines.
+
 Deploy and rollback follow their process by default. Reattach to durable work later with `release
 follow`. Container logs stream over the existing agent connection; no extra SSH session is opened.
 
 `secret set` changes the prompt to masked entry. The value is never put in the command line,
-transcript, or history. Removing agents, stopping projects, deleting registry manifests, and removing
-secrets require an in-page confirmation.
+transcript, or history. Removing agents, stopping projects, deleting registry manifests, resolving
+alerts, and removing secrets require an in-page confirmation.
+
+Text received from agents, containers, projects, and backend errors is sanitized before rendering.
+Only ANSI styling produced by URUFLOW reaches the terminal.
 
 ## External lifecycle commands
 
@@ -167,5 +187,5 @@ Only process lifecycle and setup stay outside the workspace:
 | Agent local settings | `agent.yaml` |
 | Enrollment, releases, logs, metrics, alerts, and secrets | SQLite/runtime state |
 
-Files describe desired state; the database records observed state and history. The workspace is a
-controlled view over those systems, not another source of truth.
+Files describe desired state. The database records observed state and history. The workspace does not
+add another configuration source.

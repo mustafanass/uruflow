@@ -33,9 +33,6 @@ var _ link.Events = (*Pipeline)(nil)
 func (p *Pipeline) AgentConnected(agent *models.Agent) {}
 
 func (p *Pipeline) AgentDisconnected(agentID string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	releases, err := p.store.ListActiveReleases()
 	if err != nil {
 		return
@@ -45,26 +42,32 @@ func (p *Pipeline) AgentDisconnected(agentID string) {
 		if releases[index].Status.Done() {
 			continue
 		}
+		p.disconnectAgentFromRelease(releases[index].ID, agentID)
+	}
+}
 
-		release, err := p.store.GetRelease(releases[index].ID)
-		if err != nil {
-			continue
-		}
+func (p *Pipeline) disconnectAgentFromRelease(releaseID, agentID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-		if release.Builder == agentID && release.Status == models.StatusBuilding {
-			p.failRelease(release, "builder disconnected")
-			continue
-		}
+	release, err := p.store.GetRelease(releaseID)
+	if err != nil || release.Status.Done() {
+		return
+	}
 
-		for _, target := range release.Targets {
-			if target.AgentID == agentID && !target.Status.Done() {
-				if err := p.finishTarget(release.ID, agentID, target.AgentName, models.StatusFailed, "agent disconnected"); err != nil {
-					logger.Error("[PIPELINE] update disconnected target %s/%s: %v", release.ID, agentID, err)
-				}
+	if release.Builder == agentID && release.Status == models.StatusBuilding {
+		p.failRelease(release, "builder disconnected")
+		return
+	}
+
+	for _, target := range release.Targets {
+		if target.AgentID == agentID && !target.Status.Done() {
+			if err := p.finishTarget(release.ID, agentID, target.AgentName, models.StatusFailed, "agent disconnected"); err != nil {
+				logger.Error("[PIPELINE] update disconnected target %s/%s: %v", release.ID, agentID, err)
 			}
 		}
-		p.settle(release.ID)
 	}
+	p.settle(release.ID)
 }
 
 func (p *Pipeline) ContainerLog(agentID string, entry ufp.ContainerLog) {}
@@ -75,16 +78,19 @@ func (p *Pipeline) JobLog(agentID string, entry ufp.JobLog) {
 		logger.Warn("[PIPELINE] rejected %s log for %s from %s", entry.Stage, entry.JobID, agentID)
 		return
 	}
-	if err := p.store.AppendLog(&models.LogLine{
+	line := &models.LogLine{
 		ReleaseID: entry.JobID,
 		Stage:     entry.Stage,
 		AgentName: p.agentName(agentID),
 		Stream:    entry.Stream,
 		Line:      entry.Line,
 		Timestamp: time.Unix(entry.Timestamp, 0),
-	}); err != nil {
-		logger.Error("[PIPELINE] append log for %s: %v", entry.JobID, err)
 	}
+	if err := p.store.AppendLog(line); err != nil {
+		logger.Error("[PIPELINE] append log for %s: %v", entry.JobID, err)
+		return
+	}
+	p.publishLog(line)
 }
 
 func (p *Pipeline) JobStatus(agentID string, status ufp.JobStatus) {
@@ -152,6 +158,7 @@ func (p *Pipeline) onBuildStatus(release *models.Release, status ufp.JobStatus) 
 			logger.Error("[PIPELINE] update release %s: %v", release.ID, err)
 			return
 		}
+		p.publishRelease(release)
 
 		project := &release.Spec
 		if project.Name == "" {
@@ -274,7 +281,9 @@ func (p *Pipeline) completeRelease(release *models.Release, status models.Status
 	}
 	if err := p.store.UpdateRelease(release); err != nil {
 		logger.Error("[PIPELINE] complete release %s: %v", release.ID, err)
+		return
 	}
+	p.publishRelease(release)
 }
 
 func (p *Pipeline) agentName(agentID string) string {

@@ -309,7 +309,7 @@ LOG_LEVEL=info
 URUFLOW resolves the reference when a release is dispatched. The value is encrypted at rest, never
 written to a project file, never shown in the interface, and never appears in a release log. A
 reference to a secret that does not exist fails the deploy **before** any build starts. Use
-Use `secret list` and `secret remove <name>` in the workspace to manage stored names.
+`secret list` and `secret remove <name>` in the workspace to manage stored names.
 
 > Variables that are not secret references are stored in plaintext in `.env` files and in the
 > database, and are visible in the interface. See [Security](security.md#7-secrets).

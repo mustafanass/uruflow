@@ -22,7 +22,7 @@ The server runs as root: it writes `/etc/uruflow` and `/var/lib/uruflow`, and dr
 to host the registry. A builder needs root as well, to install the registry certificate and run
 `docker login`. A runner needs only access to the Docker socket.
 
-The server always reads `/etc/uruflow/config.yaml`. The agent's default path follows the user: root
+The server defaults to `/etc/uruflow/config.yaml`. The agent's default path follows the user: root
 uses `/etc/uruflow/agent.yaml`, anyone else `~/.config/uruflow/agent.yaml`. This guide runs everything
 with `sudo` so the paths match what it shows.
 
@@ -31,7 +31,7 @@ with `sudo` so the paths match what it shows.
 **[server]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/latest/download/uruflow-linux-amd64 -o uruflow
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-2.4.0-linux-amd64 -o uruflow
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 
 sudo uruflow init --advertise uruflow.internal
@@ -99,7 +99,7 @@ two-step copy in the next section instead.
 **[target]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/latest/download/uruflow-agent-linux-amd64 -o uruflow-agent
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-agent-2.4.0-linux-amd64 -o uruflow-agent
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 
 sudo uruflow-agent init \

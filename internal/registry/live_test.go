@@ -1,3 +1,5 @@
+//go:build live
+
 /*
  * Copyright (C) 2026 Mustafa Naseer (Mustafa Gaeed)
  *
@@ -22,6 +24,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -82,10 +85,11 @@ func liveRegistry(t *testing.T) *Registry {
 		CACert:       caPEM,
 	}
 
-	t.Cleanup(func() { client.Remove(context.Background(), ContainerName, true) })
-	client.Remove(context.Background(), ContainerName, true)
+	instance := New(options, client)
+	instance.containerName = fmt.Sprintf("uruflow-registry-live-%d", time.Now().UnixNano())
+	t.Cleanup(func() { client.Remove(context.Background(), instance.containerName, true) })
 
-	return New(options, client)
+	return instance
 }
 
 func TestLiveRegistryComesUpWithTLSAndAuth(t *testing.T) {

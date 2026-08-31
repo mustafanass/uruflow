@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -54,15 +55,83 @@ func (r *Registry) Health(ctx context.Context) error {
 }
 
 func (r *Registry) Repositories(ctx context.Context) ([]string, error) {
+	path := fmt.Sprintf("/v2/_catalog?n=%d", catalogPageSize)
+	seen := make(map[string]struct{})
+	unique := make(map[string]struct{})
+	var repositories []string
+	for path != "" {
+		if _, exists := seen[path]; exists {
+			return nil, fmt.Errorf("registry catalog pagination repeated %q", path)
+		}
+		seen[path] = struct{}{}
+		page, next, err := r.catalog(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		for _, repository := range page {
+			if _, exists := unique[repository]; exists {
+				continue
+			}
+			unique[repository] = struct{}{}
+			repositories = append(repositories, repository)
+		}
+		path = next
+	}
+
+	sort.Strings(repositories)
+	return repositories, nil
+}
+
+func (r *Registry) catalog(ctx context.Context, path string) ([]string, string, error) {
 	var catalog struct {
 		Repositories []string `json:"repositories"`
 	}
-	if err := r.decode(ctx, fmt.Sprintf("/v2/_catalog?n=%d", catalogPageSize), &catalog); err != nil {
-		return nil, err
+	response, err := r.call(ctx, http.MethodGet, path)
+	if err != nil {
+		return nil, "", err
 	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, response.Body)
+		return nil, "", fmt.Errorf("registry %s: %s", path, response.Status)
+	}
+	if err := json.NewDecoder(response.Body).Decode(&catalog); err != nil {
+		return nil, "", err
+	}
+	next, err := catalogNext(response.Header.Get("Link"))
+	if err != nil {
+		return nil, "", err
+	}
+	return catalog.Repositories, next, nil
+}
 
-	sort.Strings(catalog.Repositories)
-	return catalog.Repositories, nil
+func catalogNext(header string) (string, error) {
+	for _, value := range strings.Split(header, ",") {
+		parts := strings.Split(value, ";")
+		if len(parts) < 2 {
+			continue
+		}
+		next := false
+		for _, parameter := range parts[1:] {
+			if strings.EqualFold(strings.TrimSpace(parameter), `rel="next"`) {
+				next = true
+				break
+			}
+		}
+		if !next {
+			continue
+		}
+		target := strings.TrimSpace(parts[0])
+		if len(target) < 3 || target[0] != '<' || target[len(target)-1] != '>' {
+			return "", fmt.Errorf("registry catalog returned an invalid next link")
+		}
+		parsed, err := url.ParseRequestURI(target[1 : len(target)-1])
+		if err != nil || parsed.IsAbs() || parsed.Path != "/v2/_catalog" {
+			return "", fmt.Errorf("registry catalog returned an invalid next link")
+		}
+		return parsed.RequestURI(), nil
+	}
+	return "", nil
 }
 
 func (r *Registry) Tags(ctx context.Context, repository string) ([]string, error) {
@@ -183,17 +252,20 @@ func (r *Registry) call(ctx context.Context, method, path string) (*http.Respons
 }
 
 func (r *Registry) httpClient() (*http.Client, error) {
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM([]byte(r.options.CACert)) {
-		return nil, fmt.Errorf("registry: cannot trust the uruflow CA")
-	}
-
-	return &http.Client{
-		Timeout: apiTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
-		},
-	}, nil
+	r.clientOnce.Do(func() {
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM([]byte(r.options.CACert)) {
+			r.clientErr = fmt.Errorf("registry: cannot trust the uruflow CA")
+			return
+		}
+		r.client = &http.Client{
+			Timeout: apiTimeout,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+			},
+		}
+	})
+	return r.client, r.clientErr
 }
 
 func (r *Registry) RepositoryName(project string) string {
@@ -202,12 +274,4 @@ func (r *Registry) RepositoryName(project string) string {
 
 func (r *Registry) ImageRepository(project string) string {
 	return fmt.Sprintf("%s/%s", r.options.Address, r.RepositoryName(project))
-}
-
-func ShortDigest(digest string) string {
-	_, hash, found := strings.Cut(digest, ":")
-	if !found || len(hash) < 12 {
-		return digest
-	}
-	return hash[:12]
 }

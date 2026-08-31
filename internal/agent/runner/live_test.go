@@ -1,3 +1,5 @@
+//go:build live
+
 /*
  * Copyright (C) 2026 Mustafa Naseer (Mustafa Gaeed)
  *
@@ -28,12 +30,12 @@ import (
 )
 
 const (
-	liveGate    = "URUFLOW_DOCKER_TESTS"
-	liveImage   = "alpine:3.20"
-	liveProject = "livetest"
+	liveGate      = "URUFLOW_DOCKER_TESTS"
+	liveSeedImage = "alpine:3.20"
+	liveProject   = "livetest"
 )
 
-func liveRunner(t *testing.T) (*Runner, *docker.Client) {
+func liveRunner(t *testing.T) (*Runner, *docker.Client, string) {
 	t.Helper()
 
 	if os.Getenv(liveGate) == "" {
@@ -44,6 +46,15 @@ func liveRunner(t *testing.T) (*Runner, *docker.Client) {
 	if err != nil {
 		t.Skipf("docker unavailable: %v", err)
 	}
+	if !client.HasImage(context.Background(), liveSeedImage) {
+		if err := client.Pull(context.Background(), liveSeedImage, nil, nil); err != nil {
+			t.Fatalf("pull %s: %v", liveSeedImage, err)
+		}
+	}
+	image, err := client.ImageDigest(context.Background(), liveSeedImage)
+	if err != nil {
+		t.Fatalf("resolve %s digest: %v", liveSeedImage, err)
+	}
 
 	t.Cleanup(func() {
 		name := ContainerName(liveProject, "")
@@ -51,15 +62,15 @@ func liveRunner(t *testing.T) (*Runner, *docker.Client) {
 		client.Remove(context.Background(), name+PreviousSuffix, true)
 	})
 
-	return New(client, func() *docker.Auth { return nil }), client
+	return New(client, func() *docker.Auth { return nil }), client, image
 }
 
-func release(project, command string) ufp.ReleaseRequest {
+func release(project, command, image string) ufp.ReleaseRequest {
 	return ufp.ReleaseRequest{
 		JobID:   "job-" + command,
 		Project: project,
 		Services: []ufp.ServiceSpec{{
-			Image:   liveImage,
+			Image:   image,
 			Command: command,
 			Restart: "unless-stopped",
 		}},
@@ -67,13 +78,13 @@ func release(project, command string) ufp.ReleaseRequest {
 }
 
 func TestLiveFailedReleaseRestoresTheRunningContainer(t *testing.T) {
-	runner, client := liveRunner(t)
+	runner, client, image := liveRunner(t)
 	ctx := context.Background()
 	name := ContainerName(liveProject, "")
 
 	quiet := func(stream, line string) { t.Logf("  %s | %s", stream, line) }
 
-	if err := runner.Release(ctx, release(liveProject, "sleep 300"), quiet); err != nil {
+	if err := runner.Release(ctx, release(liveProject, "sleep 300", image), quiet); err != nil {
 		t.Fatalf("first release: %v", err)
 	}
 
@@ -87,7 +98,7 @@ func TestLiveFailedReleaseRestoresTheRunningContainer(t *testing.T) {
 	}
 	_ = before
 
-	err = runner.Release(ctx, release(liveProject, "exit 1"), quiet)
+	err = runner.Release(ctx, release(liveProject, "exit 1", image), quiet)
 	if err == nil {
 		t.Fatal("a release of a crashing image reported success")
 	}
@@ -107,18 +118,18 @@ func TestLiveFailedReleaseRestoresTheRunningContainer(t *testing.T) {
 }
 
 func TestLiveSuccessfulReleaseReplacesAndCleansUp(t *testing.T) {
-	runner, client := liveRunner(t)
+	runner, client, image := liveRunner(t)
 	ctx := context.Background()
 	name := ContainerName(liveProject, "")
 
 	quiet := func(stream, line string) {}
 
-	if err := runner.Release(ctx, release(liveProject, "sleep 300"), quiet); err != nil {
+	if err := runner.Release(ctx, release(liveProject, "sleep 300", image), quiet); err != nil {
 		t.Fatalf("first release: %v", err)
 	}
 	first, _ := client.Inspect(ctx, name)
 
-	if err := runner.Release(ctx, release(liveProject, "sleep 301"), quiet); err != nil {
+	if err := runner.Release(ctx, release(liveProject, "sleep 301", image), quiet); err != nil {
 		t.Fatalf("second release: %v", err)
 	}
 	second, _ := client.Inspect(ctx, name)
@@ -136,12 +147,12 @@ func TestLiveSuccessfulReleaseReplacesAndCleansUp(t *testing.T) {
 	}
 }
 
-func multiRelease(project string, commands map[string]string) ufp.ReleaseRequest {
+func multiRelease(project, image string, commands map[string]string) ufp.ReleaseRequest {
 	request := ufp.ReleaseRequest{JobID: "job-multi", Project: project}
 	for _, name := range []string{"app", "worker"} {
 		request.Services = append(request.Services, ufp.ServiceSpec{
 			Name:    name,
-			Image:   liveImage,
+			Image:   image,
 			Command: commands[name],
 			Restart: "unless-stopped",
 		})
@@ -150,7 +161,7 @@ func multiRelease(project string, commands map[string]string) ufp.ReleaseRequest
 }
 
 func TestLiveMultiServiceRestoresEveryServiceWhenOneFails(t *testing.T) {
-	runner, client := liveRunner(t)
+	runner, client, image := liveRunner(t)
 	ctx := context.Background()
 	quiet := func(stream, line string) { t.Logf("  %s | %s", stream, line) }
 
@@ -162,7 +173,7 @@ func TestLiveMultiServiceRestoresEveryServiceWhenOneFails(t *testing.T) {
 		}
 	})
 
-	good := multiRelease(liveProject, map[string]string{"app": "sleep 300", "worker": "sleep 300"})
+	good := multiRelease(liveProject, image, map[string]string{"app": "sleep 300", "worker": "sleep 300"})
 	if err := runner.Release(ctx, good, quiet); err != nil {
 		t.Fatalf("first multi-service release: %v", err)
 	}
@@ -177,7 +188,7 @@ func TestLiveMultiServiceRestoresEveryServiceWhenOneFails(t *testing.T) {
 		t.Fatalf("worker not running after first release: %+v", state)
 	}
 
-	bad := multiRelease(liveProject, map[string]string{"app": "sleep 300", "worker": "exit 1"})
+	bad := multiRelease(liveProject, image, map[string]string{"app": "sleep 300", "worker": "exit 1"})
 	bad.JobID = "job-multi-bad"
 	if err := runner.Release(ctx, bad, quiet); err == nil {
 		t.Fatal("a release whose second service crashes reported success")

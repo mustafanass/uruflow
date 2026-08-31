@@ -64,7 +64,7 @@ func (c *Client) Execute(ctx context.Context, args []string, input string, emit 
 		var response Response
 		if err := decoder.Decode(&response); err != nil {
 			if ctx.Err() != nil {
-				return nil
+				return ctx.Err()
 			}
 			return fmt.Errorf("control stream: %w", err)
 		}

@@ -131,7 +131,10 @@ func (w *Writer) Write(frameType FrameType, payload []byte) error {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	return w.write(frameType, payload)
+}
 
+func (w *Writer) write(frameType FrameType, payload []byte) error {
 	if _, err := w.buffer.Write(EncodeHeader(frameType, uint32(len(payload)))); err != nil {
 		return err
 	}
@@ -144,9 +147,15 @@ func (w *Writer) Write(frameType FrameType, payload []byte) error {
 }
 
 func (w *Writer) WriteWithTimeout(frameType FrameType, payload []byte, timeout time.Duration) error {
+	if len(payload) > MaxPayloadSize {
+		return ErrPayloadTooLarge
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if err := w.conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 		return err
 	}
 	defer w.conn.SetWriteDeadline(time.Time{})
-	return w.Write(frameType, payload)
+	return w.write(frameType, payload)
 }

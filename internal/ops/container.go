@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mustafanass/uruflow/internal/grammar"
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/ufp"
 )
@@ -33,6 +34,7 @@ type containerBridge struct {
 	agentID   string
 	container string
 	entries   chan ufp.ContainerLog
+	done      <-chan struct{}
 }
 
 func (b *containerBridge) AgentConnected(*models.Agent)    {}
@@ -45,7 +47,7 @@ func (b *containerBridge) ContainerLog(agentID string, entry ufp.ContainerLog) {
 	}
 	select {
 	case b.entries <- entry:
-	default:
+	case <-b.done:
 	}
 }
 
@@ -61,13 +63,13 @@ func (e *Engine) containers(ctx context.Context, args []string, emit Emit) error
 			if value, agentErr := e.server.Store().GetAgent(container.AgentID); agentErr == nil {
 				agent = value.Name
 			}
-			rows = append(rows, []string{agent, container.Project, container.Service, short(container.ID, 12),
+			rows = append(rows, []string{agent, container.Name, containerKind(container), container.Project, container.Service, short(container.ID, 12),
 				container.State, container.Health, fmt.Sprintf("%.0f%%", container.CPUPercent), bytes(container.MemoryUsage)})
 		}
-		return emit(Table("containers", []string{"AGENT", "PROJECT", "SERVICE", "ID", "STATE", "HEALTH", "CPU", "MEMORY"}, rows))
+		return emit(Table("containers", []string{"AGENT", "NAME", "TYPE", "PROJECT", "SERVICE", "ID", "STATE", "HEALTH", "CPU", "MEMORY"}, rows))
 	}
 	if args[0] != "logs" || len(args) < 3 {
-		return errors.New("usage: container list | container logs AGENT CONTAINER [--tail N] [--follow]")
+		return grammar.GroupUsageError("container")
 	}
 	agent, err := e.server.Store().GetAgentByName(args[1])
 	if err != nil {
@@ -89,34 +91,61 @@ func (e *Engine) containers(ctx context.Context, args []string, emit Emit) error
 			tail, index = parsed, index+1
 		}
 	}
-	bridge := &containerBridge{agentID: agent.ID, container: args[2], entries: make(chan ufp.ContainerLog, 512)}
+	done := make(chan struct{})
+	bridge := &containerBridge{agentID: agent.ID, container: args[2], entries: make(chan ufp.ContainerLog, 512), done: done}
 	e.server.Link().Subscribe(bridge)
-	defer e.server.Link().Unsubscribe(bridge)
 	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err = e.server.Link().Request(requestCtx, agent.ID, ufp.MethodLogsFollow, ufp.LogsFollow{ContainerID: args[2], Tail: tail})
-	cancel()
-	if err != nil {
-		return err
-	}
+	requestDone := make(chan error, 1)
+	go func() {
+		_, requestErr := e.server.Link().Request(requestCtx, agent.ID, ufp.MethodLogsFollow,
+			ufp.LogsFollow{ContainerID: args[2], Tail: tail})
+		requestDone <- requestErr
+	}()
+	defer cancel()
+	accepted := false
 	defer func() {
+		if !accepted {
+			return
+		}
 		stopCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
 		defer stop()
 		_, _ = e.server.Link().Request(stopCtx, agent.ID, ufp.MethodLogsStop, ufp.LogsStop{ContainerID: args[2]})
 	}()
+	defer func() {
+		close(done)
+		e.server.Link().Unsubscribe(bridge)
+	}()
 	quiet := time.NewTimer(750 * time.Millisecond)
+	if !quiet.Stop() {
+		<-quiet.C
+	}
 	defer quiet.Stop()
+	var quietSignal <-chan time.Time
+	resetQuiet := func() {
+		if !quiet.Stop() && quietSignal != nil {
+			select {
+			case <-quiet.C:
+			default:
+			}
+		}
+		quiet.Reset(750 * time.Millisecond)
+		quietSignal = quiet.C
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case entry := <-bridge.entries:
-			if !quiet.Stop() {
-				select {
-				case <-quiet.C:
-				default:
-				}
+		case requestErr := <-requestDone:
+			requestDone = nil
+			if requestErr != nil {
+				return requestErr
 			}
-			quiet.Reset(750 * time.Millisecond)
+			accepted = true
+			if quietSignal == nil {
+				resetQuiet()
+			}
+		case entry := <-bridge.entries:
+			resetQuiet()
 			level := "info"
 			if entry.Stream == ufp.StreamStderr {
 				level = "warning"
@@ -125,11 +154,22 @@ func (e *Engine) containers(ctx context.Context, args []string, emit Emit) error
 				Title: agent.Name, Message: entry.Line, Operation: args[2]}); err != nil {
 				return err
 			}
-		case <-quiet.C:
+		case <-quietSignal:
+			quietSignal = nil
+			if !accepted {
+				continue
+			}
 			if !follow {
 				return nil
 			}
-			quiet.Reset(750 * time.Millisecond)
+			resetQuiet()
 		}
 	}
+}
+
+func containerKind(container models.Container) string {
+	if container.Project != "" || container.Service != "" {
+		return "service"
+	}
+	return "system"
 }

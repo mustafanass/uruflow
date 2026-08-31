@@ -18,50 +18,30 @@
 
 package workbench
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/mustafanass/uruflow/internal/grammar"
+)
 
 type commandSpec struct {
 	Command   string
+	Display   string
 	Summary   string
 	NeedsArgs bool
 }
 
-var commandCatalog = []commandSpec{
-	{Command: "status", Summary: "Fleet health, agents and projects"},
-	{Command: "events", Summary: "Follow new activity across the fleet"},
-	{Command: "deploy", Summary: "Start and follow a project release", NeedsArgs: true},
-	{Command: "rollback", Summary: "Restore a project's previous release", NeedsArgs: true},
-	{Command: "logs", Summary: "Read or follow release output", NeedsArgs: true},
-	{Command: "stop", Summary: "Stop a project on every runner", NeedsArgs: true},
-	{Command: "agent list", Summary: "List enrolled agents"},
-	{Command: "agent show", Summary: "Inspect an agent", NeedsArgs: true},
-	{Command: "agent add", Summary: "Enrol a new agent", NeedsArgs: true},
-	{Command: "agent remove", Summary: "Remove an enrolled agent", NeedsArgs: true},
-	{Command: "project list", Summary: "List YAML-owned projects"},
-	{Command: "project show", Summary: "Inspect a project and its services", NeedsArgs: true},
-	{Command: "project edit", Summary: "Open authoritative YAML", NeedsArgs: true},
-	{Command: "project validate", Summary: "Validate environment YAML", NeedsArgs: true},
-	{Command: "project apply", Summary: "Validate and atomically apply YAML", NeedsArgs: true},
-	{Command: "project reload", Summary: "Reload project files"},
-	{Command: "project deploy", Summary: "Start and follow a release", NeedsArgs: true},
-	{Command: "project rollback", Summary: "Restore the previous release", NeedsArgs: true},
-	{Command: "project stop", Summary: "Stop a project on every runner", NeedsArgs: true},
-	{Command: "release list", Summary: "List recent releases"},
-	{Command: "release show", Summary: "Inspect a release", NeedsArgs: true},
-	{Command: "release logs", Summary: "Read or follow release output", NeedsArgs: true},
-	{Command: "release follow", Summary: "Attach to a release", NeedsArgs: true},
-	{Command: "container list", Summary: "List managed containers"},
-	{Command: "container logs", Summary: "Stream application output", NeedsArgs: true},
-	{Command: "registry list", Summary: "List stored image manifests"},
-	{Command: "registry remove", Summary: "Delete an image manifest", NeedsArgs: true},
-	{Command: "alert list", Summary: "List active alerts"},
-	{Command: "alert resolve", Summary: "Resolve an alert", NeedsArgs: true},
-	{Command: "secret list", Summary: "List encrypted secret names"},
-	{Command: "secret set", Summary: "Store a value using masked input", NeedsArgs: true},
-	{Command: "secret remove", Summary: "Remove an encrypted secret", NeedsArgs: true},
-	{Command: "help", Summary: "Explain every workspace command"},
-	{Command: "clear", Summary: "Clear the response transcript"},
-	{Command: "exit", Summary: "Close the workspace"},
+var commandCatalog = buildCommandCatalog()
+
+func buildCommandCatalog() []commandSpec {
+	commands := grammar.Visible()
+	result := make([]commandSpec, 0, len(commands))
+	for _, command := range commands {
+		result = append(result, commandSpec{
+			Command: grammar.Path(command), Summary: command.Summary, NeedsArgs: len(command.Arguments) > 0,
+		})
+	}
+	return result
 }
 
 func matchingCommands(value string, limit int) []commandSpec {
@@ -69,10 +49,6 @@ func matchingCommands(value string, limit int) []commandSpec {
 	raw := strings.TrimSpace(value)
 	palette := strings.HasPrefix(raw, "/")
 	query := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(raw, "/")))
-	if query == "show" {
-		query = ""
-		palette = true
-	}
 	if query == "" && !palette {
 		return nil
 	}
@@ -84,8 +60,6 @@ func matchingCommands(value string, limit int) []commandSpec {
 		}
 	}
 
-	// Once arguments begin, command discovery has done its job and gets out
-	// of the way of normal input.
 	for _, item := range commandCatalog {
 		if item.NeedsArgs && strings.HasPrefix(query, item.Command+" ") {
 			return nil

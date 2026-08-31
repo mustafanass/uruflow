@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/api"
+	"github.com/mustafanass/uruflow/internal/grammar"
 	"github.com/mustafanass/uruflow/internal/models"
 )
 
@@ -41,69 +42,44 @@ func (e *Engine) Execute(ctx context.Context, args []string, input string, emit 
 	if emit == nil {
 		return errors.New("event receiver is required")
 	}
-	if len(args) == 0 || args[0] == "help" {
+	command, err := grammar.Resolve(args)
+	if err != nil {
+		return err
+	}
+	if grammar.Path(command) == "help" {
 		return emit(e.help())
 	}
 	switch args[0] {
 	case "status":
 		return e.status(ctx, emit)
-	case "agent", "agents":
+	case "agent":
 		return e.agents(args[1:], emit)
-	case "project", "projects":
+	case "project":
 		return e.projects(ctx, args[1:], input, emit)
-	case "release", "releases":
+	case "release":
 		return e.releases(ctx, args[1:], emit)
-	case "container", "containers":
+	case "container":
 		return e.containers(ctx, args[1:], emit)
 	case "events":
-		return e.events(ctx, emit)
-	case "alert", "alerts":
+		return e.events(ctx, args[1:], emit)
+	case "alert":
 		return e.alerts(args[1:], emit)
 	case "registry":
 		return e.registry(ctx, args[1:], emit)
-	case "secret", "secrets":
+	case "secret":
 		return e.secrets(args[1:], input, emit)
 	default:
-		return fmt.Errorf("unknown command %q; run help", args[0])
+		return fmt.Errorf("command %q is handled by the workspace", grammar.Path(command))
 	}
 }
 
 func (e *Engine) help() Event {
-	return Table("commands", []string{"COMMAND", "PURPOSE"}, [][]string{
-		{"status", "fleet health and active work"},
-		{"events", "follow new fleet activity"},
-		{"deploy NAME", "short form of project deploy"},
-		{"rollback NAME", "short form of project rollback"},
-		{"logs ID [--follow]", "short form of release logs"},
-		{"agent list", "list enrolled agents"},
-		{"agent show NAME", "inspect resources and containers"},
-		{"agent add NAME [--roles …]", "enrol and show one-time credentials"},
-		{"agent remove NAME", "remove an enrolled agent"},
-		{"project list", "list YAML-owned projects"},
-		{"project show NAME", "inspect a project and its services"},
-		{"project edit NAME", "open authoritative environment YAML"},
-		{"project validate FILE", "validate environment YAML"},
-		{"project apply PROJECT ENV FILE", "validate, save and reload YAML"},
-		{"project reload", "reload authoritative YAML files"},
-		{"project deploy NAME [--no-follow]", "start and follow a release"},
-		{"project rollback NAME [--no-follow]", "roll back and follow"},
-		{"project stop NAME", "stop project containers"},
-		{"release list [--limit N]", "list recent releases"},
-		{"release show ID", "inspect release state and targets"},
-		{"release logs ID [--follow]", "read or follow release output"},
-		{"release follow ID", "attach to a release"},
-		{"container list", "list managed containers"},
-		{"container logs AGENT ID [--follow]", "stream application output"},
-		{"registry list", "registry catalog"},
-		{"registry remove REPOSITORY TAG", "delete an image manifest"},
-		{"alert list", "list active operational alerts"},
-		{"alert resolve ID", "resolve an alert"},
-		{"secret list", "list encrypted secret names"},
-		{"secret set NAME", "store a value using masked input"},
-		{"secret remove NAME", "remove an encrypted secret"},
-		{"clear", "clear the workspace transcript"},
-		{"exit", "close the workspace"},
-	})
+	commands := grammar.Visible()
+	rows := make([][]string, 0, len(commands))
+	for _, command := range commands {
+		rows = append(rows, []string{grammar.Usage(command), command.Summary})
+	}
+	return Table("commands", []string{"COMMAND", "PURPOSE"}, rows)
 }
 
 func (e *Engine) status(ctx context.Context, emit Emit) error {

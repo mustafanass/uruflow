@@ -70,7 +70,7 @@ produces one of each per service. See [Projects](projects.md).
 An environment is a name such as `dev`, `stg` or `prod`. **URUFLOW has no environment type.** A file
 called `projects/api/dev.yaml` produces an ordinary project named `api-dev`.
 
-This is a deliberate design decision. Environments exist in the file format, where they remove
+Environments exist in the file format, where they remove
 duplication, and are expanded into flat projects before anything else sees them. The pipeline, the
 runner, the registry and the release history never learn the word.
 
