@@ -94,6 +94,41 @@ func (l *Loader) Write(draft Draft) error {
 	return os.WriteFile(variablesPath, []byte(draft.RawEnv), secretMode)
 }
 
+func (l *Loader) Create(draft Draft) error {
+	l.createMu.Lock()
+	defer l.createMu.Unlock()
+
+	if draft.Project == "" || draft.Env == "" {
+		return fmt.Errorf("project and environment names are required")
+	}
+	if err := validName(draft.Project); err != nil {
+		return err
+	}
+	if err := validName(draft.Env); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(l.dir, directoryMode); err != nil {
+		return err
+	}
+	destination := filepath.Join(l.dir, draft.Project)
+	if _, err := os.Stat(destination); err == nil {
+		return fmt.Errorf("project %q already exists", draft.Project)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	temporaryRoot, err := os.MkdirTemp(filepath.Dir(l.dir), ".uruflow-project-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(temporaryRoot)
+	temporaryLoader := &Loader{dir: temporaryRoot, defaults: l.defaults, resolve: l.resolve}
+	if err := temporaryLoader.Write(draft); err != nil {
+		return err
+	}
+	return os.Rename(filepath.Join(temporaryRoot, draft.Project), destination)
+}
+
 func (l *Loader) Remove(project, env string) error {
 	definitionPath, environmentPath, variablesPath := l.Paths(project, env)
 
@@ -111,10 +146,6 @@ func (l *Loader) Remove(project, env string) error {
 		}
 	}
 	return os.RemoveAll(dir)
-}
-
-func EnvPathFor(source string) string {
-	return strings.TrimSuffix(source, YAMLSuffix) + EnvSuffix
 }
 
 func mergeDefinition(path string, incoming Definition) Definition {

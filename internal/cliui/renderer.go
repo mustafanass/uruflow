@@ -50,15 +50,8 @@ func New(writer io.Writer, color bool) *Renderer {
 	return &Renderer{Writer: writer, Color: color, Width: width}
 }
 
-func ColorEnabled(writer io.Writer, forcedOff bool) bool {
-	if forcedOff || os.Getenv("NO_COLOR") != "" {
-		return false
-	}
-	file, ok := writer.(*os.File)
-	return ok && term.IsTerminal(file.Fd())
-}
-
 func (r *Renderer) Render(event ops.Event) error {
+	event = safeEvent(event)
 	var output string
 	switch event.Type {
 	case ops.EventTable:
@@ -83,18 +76,18 @@ func (r *Renderer) RenderString(event ops.Event) string {
 }
 
 func (r *Renderer) message(event ops.Event) string {
-	symbol, color := "•", "36"
+	symbol, color := "•", ANSIInformation
 	switch event.Level {
 	case "success":
-		symbol, color = "✔", "32"
+		symbol, color = "✔", ANSISuccess
 	case "warning":
-		symbol, color = "▲", "33"
+		symbol, color = "▲", ANSIWarning
 	case "error":
-		symbol, color = "✘", "31"
+		symbol, color = "✘", ANSIError
 	}
 	prefix := ""
 	if event.Operation != "" {
-		prefix = r.paint("90", event.Time.Local().Format("15:04:05")) + "  "
+		prefix = r.paint(ANSIMuted, event.Time.Local().Format("15:04:05")) + "  "
 	}
 	return prefix + r.paint(color, symbol) + " " + event.Message
 }
@@ -105,13 +98,13 @@ func (r *Renderer) log(event ops.Event) string {
 	if source == "" {
 		source = "server"
 	}
-	color := "36"
+	color := ANSIInformation
 	if event.Level == "warning" {
-		color = "33"
+		color = ANSIWarning
 	} else if event.Level == "error" {
-		color = "31"
+		color = ANSIError
 	}
-	return r.paint("90", stamp) + "  " + r.paint(color, pad(truncate(source, 14), 14)) + "  " + event.Message
+	return r.paint(ANSIMuted, stamp) + "  " + r.paint(color, pad(truncate(source, 14), 14)) + "  " + event.Message
 }
 
 func (r *Renderer) result(event ops.Event) string {
@@ -147,7 +140,7 @@ func (r *Renderer) agentEnrollment(values map[string]any) string {
 	name := fmt.Sprint(values["name"])
 	roles := fmt.Sprint(values["roles"])
 	rows := []string{
-		name + "  " + r.paint("32", strings.ToUpper(roles)),
+		name + "  " + r.paint(ANSISuccess, strings.ToUpper(roles)),
 		"",
 		"Run once on the target:",
 		"  uruflow-agent init \\",
@@ -159,7 +152,7 @@ func (r *Renderer) agentEnrollment(values map[string]any) string {
 		"Trust root on the server:",
 		"  " + fmt.Sprint(values["ca_certificate"]),
 		"Copy it to the agent CA path before starting the service.",
-		r.paint("33", "The key is only available in this enrollment response."),
+		r.paint(ANSIWarning, "The key is only available in this enrollment response."),
 	}
 	return r.panel("agent enrolled", rows)
 }
@@ -178,12 +171,11 @@ func (r *Renderer) panel(title string, rows []string) string {
 	width := max(16, r.Width)
 	inner := width - 2
 	titleText := " " + truncate(strings.ToUpper(title), max(1, inner-2)) + " "
-	top := "╭" + titleText + strings.Repeat("─", max(0, inner-displayWidth(titleText))) + "╮"
-	lines := []string{r.paint("36", top)}
+	lines := []string{r.paint(ANSIBorder, "╭") + r.paint(ANSIAccentBold, titleText) + r.paint(ANSIBorder, strings.Repeat("─", max(0, inner-displayWidth(titleText)))+"╮")}
 	for _, row := range rows {
-		lines = append(lines, r.paint("36", "│")+" "+pad(truncate(row, inner-2), inner-2)+" "+r.paint("36", "│"))
+		lines = append(lines, r.paint(ANSIBorder, "│")+" "+pad(truncate(row, inner-2), inner-2)+" "+r.paint(ANSIBorder, "│"))
 	}
-	lines = append(lines, r.paint("36", "╰"+strings.Repeat("─", inner)+"╯"))
+	lines = append(lines, r.paint(ANSIBorder, "╰"+strings.Repeat("─", inner)+"╯"))
 	return strings.Join(lines, "\n")
 }
 
@@ -228,11 +220,11 @@ func (r *Renderer) table(title string, columns []string, rows [][]string) string
 			}
 			value = pad(truncate(value, width), width)
 			if heading {
-				value = r.paint("90", value)
+				value = r.paint(ANSIAccentBold, value)
 			} else if strings.EqualFold(value, pad("online", width)) || strings.EqualFold(value, pad("succeeded", width)) || strings.EqualFold(value, pad("healthy", width)) {
-				value = r.paint("32", value)
+				value = r.paint(ANSISuccess, value)
 			} else if strings.EqualFold(value, pad("failed", width)) || strings.EqualFold(value, pad("offline", width)) {
-				value = r.paint("31", value)
+				value = r.paint(ANSIError, value)
 			}
 			cells[index] = value
 		}
@@ -240,7 +232,7 @@ func (r *Renderer) table(title string, columns []string, rows [][]string) string
 	}
 	content := []string{line(columns, true)}
 	if len(rows) == 0 {
-		content = append(content, r.paint("90", center("no records", tableWidth(widths))))
+		content = append(content, r.paint(ANSIMuted, center("no records", tableWidth(widths))))
 	} else {
 		for _, row := range rows {
 			content = append(content, line(row, false))
@@ -250,10 +242,7 @@ func (r *Renderer) table(title string, columns []string, rows [][]string) string
 }
 
 func (r *Renderer) paint(code, value string) string {
-	if !r.Color {
-		return value
-	}
-	return "\x1b[" + code + "m" + value + "\x1b[0m"
+	return Paint(r.Color, code, value)
 }
 
 func truncate(value string, width int) string {
@@ -313,7 +302,7 @@ func center(value string, width int) string {
 
 func Header(writer io.Writer, color bool, state string) {
 	renderer := New(writer, color)
-	brand := renderer.paint("38;5;43", "◆ URUFLOW")
-	status := renderer.paint("32", "● "+state)
-	fmt.Fprintf(writer, "%s  %s  %s\n", brand, renderer.paint("90", time.Now().Format("2006-01-02 15:04")), status)
+	brand := Wordmark(color)
+	status := renderer.paint(ANSISuccess, "● "+state)
+	fmt.Fprintf(writer, "%s  %s  %s\n", brand, renderer.paint(ANSIMuted, time.Now().Format("2006-01-02 15:04")), status)
 }

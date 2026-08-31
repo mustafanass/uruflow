@@ -21,8 +21,10 @@ package registry
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/docker"
@@ -57,12 +59,16 @@ type Options struct {
 }
 
 type Registry struct {
-	options Options
-	docker  *docker.Client
+	options       Options
+	docker        *docker.Client
+	containerName string
+	clientOnce    sync.Once
+	client        *http.Client
+	clientErr     error
 }
 
 func New(options Options, engine *docker.Client) *Registry {
-	return &Registry{options: options, docker: engine}
+	return &Registry{options: options, docker: engine, containerName: ContainerName}
 }
 
 func (r *Registry) Options() Options { return r.options }
@@ -81,7 +87,7 @@ func (r *Registry) Ensure(ctx context.Context, onProgress func(string)) error {
 	case stateRunning:
 		return r.waitHealthy(ctx)
 	case stateStopped:
-		if err := r.docker.Start(ctx, ContainerName); err != nil {
+		if err := r.docker.Start(ctx, r.containerName); err != nil {
 			return fmt.Errorf("start registry: %w", err)
 		}
 		return r.waitHealthy(ctx)
@@ -100,12 +106,12 @@ func (r *Registry) Ensure(ctx context.Context, onProgress func(string)) error {
 }
 
 func (r *Registry) Stop(ctx context.Context) error {
-	return r.docker.Stop(ctx, ContainerName, stopTimeout)
+	return r.docker.Stop(ctx, r.containerName, stopTimeout)
 }
 
 func (r *Registry) spec() docker.Spec {
 	return docker.Spec{
-		Name:  ContainerName,
+		Name:  r.containerName,
 		Image: r.options.Image,
 		Env: map[string]string{
 			"REGISTRY_HTTP_ADDR":              fmt.Sprintf("0.0.0.0:%d", internalPort),
@@ -146,7 +152,7 @@ func (r *Registry) state(ctx context.Context) (containerState, error) {
 	}
 
 	for _, container := range containers {
-		if container.Name != ContainerName {
+		if container.Name != r.containerName {
 			continue
 		}
 		if container.State == docker.StateRunning {

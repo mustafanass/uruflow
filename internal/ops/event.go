@@ -29,6 +29,7 @@ const (
 
 type Event struct {
 	Type      string     `json:"type"`
+	Sequence  uint64     `json:"sequence,omitempty"`
 	Time      time.Time  `json:"time,omitempty"`
 	Level     string     `json:"level,omitempty"`
 	Operation string     `json:"operation,omitempty"`

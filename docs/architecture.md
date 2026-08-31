@@ -34,6 +34,7 @@ Two properties define the system:
 | `internal/storage` | Persistence contract and SQLite implementation | The database schema |
 | `internal/agent` | Agent daemon, builder, runner, metrics | Execution on a target machine |
 | `internal/api` | Composition root, HTTP webhooks, project reload | Wiring |
+| `internal/grammar` | Canonical workspace command schema | Syntax, help, validation and interaction metadata |
 | `internal/ops` | Shared operational command engine | Typed command events |
 | `internal/control` | Root-only local command transport | Unix socket and JSON event stream |
 | `internal/cliui` | Human-readable operation output | Tables, panels, color and logs |
@@ -41,13 +42,17 @@ Two properties define the system:
 
 ### Dependency Rules
 
-`internal/ufp` depends on nothing else in the tree. This is deliberate: it defines the contract both
+`internal/ufp` depends on nothing else in the tree. It defines the contract both
 sides implement, and a dependency from the protocol onto server or agent internals would make the two
 sides impossible to evolve separately. Adding an import there should be treated as a design change.
 
 `internal/ops` reads through `internal/api`. The workbench consumes its typed event stream through
 `internal/control`; presentation does not own pipeline behavior. Operational commands exist inside
 that one interface instead of being duplicated as external shell subcommands.
+
+`internal/grammar` is the single command contract shared by `internal/ops` and `internal/workbench`.
+Adding or changing a workspace command happens there once; help rows, usage errors, command discovery,
+argument stages, resource completion, confirmation, and input mode all consume the same definition.
 
 The server process is always the owner of the database, listeners, live agent sessions and command
 actions. Clients send requests over the root-only local socket and receive JSON events. Detaching
@@ -151,7 +156,7 @@ Project files are expanded into ordinary projects at load time and written to th
 `source` column records their authoritative environment path; there is no second editable project
 model in the interface.
 
-This is the key simplification: environments are a *loader* concern. `projects/api/dev.yaml` and
+Environments are a loader concern. `projects/api/dev.yaml` and
 `projects/api/prod.yaml` become `api-dev` and `api-prod`, and the pipeline sees two ordinary projects.
 Adding environments therefore required no change to the pipeline, runner, registry or schema beyond
 two descriptive columns.
@@ -211,4 +216,5 @@ Constraints that shaped the implementation and should be preserved:
 | New field in a project file | `internal/projects` schema, then `internal/models` |
 | Different container runtime behaviour | `internal/agent/runner` and `internal/docker` |
 | New persisted fact | `internal/storage` contract, then `internal/storage/sqlite` |
+| New workspace command or argument | `internal/grammar`, then its `internal/ops` handler |
 | New workspace behavior or key binding | `internal/workbench` only |

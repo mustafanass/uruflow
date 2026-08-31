@@ -1,3 +1,5 @@
+//go:build live
+
 /*
  * Copyright (C) 2026 Mustafa Naseer (Mustafa Gaeed)
  *

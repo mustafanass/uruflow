@@ -11,11 +11,11 @@ URUFLOW keeps each fact in exactly one place.
 | :--- | :--- |
 | Server, registry and webhook settings | `/etc/uruflow/config.yaml` |
 | Shared environment variables | `/etc/uruflow/defaults.yaml` |
-| Project definitions | `/etc/uruflow/projects/`, or the database |
+| Project definitions | `/etc/uruflow/projects/` |
 | Agent identities and keys | The database, and each agent's own config |
 | Agent settings | `/etc/uruflow/agent.yaml` on the target machine |
 
-Agents and projects are deliberately **not** in `config.yaml`.
+Agents and projects are not stored in `config.yaml`.
 
 ## 2. Server — `config.yaml`
 

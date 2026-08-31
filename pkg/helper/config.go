@@ -34,7 +34,6 @@ func GenerateToken() string {
 
 func GenerateID() string {
 	return randomHex(8)
-
 }
 
 func randomHex(size int) string {

@@ -241,19 +241,3 @@ func ParseVolumes(entries []string) ([]Volume, error) {
 	}
 	return volumes, nil
 }
-
-func formatVolume(volume Volume) string {
-	entry := volume.Source + ":" + volume.Target
-	if volume.ReadOnly {
-		entry += ":" + readOnlyFlag
-	}
-	return entry
-}
-
-func FormatVolumes(volumes []Volume) []string {
-	entries := make([]string, 0, len(volumes))
-	for _, volume := range volumes {
-		entries = append(entries, formatVolume(volume))
-	}
-	return entries
-}

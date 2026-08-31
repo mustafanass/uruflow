@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mustafanass/uruflow/internal/activity"
 	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/logic"
 	"github.com/mustafanass/uruflow/internal/models"
@@ -49,6 +50,7 @@ type Server struct {
 	cfg      *config.Config
 	store    storage.Store
 	registry ufp.RegistryConfig
+	activity *activity.Feed
 
 	listener net.Listener
 	ctx      context.Context
@@ -76,6 +78,10 @@ func (s *Server) SetRegistry(registry ufp.RegistryConfig) {
 	s.mu.Lock()
 	s.registry = registry
 	s.mu.Unlock()
+}
+
+func (s *Server) SetActivity(feed *activity.Feed) {
+	s.activity = feed
 }
 
 func (s *Server) Subscribe(events Events) {
@@ -303,6 +309,8 @@ func (s *Server) markReady(session *Session) error {
 		}
 	}
 	s.notify(func(events Events) { events.AgentConnected(agent) })
+	s.publish(activity.Entry{Kind: activity.KindMessage, Level: "success", Source: agent.Name,
+		Message: agent.Name + " · agent online"})
 	logger.Info("[LINK] agent %s ready from %s roles=%v", session.identity.Name, session.host, session.identity.Roles)
 	return nil
 }
@@ -327,8 +335,16 @@ func (s *Server) unregister(session *Session) {
 	s.store.SetAgentStatus(agentID, models.AgentOffline)
 	s.raiseAlert(logic.CheckAgentOffline(agentID, session.identity.Name))
 	s.notify(func(events Events) { events.AgentDisconnected(agentID) })
+	s.publish(activity.Entry{Kind: activity.KindMessage, Level: "warning", Source: session.identity.Name,
+		Message: session.identity.Name + " · agent offline"})
 
 	logger.Warn("[LINK] agent %s disconnected", session.identity.Name)
+}
+
+func (s *Server) publish(entry activity.Entry) {
+	if s.activity != nil {
+		s.activity.Publish(entry)
+	}
 }
 
 func (s *Server) Revoke(agentID string) {

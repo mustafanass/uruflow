@@ -22,7 +22,10 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestHeaderRoundTrip(t *testing.T) {
@@ -176,5 +179,64 @@ func TestHandshakeRejectsRolesOutsideEnrollment(t *testing.T) {
 	hello := Hello{AgentID: "a1", Roles: []Role{RoleBuilder, RoleRunner}}
 	if _, _, err := Dial(client, hello, "key"); err == nil {
 		t.Fatal("expected the handshake to reject roles outside enrollment")
+	}
+}
+
+type deadlineConn struct {
+	started   chan struct{}
+	release   chan struct{}
+	once      sync.Once
+	deadlines atomic.Int32
+}
+
+func (c *deadlineConn) Read([]byte) (int, error)        { return 0, net.ErrClosed }
+func (c *deadlineConn) Close() error                    { return nil }
+func (c *deadlineConn) LocalAddr() net.Addr             { return testAddr("local") }
+func (c *deadlineConn) RemoteAddr() net.Addr            { return testAddr("remote") }
+func (c *deadlineConn) SetDeadline(time.Time) error     { return nil }
+func (c *deadlineConn) SetReadDeadline(time.Time) error { return nil }
+func (c *deadlineConn) Write(value []byte) (int, error) {
+	c.once.Do(func() { close(c.started) })
+	<-c.release
+	return len(value), nil
+}
+func (c *deadlineConn) SetWriteDeadline(deadline time.Time) error {
+	if !deadline.IsZero() {
+		c.deadlines.Add(1)
+	}
+	return nil
+}
+
+type testAddr string
+
+func (a testAddr) Network() string { return string(a) }
+func (a testAddr) String() string  { return string(a) }
+
+func TestWriteDeadlineIsSerializedWithFrame(t *testing.T) {
+	connection := &deadlineConn{started: make(chan struct{}), release: make(chan struct{})}
+	writer := NewWriter(connection)
+	first := make(chan error, 1)
+	second := make(chan error, 1)
+	go func() { first <- writer.WriteWithTimeout(FrameEvent, []byte("first"), time.Second) }()
+	<-connection.started
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		second <- writer.WriteWithTimeout(FrameEvent, []byte("second"), time.Second)
+	}()
+	<-started
+	time.Sleep(20 * time.Millisecond)
+	if got := connection.deadlines.Load(); got != 1 {
+		t.Fatalf("%d write deadlines were active before the first frame completed", got)
+	}
+	close(connection.release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	if got := connection.deadlines.Load(); got != 2 {
+		t.Fatalf("deadline calls = %d", got)
 	}
 }

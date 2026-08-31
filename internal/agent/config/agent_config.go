@@ -179,14 +179,6 @@ func (c *Config) WorkDir() string {
 	return filepath.Join(c.DataDir, "sources")
 }
 
-func Exists(path string) bool {
-	if path == "" {
-		path = DefaultConfigPath
-	}
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 type Error struct {
 	Path string
 	Err  error

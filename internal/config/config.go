@@ -37,7 +37,6 @@ const (
 	DefaultHTTPPort   = 9000
 	DefaultRegistry   = 5000
 	DefaultNamespace  = "uruflow"
-	DefaultRegistryID = "uruflow-registry"
 	RegistryImage     = "registry:2"
 	DatabaseFile      = "uruflow.db"
 	LogFile           = "uruflow.log"
@@ -80,6 +79,13 @@ type WebhookConfig struct {
 }
 
 func Default() *Config {
+	cfg := defaults()
+	cfg.Registry.Password = helper.GenerateToken()
+	cfg.Webhook.Secret = helper.GenerateSecret()
+	return cfg
+}
+
+func defaults() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Host:     "0.0.0.0",
@@ -91,14 +97,12 @@ func Default() *Config {
 			Port:      DefaultRegistry,
 			Namespace: DefaultNamespace,
 			Username:  DefaultNamespace,
-			Password:  helper.GenerateToken(),
 			Image:     RegistryImage,
 			Socket:    "/var/run/docker.sock",
 		},
 		Webhook: WebhookConfig{
-			Path:   "/webhook",
-			Secret: helper.GenerateSecret(),
-			TLS:    true,
+			Path: "/webhook",
+			TLS:  true,
 		},
 	}
 }
@@ -109,7 +113,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	cfg := Default()
+	cfg := defaults()
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
@@ -280,7 +284,7 @@ func (c *RegistryConfig) Repository(project string) string {
 }
 
 func (c *Config) normalize() {
-	base := Default()
+	base := defaults()
 	if c.Server.Host == "" {
 		c.Server.Host = base.Server.Host
 	}

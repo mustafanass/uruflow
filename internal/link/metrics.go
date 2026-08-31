@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mustafanass/uruflow/internal/activity"
 	"github.com/mustafanass/uruflow/internal/logic"
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/ufp"
@@ -93,7 +94,9 @@ func (s *Server) evaluateAlerts(identity *ufp.Identity, metrics ufp.Metrics, con
 			delete(open, alert.Message)
 			return
 		}
-		s.store.CreateAlert(alert)
+		if err := s.store.CreateAlert(alert); err == nil {
+			s.publishAlert(alert)
+		}
 	}
 
 	raise(logic.CheckResource(identity.AgentID, identity.Name, logic.KindCPU, metrics.System.CPUPercent))
@@ -178,5 +181,19 @@ func (s *Server) raiseAlert(alert *models.Alert) {
 			}
 		}
 	}
-	s.store.CreateAlert(alert)
+	if err := s.store.CreateAlert(alert); err == nil {
+		s.publishAlert(alert)
+	}
+}
+
+func (s *Server) publishAlert(alert *models.Alert) {
+	if alert == nil {
+		return
+	}
+	level := "warning"
+	if alert.Severity == models.SeverityCritical {
+		level = "error"
+	}
+	s.publish(activity.Entry{Kind: activity.KindMessage, Time: alert.CreatedAt, Level: level,
+		Operation: alert.ID, Source: alert.AgentName, Message: alert.AgentName + " · " + alert.Message})
 }

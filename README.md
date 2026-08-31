@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.3.1-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.4.0-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
   <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp-F5A524?style=flat-square" alt="ufp protocol"></a>
@@ -68,7 +68,7 @@ the production project schema, see [Native Build Model](docs/native-build-model.
 
 ## Installation
 
-Latest release: **v2.3.1** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
+Latest release: **v2.4.0** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
 
 There are **two different binaries and they are not interchangeable** — installing the wrong one on a
 machine is the most common setup mistake:
@@ -89,17 +89,19 @@ uname -m      # x86_64 -> amd64      aarch64 / arm64 -> arm64
 **linux/amd64**
 
 ```bash
-curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-2.3.1-linux-amd64
-echo "cdb4c2d92101986e281be17e4c9721b6ebc4b88a6431ce61b8c158622e31e3f0  uruflow" | sha256sum -c -
-chmod +x uruflow && sudo mv uruflow /usr/local/bin/
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-2.4.0-linux-amd64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt --ignore-missing
+chmod +x uruflow-2.4.0-linux-amd64 && sudo mv uruflow-2.4.0-linux-amd64 /usr/local/bin/uruflow
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -o uruflow https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-2.3.1-linux-arm64
-echo "632575ee7f0943e5368c698a7f65c3b34f55ad67055018ff28e95eed44d38c61  uruflow" | sha256sum -c -
-chmod +x uruflow && sudo mv uruflow /usr/local/bin/
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-2.4.0-linux-arm64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt --ignore-missing
+chmod +x uruflow-2.4.0-linux-arm64 && sudo mv uruflow-2.4.0-linux-arm64 /usr/local/bin/uruflow
 ```
 
 ### Agent — `uruflow-agent`
@@ -107,29 +109,24 @@ chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 **linux/amd64**
 
 ```bash
-curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-agent-2.3.1-linux-amd64
-echo "ee215f153d6b2c009fa3dee3ad074b0186f82c008400f6d2bf394dfb062e95b3  uruflow-agent" | sha256sum -c -
-chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-agent-2.4.0-linux-amd64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt --ignore-missing
+chmod +x uruflow-agent-2.4.0-linux-amd64 && sudo mv uruflow-agent-2.4.0-linux-amd64 /usr/local/bin/uruflow-agent
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -o uruflow-agent https://github.com/mustafanass/uruflow/releases/download/v2.3.1/uruflow-agent-2.3.1-linux-arm64
-echo "d36deaf7ac30ef2d1ffa40d48d9ba706df352d387e294e65985927f743918447  uruflow-agent" | sha256sum -c -
-chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-agent-2.4.0-linux-arm64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt --ignore-missing
+chmod +x uruflow-agent-2.4.0-linux-arm64 && sudo mv uruflow-agent-2.4.0-linux-arm64 /usr/local/bin/uruflow-agent
 ```
 
 ### Checksums
 
-| Asset | Size | SHA-256 |
-| :--- | ---: | :--- |
-| `uruflow-2.3.1-linux-amd64` | 10.9 MiB | `cdb4c2d92101986e281be17e4c9721b6ebc4b88a6431ce61b8c158622e31e3f0` |
-| `uruflow-2.3.1-linux-arm64` | 10.2 MiB | `632575ee7f0943e5368c698a7f65c3b34f55ad67055018ff28e95eed44d38c61` |
-| `uruflow-agent-2.3.1-linux-amd64` | 6.9 MiB | `ee215f153d6b2c009fa3dee3ad074b0186f82c008400f6d2bf394dfb062e95b3` |
-| `uruflow-agent-2.3.1-linux-arm64` | 6.5 MiB | `d36deaf7ac30ef2d1ffa40d48d9ba706df352d387e294e65985927f743918447` |
-
-`SHA256SUMS.txt` on the release page covers every asset, including the `.tar.gz` archives:
+`SHA256SUMS.txt` on the v2.4.0 release page covers every asset, including the `.tar.gz` archives:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
@@ -278,7 +275,7 @@ of truth. See [Projects](docs/projects.md).
 
 - Build once on a builder, release the identical image to every runner
 - A private registry with TLS and authentication, managed by URUFLOW
-- One certificate authority for both the agent link and the registry, distributed automatically
+- One certificate authority for both the agent link and the registry
 - Agent authentication by HMAC challenge-response; the shared key never crosses the wire
 - Roles that constrain authority — a runner cannot be asked to build
 - Health-gated releases that restore the previous container on failure
@@ -308,6 +305,7 @@ of truth. See [Projects](docs/projects.md).
 | [Security](docs/security.md) | Trust model, authentication and assumptions |
 | [Architecture](docs/architecture.md) | System model, boundaries and invariants |
 | [UFP Protocol](docs/protocol.md) | Framing, envelopes and the handshake |
+| [Testing](docs/testing.md) | Test ownership, execution lanes and contribution policy |
 | [Upgrading](docs/upgrading.md) | Within 2.x, and migrating from 1.x |
 
 ## Status
@@ -332,11 +330,15 @@ does; macOS agents are useful for development but are not a tested deployment ta
 go build -o uruflow ./cmd/uruflow-server
 go build -o uruflow-agent ./cmd/uruflow-agent
 
-go test ./...                          # fast suite, no Docker required
-URUFLOW_DOCKER_TESTS=1 go test ./...   # adds tests against a real Docker daemon
+make check              # deterministic default suite
+make test-integration   # composed server behavior with managed infrastructure
+make test-live          # real Docker, registry and agent runtime behavior
+make test-race          # concurrency and streaming safety
+make test-preview       # manual terminal-output previews
 ```
 
 `cmd/uruflow-server` builds the `uruflow` command and `cmd/uruflow-agent` builds `uruflow-agent`.
+The execution lanes and test ownership rules are documented in [Testing](docs/testing.md).
 
 | Package | Responsibility |
 | :--- | :--- |

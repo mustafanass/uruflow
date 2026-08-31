@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/mustafanass/uruflow/internal/activity"
 	"github.com/mustafanass/uruflow/internal/api/handlers"
 	"github.com/mustafanass/uruflow/internal/api/middleware"
 	"github.com/mustafanass/uruflow/internal/config"
@@ -61,6 +62,7 @@ type Server struct {
 	registry *registry.Registry
 	pipeline *pipeline.Pipeline
 	vault    *secrets.Vault
+	activity *activity.Feed
 	webhook  *services.WebhookService
 	http     *http.Server
 	caCert   string
@@ -104,7 +106,9 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 		CACert:       caCert,
 	}, engine)
 
+	feed := activity.New(activity.DefaultCapacity)
 	links := link.NewServer(cfg, store)
+	links.SetActivity(feed)
 	links.SetRegistry(ufp.RegistryConfig{
 		Host:     cfg.Registry.Address(),
 		Username: cfg.Registry.Username,
@@ -118,6 +122,7 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 	}
 
 	releases := pipeline.New(store, links, images, vault)
+	releases.SetActivity(feed)
 	links.Subscribe(releases)
 
 	loader := projects.NewLoader(cfg.ConfigDir(), func(name string) (*models.Agent, error) {
@@ -131,6 +136,7 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 		registry: images,
 		pipeline: releases,
 		vault:    vault,
+		activity: feed,
 		webhook:  services.NewWebhookService(cfg, store, releases),
 		caCert:   caCert,
 		loader:   loader,
@@ -305,6 +311,8 @@ func (s *Server) ProjectProblems() []projects.Problem {
 func (s *Server) Vault() *secrets.Vault { return s.vault }
 
 func (s *Server) Loader() *projects.Loader { return s.loader }
+
+func (s *Server) Activity() *activity.Feed { return s.activity }
 
 func (s *Server) ProjectsDir() string { return s.loader.Dir() }
 

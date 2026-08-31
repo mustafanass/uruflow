@@ -92,9 +92,6 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 		if primary {
 			result.Commit = commit
 		} else if result.Commit == "" {
-			// Manual releases normally provide a resolved primary commit. Keep a
-			// valid status even for a project whose build targets all use secondary
-			// sources when an older caller omitted it.
 			result.Commit = commit
 		}
 		if _, err := safeBuildPath(sourceDir, target.Dockerfile); err != nil {

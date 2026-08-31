@@ -28,10 +28,10 @@ func (s *Store) AppendLog(line *models.LogLine) error {
 	return err
 }
 
-func (s *Store) ListLogs(releaseID string) ([]models.LogLine, error) {
+func (s *Store) ListLogs(releaseID string, after int64, limit int) ([]models.LogLine, error) {
 	rows, err := s.db.Query(`
 		SELECT id, release_id, stage, agent_name, stream, line, timestamp
-		FROM release_logs WHERE release_id = ? ORDER BY id`, releaseID)
+		FROM release_logs WHERE release_id = ? AND id > ? ORDER BY id LIMIT ?`, releaseID, after, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -147,7 +147,7 @@ func TestReleaseTargetsLogsAndRollbackSource(t *testing.T) {
 		t.Fatalf("commits = %#v", loaded.Commits)
 	}
 
-	logs, _ := store.ListLogs("r1")
+	logs, _ := store.ListLogs("r1", 0, 100)
 	if len(logs) != 1 || logs[0].Line != "step 1/3" {
 		t.Fatalf("logs = %+v", logs)
 	}
@@ -206,6 +206,40 @@ func TestReplaceContainersAndStats(t *testing.T) {
 	store.ResolveAlert("al1")
 	if active, _ := store.ListActiveAlerts(); len(active) != 0 {
 		t.Fatalf("alert was not resolved: %+v", active)
+	}
+}
+
+func TestListLogsUsesCursorAndLimit(t *testing.T) {
+	store := newTestStore(t)
+	for _, releaseID := range []string{"r1", "other"} {
+		status := models.StatusBuilding
+		if releaseID == "other" {
+			status = models.StatusSucceeded
+		}
+		if err := store.CreateRelease(&models.Release{ID: releaseID, Project: "api", Status: status, Trigger: models.TriggerManual, StartedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, line := range []string{"one", "two", "three"} {
+		if err := store.AppendLog(&models.LogLine{ReleaseID: "r1", Stage: "build", Stream: "stdout", Line: line, Timestamp: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.AppendLog(&models.LogLine{ReleaseID: "other", Stage: "build", Stream: "stdout", Line: "hidden", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := store.ListLogs("r1", 0, 1)
+	if err != nil || len(first) != 1 || first[0].Line != "one" {
+		t.Fatalf("first page = %+v err=%v", first, err)
+	}
+	next, err := store.ListLogs("r1", first[0].ID, 1)
+	if err != nil || len(next) != 1 || next[0].Line != "two" {
+		t.Fatalf("next page = %+v err=%v", next, err)
+	}
+	remaining, err := store.ListLogs("r1", next[0].ID, 10)
+	if err != nil || len(remaining) != 1 || remaining[0].Line != "three" {
+		t.Fatalf("remaining page = %+v err=%v", remaining, err)
 	}
 }
 

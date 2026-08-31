@@ -55,7 +55,7 @@ type Store interface {
 	ListReleaseTargets(releaseID string) ([]models.ReleaseTarget, error)
 
 	AppendLog(line *models.LogLine) error
-	ListLogs(releaseID string) ([]models.LogLine, error)
+	ListLogs(releaseID string, after int64, limit int) ([]models.LogLine, error)
 
 	UpsertContainer(container *models.Container) error
 	ListContainers() ([]models.Container, error)

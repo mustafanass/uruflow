@@ -40,6 +40,10 @@ type pullProgress struct {
 	Error  string `json:"error"`
 }
 
+type imageDetails struct {
+	RepoDigests []string `json:"RepoDigests"`
+}
+
 func (c *Client) Pull(ctx context.Context, image string, auth *Auth, onProgress func(string)) error {
 	repository, tag := SplitTag(image)
 
@@ -84,6 +88,17 @@ func (c *Client) Pull(ctx context.Context, image string, auth *Auth, onProgress 
 
 func (c *Client) HasImage(ctx context.Context, image string) bool {
 	return c.get(ctx, "/images/"+url.PathEscape(image)+"/json", nil) == nil
+}
+
+func (c *Client) ImageDigest(ctx context.Context, image string) (string, error) {
+	var details imageDetails
+	if err := c.get(ctx, "/images/"+url.PathEscape(image)+"/json", &details); err != nil {
+		return "", err
+	}
+	if len(details.RepoDigests) == 0 {
+		return "", fmt.Errorf("docker image %s has no repository digest", image)
+	}
+	return details.RepoDigests[0], nil
 }
 
 func SplitTag(image string) (repository, tag string) {

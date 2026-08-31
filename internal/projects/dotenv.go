@@ -21,7 +21,6 @@ package projects
 import (
 	"bufio"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -58,20 +57,6 @@ func ParseDotEnv(content string) (map[string]string, error) {
 	return values, scanner.Err()
 }
 
-func FormatDotEnv(values map[string]string) string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	var out strings.Builder
-	for _, key := range keys {
-		out.WriteString(key + "=" + quote(values[key]) + "\n")
-	}
-	return out.String()
-}
-
 func validKey(key string) bool {
 	for index, symbol := range key {
 		switch {
@@ -102,16 +87,4 @@ func unquote(value string) string {
 	default:
 		return value
 	}
-}
-
-func quote(value string) string {
-	if value == "" {
-		return value
-	}
-	if !strings.ContainsAny(value, " \t\n\"'#") {
-		return value
-	}
-
-	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(value)
-	return `"` + escaped + `"`
 }

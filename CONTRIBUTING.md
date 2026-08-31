@@ -5,7 +5,7 @@ the conventions the codebase follows.
 
 ## Building
 
-Go 1.25 or later. No code generation, no build tags to remember.
+Go 1.25 or later. No code generation is required.
 
 ```bash
 go build -o uruflow ./cmd/uruflow-server
@@ -16,21 +16,26 @@ go build -o uruflow-agent ./cmd/uruflow-agent
 
 ## Testing
 
-There are two suites. The fast one runs anywhere:
+The deterministic suite runs anywhere and is required for every change:
 
 ```bash
 make check
 ```
 
-The second builds real images and starts real containers, and is gated behind an environment variable
-so it never runs by accident:
+Additional lanes are explicit so Docker-backed and visual checks never run by accident:
 
 ```bash
-URUFLOW_DOCKER_TESTS=1 go test ./...
+make test-integration
+make test-live
+make test-race
+make test-preview
 ```
 
-The gate guards tests that need a real daemon, registry, or fully wired server. Run it before changing
-the release path, Docker client, registry lifecycle, or composition root.
+Run integration and live tests before changing the release path, Docker client, registry lifecycle,
+agent runtime, or composition root. Run the race suite for concurrency, streaming, protocol, link,
+pipeline, control, or workbench changes. Preview tests are manual visual checks rather than automated
+assertions. [Testing](docs/testing.md) defines ownership, execution boundaries, and when a new test is
+worth adding.
 
 ## Where a Change Belongs
 
@@ -49,7 +54,7 @@ and needs a version bump.
 
 ## Code Style
 
-The codebase is deliberately plain Go. Match what is already there:
+Use plain Go and match the surrounding package:
 
 - `gofmt` output, no exceptions
 - Go initialisms stay uppercase in names (`ID`, `URL`, `HTTP`, `YAML`)
