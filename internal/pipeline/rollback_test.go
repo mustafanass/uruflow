@@ -29,8 +29,8 @@ func TestMultiServiceRollbackReusesEveryDigest(t *testing.T) {
 	harness := newHarness(t)
 	project, _ := harness.store.GetProject("api")
 	project.Services = []models.Service{
-		{Name: "app", Dockerfile: "Dockerfile", Healthcheck: &models.Healthcheck{Type: "tcp", Port: 8080, Interval: time.Second, Timeout: time.Second, Retries: 3}, Labels: map[string]string{"monitor.team": "platform"}},
-		{Name: "worker", Dockerfile: "Dockerfile.worker"},
+		{Name: "app", GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile", Healthcheck: &models.Healthcheck{Type: "tcp", Port: 8080, Interval: time.Second, Timeout: time.Second, Retries: 3}, Labels: map[string]string{"monitor.team": "platform"}},
+		{Name: "worker", GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile.worker"},
 		{Name: "cache", Image: prebuiltImage},
 	}
 	if err := harness.store.SaveProject(project); err != nil {

@@ -66,8 +66,6 @@ func (e *Engine) Execute(ctx context.Context, args []string, input string, emit 
 		return e.alerts(args[1:], emit)
 	case "registry":
 		return e.registry(ctx, args[1:], emit)
-	case "secret":
-		return e.secrets(args[1:], input, emit)
 	default:
 		return fmt.Errorf("command %q is handled by the workspace", grammar.Path(command))
 	}

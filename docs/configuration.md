@@ -278,26 +278,6 @@ GitHub's delivery id and GitLab's event UUID are stored for 30 days. Replayed de
 
 ### Routing
 
-Pushes are matched on **git URL and branch**, not on the project name, so one repository can feed
-several projects.
-
-Every form of a git URL is treated as the same repository:
-
-```text
-git@github.com:acme/api.git
-https://github.com/acme/api.git
-https://github.com/acme/api
-ssh://git@github.com/acme/api.git
-```
-
-A project matches when the URL resolves to the same repository, the branch equals the pushed branch,
-and `auto_deploy` is true. Every match is triggered:
-
-```json
-{"repository": "api", "branch": "main",
- "triggered": [{"project": "api-prod", "release": "cf5ae9cb"}]}
-```
-
-Requests are answered `202 Accepted` whether or not a project matched. The body carries the reason
-when nothing was triggered, so a git host does not record a delivery failure for a push that was
-correctly ignored. Tag pushes are rejected — only `refs/heads/*` is handled.
+Service-owned multi-repository projects use deliberate manual deployment. Webhook requests are
+answered `202 Accepted` after authentication and replay checks, but they do not route a source commit
+to a project. Tag pushes are rejected — only `refs/heads/*` is handled.

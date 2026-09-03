@@ -86,7 +86,7 @@ func TestReleaseUsesTheClaimedProjectSnapshot(t *testing.T) {
 	}
 	<-harness.agent.builds
 	project, _ := harness.store.GetProject("api")
-	project.Runtime.Ports[0].Host = 9090
+	project.Services[0].Ports[0].Host = 9090
 	if err := harness.store.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}

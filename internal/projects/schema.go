@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	ProjectFile   = "project.yaml"
 	DefaultsFile  = "defaults.yaml"
 	EnvSuffix     = ".env"
 	YAMLSuffix    = ".yaml"
@@ -35,15 +34,6 @@ const (
 
 type Defaults struct {
 	Env map[string]string `yaml:"env,omitempty"`
-}
-
-type Definition struct {
-	Name       string            `yaml:"name,omitempty"`
-	Git        string            `yaml:"git"`
-	Dockerfile string            `yaml:"dockerfile,omitempty"`
-	Context    string            `yaml:"context,omitempty"`
-	BuildArgs  map[string]string `yaml:"build_args,omitempty"`
-	Env        map[string]string `yaml:"env,omitempty"`
 }
 
 type Service struct {
@@ -171,10 +161,8 @@ type Logging struct {
 
 type Environment struct {
 	Workflow        string                      `yaml:"workflow,omitempty"`
-	Branch          string                      `yaml:"branch"`
 	Builder         string                      `yaml:"builder"`
 	Runners         []string                    `yaml:"runners"`
-	AutoDeploy      *bool                       `yaml:"auto_deploy,omitempty"`
 	Ports           []string                    `yaml:"ports,omitempty"`
 	Volumes         []string                    `yaml:"volumes,omitempty"`
 	Network         string                      `yaml:"network,omitempty"`

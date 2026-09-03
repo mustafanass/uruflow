@@ -31,7 +31,7 @@ with `sudo` so the paths match what it shows.
 **[server]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-2.4.0-linux-amd64 -o uruflow
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-2.4.1-linux-amd64 -o uruflow
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 
 sudo uruflow init --advertise uruflow.internal
@@ -99,7 +99,7 @@ two-step copy in the next section instead.
 **[target]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-agent-2.4.0-linux-amd64 -o uruflow-agent
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-agent-2.4.1-linux-amd64 -o uruflow-agent
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 
 sudo uruflow-agent init \
@@ -133,9 +133,10 @@ certificate error.
 
 ## 6. Create a Project
 
-**[server]** — create `/etc/uruflow/projects/demo/project.yaml` and `prod.yaml` using the examples in
-[Projects](projects.md#3-file-layout). Use `builder-01` as both builder and runner for this
-single-machine example, then validate and load the files:
+**[server]** — run `project create demo prod` in the workspace, or create
+`/etc/uruflow/projects/demo/prod.yaml` using the example in [Projects](projects.md#3-file-layout).
+Use `builder-01` as both builder and runner for this single-machine example, then validate and load
+the file:
 
 ```text
 project validate /etc/uruflow/projects/demo/prod.yaml

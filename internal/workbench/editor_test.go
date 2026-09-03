@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mustafanass/uruflow/internal/grammar"
 )
@@ -47,22 +48,52 @@ func TestProjectCreateUsesTheInlineEditorTemplate(t *testing.T) {
 	}
 	m := &model{editor: textarea.New()}
 	m.prepareEditor(args)
-	if m.editorTitle != "NEW PROJECT" || !strings.Contains(m.editor.Value(), "name: payments") ||
-		!strings.Contains(m.editor.Value(), "services:") || !strings.Contains(m.editorHint, "create files") {
+	if m.editorTitle != "NEW PROJECT" || !strings.Contains(m.editor.Value(), "payments:") ||
+		!strings.Contains(m.editor.Value(), "git: https://github.com/example/payments.git") ||
+		!strings.Contains(m.editor.Value(), "services:") || !strings.Contains(m.editorHint, "create file") {
 		t.Fatalf("editor title=%q hint=%q yaml=\n%s", m.editorTitle, m.editorHint, m.editor.Value())
+	}
+}
+
+func TestProjectVariablesUsesTheListEditor(t *testing.T) {
+	args := []string{"project", "variables", "api-prod"}
+	command, _ := grammar.Resolve(args)
+	if !wantsPaste(command, args) {
+		t.Fatal("project variables did not use the inline editor")
+	}
+	m := &model{editor: textarea.New()}
+	m.prepareEditor(args)
+	if m.editorTitle != "VARIABLES · api-prod" || !strings.Contains(m.editor.Placeholder, "secret NAME=value") ||
+		!strings.Contains(m.editorHint, "validate and save") {
+		t.Fatalf("editor title=%q hint=%q input=%q", m.editorTitle, m.editorHint, m.editor.Value())
+	}
+}
+
+func TestLoadedEnvironmentOpensInTheEditor(t *testing.T) {
+	m := &model{
+		input: textinput.New(), editor: textarea.New(), running: true,
+		active: []string{"project", "variables", "api-prod"},
+	}
+	updated, _ := m.Update(variableEditorMsg{
+		args:    []string{"project", "variables", "api-prod"},
+		content: "LOG_LEVEL=info\nsecret TOKEN=${secret:api-prod.TOKEN}\n",
+	})
+	got := updated.(*model)
+	if !got.paste || got.running || got.editor.Value() == "" || len(got.pending) != 3 {
+		t.Fatalf("editor was not opened: paste=%v running=%v pending=%v content=%q", got.paste, got.running, got.pending, got.editor.Value())
 	}
 }
 
 func TestEditorTextSurvivesServerValidationFailure(t *testing.T) {
 	editor := textarea.New()
-	editor.SetValue("project:\n  name: api\n")
+	editor.SetValue("services:\n  api: {}\n")
 	m := &model{
 		editor: editor, editorSubmission: true, active: []string{"project", "create", "api", "prod"},
 		completionCache: map[string][]commandSpec{}, completionLoading: map[string]bool{},
 	}
 	updated, _ := m.Update(streamMsg{err: fmt.Errorf("unknown agent runner-01"), done: true})
 	got := updated.(*model)
-	if !got.paste || strings.TrimSpace(got.editor.Value()) != "project:\n  name: api" || len(got.pending) != 4 || got.editorError != "unknown agent runner-01" {
+	if !got.paste || strings.TrimSpace(got.editor.Value()) != "services:\n  api: {}" || len(got.pending) != 4 || got.editorError != "unknown agent runner-01" {
 		t.Fatalf("editor was not restored: paste=%v pending=%v error=%q yaml=%q", got.paste, got.pending, got.editorError, got.editor.Value())
 	}
 }
@@ -106,19 +137,22 @@ func TestYAMLEditorTabAndBackspaceUseSpaces(t *testing.T) {
 }
 
 func TestEditorSaveTransitionHasExplicitNotice(t *testing.T) {
-	if got := editorSubmissionNotice([]string{"project", "create", "api", "prod"}); !strings.Contains(got, "creating project files") {
+	if got := editorSubmissionNotice([]string{"project", "create", "api", "prod"}); !strings.Contains(got, "creating the environment file") {
 		t.Fatalf("create notice = %q", got)
 	}
 	if got := editorSubmissionNotice([]string{"project", "apply", "api", "prod", "-"}); !strings.Contains(got, "applying") {
 		t.Fatalf("apply notice = %q", got)
 	}
+	if got := editorSubmissionNotice([]string{"project", "variables", "api-prod"}); !strings.Contains(got, "plain and secret") {
+		t.Fatalf("environment notice = %q", got)
+	}
 }
 
 func TestProjectCreationYAMLIsFormattedOnSave(t *testing.T) {
-	content := "project: {name: api, git: https://example.test/api.git}\nenvironment:\n workflow: build_only\n branch: main\n builder: builder-01\n services: {app: {dockerfile: Dockerfile}}\n"
+	content := "workflow: build_only\nbuilder: builder-01\nservices: {app: {git: https://example.test/api.git, branch: main, dockerfile: Dockerfile}}\n"
 	formatted := formatEditorYAML([]string{"project", "create", "api", "prod"}, content)
-	if !strings.Contains(formatted, "project:\n  name: api") || !strings.Contains(formatted, "environment:\n  workflow: build_only") {
-		t.Fatalf("project YAML was not normalized:\n%s", formatted)
+	if !strings.Contains(formatted, "workflow: build_only") || !strings.Contains(formatted, "services:\n  app:") {
+		t.Fatalf("environment YAML was not normalized:\n%s", formatted)
 	}
 	if got := formatEditorYAML([]string{"project", "apply", "api", "prod", "-"}, content); got != content {
 		t.Fatal("project apply YAML was unexpectedly rewritten")

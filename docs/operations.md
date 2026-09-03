@@ -176,13 +176,15 @@ While an agent is disconnected:
 An agent reconnects on its own every `reconnect_sec` (default 5). There is nothing to restart on the
 server side when one drops.
 
-## 4. Secrets
+## 4. Environment Variables and Secrets
 
-Use `secret set <name>`, `secret list`, and `secret remove <name>` in the workspace. Values are read
-from a masked prompt and never passed as command arguments.
+Use `project variables <project>` for one project-scoped list. Write `NAME=value` for plain settings
+and `secret NAME=value` for encrypted settings. Press `Ctrl+S` to validate and apply the list.
 
-Values are encrypted with `pki/secrets.key` and cannot be read back—the workspace shows names and
-references only. To change a secret, store it again under the same name.
+Secret values are encrypted with `pki/secrets.key` and cannot be read back after storage—the editor
+shows their references when reopened. Replace a reference with a new value to rotate it. Values are
+visible while first entered in the editor, but are never passed as command arguments or written to
+the project file.
 
 Commands operate while the service remains online and do not affect agent connectivity.
 

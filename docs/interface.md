@@ -1,7 +1,7 @@
 # Operations Workspace
 
 URUFLOW is operated from one full-screen terminal workspace. The workspace owns the prompt, command
-history, live output, tables, confirmations, secret entry, and inline YAML editor. Operational
+history, live output, tables, confirmations, secret entry, and inline editors. Operational
 commands stay inside this workspace.
 
 The persistent server still owns live agent sessions, the pipeline, SQLite, and the registry. The
@@ -70,7 +70,7 @@ Input depends on the value:
 
 - Short values such as a new agent name stay in the command box with a labeled next-step prompt.
 - Existing resources such as projects, agents, and releases are selected from daemon-backed choices.
-- Secret values switch to masked entry and never enter command history.
+- Plain and secret variables share one project-scoped multiline variable editor.
 - Project YAML uses the multiline editor because it benefits from paste, line numbers, and validation.
 
 `project deploy` does not create configuration: it operates on an already loaded project. Use `project
@@ -92,9 +92,12 @@ project reload
 `project edit` temporarily opens the authoritative environment file in `$VISUAL`, then `$EDITOR`,
 falling back to `vi`. The workspace returns to the same page and reloads YAML when the editor exits.
 
-`project create api prod` opens the full-width project editor with a project, environment, and service
+`project validate` and `project apply` resolve defaults, YAML variables and the target's adjacent
+`.env` file exactly as reload does.
+
+`project create api prod` opens the full-width project editor with an environment and service
 template. It supports paste, scrolling, line numbers, automatic YAML indentation, `Tab` and
-`Shift+Tab`. Press `Ctrl+S` to format, validate, write both project files, and reload them. A validation
+`Shift+Tab`. Press `Ctrl+S` to format, validate, write `projects/api/prod.yaml`, and reload it. A validation
 error returns to the editor without losing the text.
 
 To keep the whole edit inside the workspace, use:
@@ -104,11 +107,12 @@ project apply api prod -
 ```
 
 The prompt becomes a multiline YAML editor. Paste or write the document, press `Ctrl+S` to validate
-and apply it, or `Esc` to cancel. URUFLOW writes through a temporary file and atomically replaces the
-environment file. If full project validation fails, it restores the previous file.
+and apply it, or `Esc` to cancel. URUFLOW atomically replaces the environment file. If full project
+validation fails, it restores the previous file through the same atomic path and reports restoration
+failures.
 
-Project definitions remain normal files at `projects/<name>/project.yaml`, so they work naturally
-with Git, any editor, and configuration management. The interface never creates a competing project
+Environment definitions remain normal files at `projects/<name>/<env>.yaml`, so they work naturally
+with Git, any editor, and configuration management. The interface never creates a competing
 definition in SQLite.
 
 ## Command reference
@@ -129,6 +133,7 @@ project deploy api-prod
 project deploy api-prod --no-follow
 project rollback api-prod
 project stop api-prod
+project variables api-prod
 
 release list --limit 50
 release show <release-id>
@@ -140,9 +145,6 @@ registry list
 registry remove <repository> <tag>
 alert list
 alert resolve <id>
-secret list
-secret set api_db
-secret remove api_db
 ```
 
 For guided enrollment, type `agent add NAME`. As soon as the name is present, the command area offers
@@ -157,9 +159,20 @@ silently dropping lines.
 Deploy and rollback follow their process by default. Reattach to durable work later with `release
 follow`. Container logs stream over the existing agent connection; no extra SSH session is opened.
 
-`secret set` changes the prompt to masked entry. The value is never put in the command line,
-transcript, or history. Removing agents, stopping projects, deleting registry manifests, resolving
-alerts, and removing secrets require an in-page confirmation.
+`project variables PROJECT` opens the project's optional variables as one full-width list. Ordinary
+dotenv lines are plain configuration; prefix a line with `secret ` to encrypt its value:
+
+```text
+LOG_LEVEL=info
+secret DATABASE_URL=postgres://user:password@db/app
+```
+
+Press `Ctrl+S` to validate and save the complete list. Plain values are written to the authoritative
+`<environment>.env` file. Secret values are encrypted in SQLite and replaced in that file by a
+project-scoped `${secret:…}` reference. When reopened, references are shown but stored values are
+never recovered. Replace a reference with a new value to rotate it, remove a line to remove the
+variable, or add/remove the `secret ` prefix to change its type. Encrypted material is deleted only
+after its reference leaves this list and no loaded project still uses it.
 
 Text received from agents, containers, projects, and backend errors is sanitized before rendering.
 Only ANSI styling produced by URUFLOW reaches the terminal.
@@ -181,8 +194,7 @@ Only process lifecycle and setup stay outside the workspace:
 | Data | Authority |
 | :--- | :--- |
 | Server and registry settings | `config.yaml` |
-| Project definitions | `projects/<name>/project.yaml` |
-| Environment definitions | `projects/<name>/<env>.yaml` |
+| Project environments | `projects/<name>/<env>.yaml` |
 | Environment overlays | `.env` files |
 | Agent local settings | `agent.yaml` |
 | Enrollment, releases, logs, metrics, alerts, and secrets | SQLite/runtime state |

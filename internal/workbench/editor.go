@@ -52,16 +52,38 @@ func (m *model) resolveEditor(name string) tea.Cmd {
 	}
 }
 
+func (m *model) loadVariableEditor(args []string) tea.Cmd {
+	return func() tea.Msg {
+		content := ""
+		request := []string{"project", "variables-source", args[2]}
+		err := m.client.Execute(context.Background(), request, "", func(event ops.Event) error {
+			if event.Title == "project variables editor" {
+				content = event.Message
+			}
+			return nil
+		})
+		if err == nil && content == "" {
+			err = errors.New("server did not return project variables")
+		}
+		return variableEditorMsg{args: append([]string{}, args...), content: content, err: err}
+	}
+}
+
 func (m *model) updatePaste(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
+		variableEditor := isVariableEditor(m.pending)
 		m.paste, m.pending = false, nil
 		m.editorSubmission = false
 		m.editorTitle, m.editorHint, m.editorError = "", "", ""
 		m.editor.SetValue("")
 		m.editor.Blur()
 		m.input.Focus()
-		m.append(m.paint(cliui.ANSIWarning, "▲ YAML input cancelled") + "\n")
+		message := "▲ YAML input cancelled"
+		if variableEditor {
+			message = "▲ variable editor cancelled"
+		}
+		m.append(m.paint(cliui.ANSIWarning, message) + "\n")
 		m.resize()
 		return m, textinput.Blink
 	case "ctrl+s":
@@ -77,21 +99,27 @@ func (m *model) updatePaste(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.resize()
 		return m, m.start(args, content)
 	case "enter":
-		m.insertYAMLNewline()
-		return m, textarea.Blink
+		if !isVariableEditor(m.pending) {
+			m.insertYAMLNewline()
+			return m, textarea.Blink
+		}
 	case "tab":
-		m.insertYAMLIndent()
-		return m, textarea.Blink
+		if !isVariableEditor(m.pending) {
+			m.insertYAMLIndent()
+			return m, textarea.Blink
+		}
 	case "shift+tab":
-		m.removeYAMLIndent()
-		return m, textarea.Blink
+		if !isVariableEditor(m.pending) {
+			m.removeYAMLIndent()
+			return m, textarea.Blink
+		}
 	case "backspace":
-		if m.onYAMLIndentOnly() {
+		if !isVariableEditor(m.pending) && m.onYAMLIndentOnly() {
 			m.removeYAMLIndent()
 			return m, textarea.Blink
 		}
 	}
-	if key.Paste {
+	if key.Paste && !isVariableEditor(m.pending) {
 		key.Runes = []rune(strings.ReplaceAll(string(key.Runes), "\t", strings.Repeat(" ", yamlIndentWidth)))
 	}
 	var command tea.Cmd
@@ -187,14 +215,17 @@ func leadingSpaces(value string) int {
 }
 
 func editorSubmissionNotice(args []string) string {
+	if isVariableEditor(args) {
+		return "Validating and saving plain and secret variables …"
+	}
 	if len(args) >= 2 && args[0] == "project" {
 		switch args[1] {
 		case "create":
-			return "Validating YAML and creating project files …"
+			return "Validating YAML and creating the environment file …"
 		case "apply":
-			return "Validating and applying project YAML …"
+			return "Validating and applying environment YAML …"
 		case "validate":
-			return "Validating project YAML …"
+			return "Validating environment YAML …"
 		}
 	}
 	return "Validating YAML …"
@@ -231,6 +262,9 @@ func normalizeYAMLStyle(node *yaml.Node) {
 }
 
 func wantsPaste(command grammar.Command, args []string) bool {
+	if command.Input == grammar.InputVariables {
+		return true
+	}
 	if command.Input != grammar.InputYAML {
 		return false
 	}
@@ -247,32 +281,39 @@ func (m *model) prepareEditor(args []string) {
 	m.editorTitle = "YAML"
 	m.editorHint = "Ctrl+S validate and apply · Esc cancel"
 	m.editorError = ""
+	m.editor.Placeholder = "Paste YAML here. Ctrl+S validates and applies; Esc cancels."
 	m.editor.SetValue("")
+	if isVariableEditor(args) {
+		m.editorTitle = "VARIABLES · " + args[2]
+		m.editorHint = "Ctrl+S validate and save · Esc cancel"
+		m.editor.Placeholder = "NAME=value or secret NAME=value"
+		return
+	}
 	if len(args) == 4 && args[0] == "project" && args[1] == "create" {
 		m.editorTitle = "NEW PROJECT"
-		m.editorHint = "Ctrl+S validate and create files · Esc cancel"
+		m.editorHint = "Ctrl+S validate and create file · Esc cancel"
 		m.editor.SetValue(projectTemplate(args[2]))
 		m.editor.CursorStart()
 	}
 }
 
-func projectTemplate(project string) string {
-	return fmt.Sprintf(`project:
-  name: %s
-  git: https://github.com/example/%s.git
+func isVariableEditor(args []string) bool {
+	return len(args) == 3 && args[0] == "project" && args[1] == "variables"
+}
 
-environment:
-  workflow: build_deploy
-  branch: main
-  builder: builder-01
-  runners:
-    - runner-01
-  services:
-    app:
-      dockerfile: Dockerfile
-      context: .
-      ports:
-        - "8080:8080"
-      restart: unless-stopped
+func projectTemplate(project string) string {
+	return fmt.Sprintf(`workflow: build_deploy
+builder: builder-01
+runners:
+  - runner-01
+services:
+  %s:
+    git: https://github.com/example/%s.git
+    branch: main
+    dockerfile: Dockerfile
+    context: .
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
 `, project, project)
 }

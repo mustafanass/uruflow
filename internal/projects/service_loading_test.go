@@ -29,15 +29,13 @@ import (
 
 func TestServicesLoadFromTheEnvironmentFile(t *testing.T) {
 	root := seedTree(t)
-	write(t, filepath.Join(root, "projects", "shop", "project.yaml"),
-		"git: git@github.com:acme/shop.git\nenv:\n  APP: shop\n")
 	write(t, filepath.Join(root, "projects", "shop", "prod.yaml"),
-		"branch: main\nbuilder: builder-01\nrunners: [web-01]\n"+
-			"env:\n  SHARED: yes\n"+
+		"builder: builder-01\nrunners: [web-01]\n"+
+			"env:\n  APP: shop\n  SHARED: yes\n"+
 			"services:\n"+
-			"  app:\n    dockerfile: Dockerfile\n    context: .\n    ports: [\"8080:80\"]\n"+
+			"  app:\n    git: git@github.com:acme/shop.git\n    branch: main\n    dockerfile: Dockerfile\n    context: .\n    ports: [\"8080:80\"]\n"+
 			"    env:\n      ROLE: web\n"+
-			"  worker:\n    dockerfile: Dockerfile.worker\n    command: ./worker\n"+
+			"  worker:\n    git: git@github.com:acme/shop.git\n    branch: main\n    dockerfile: Dockerfile.worker\n    command: ./worker\n"+
 			"  cache:\n    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n    volumes: [\"/srv/shop/redis:/data\"]\n")
 
 	result := NewLoader(root, fakeAgents()).Load()
@@ -88,13 +86,12 @@ func TestServicesLoadFromTheEnvironmentFile(t *testing.T) {
 
 func TestNativeResourcesAndInterpolationLoadAsOneProjectModel(t *testing.T) {
 	root := seedTree(t)
-	write(t, filepath.Join(root, "projects", "native", "project.yaml"), "git: git@host:native.git\n")
 	write(t, filepath.Join(root, "projects", "native", "prod.env"),
 		"NETWORK_NAME=native-edge\nHOST_IP=127.0.0.1\nDB_ALIAS=postgres\nDB_IMAGE=postgres@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n")
 	write(t, filepath.Join(root, "projects", "native", "prod.yaml"),
-		"branch: main\nbuilder: builder-01\nrunners: [web-01]\n"+
+		"builder: builder-01\nrunners: [web-01]\n"+
 			"resources:\n  networks:\n    data:\n      name: ${NETWORK_NAME:?network required}\n      internal: true\n  volumes:\n    state: {}\n"+
-			"services:\n  database:\n    image: ${DB_IMAGE:?image required}\n    ports: [\"${HOST_IP}:5432:5432\"]\n    networks:\n      data:\n        aliases: [\"${DB_ALIAS:-database}\"]\n    mounts:\n      - type: volume\n        source: state\n        target: /var/lib/postgresql/data\n    healthcheck:\n      type: command\n      command: [pg_isready]\n      interval: 1s\n      timeout: 1s\n      retries: 3\n  api:\n    dockerfile: Dockerfile\n    networks:\n      data: {}\n    depends_on:\n      database: healthy\n")
+			"services:\n  database:\n    image: ${DB_IMAGE:?image required}\n    ports: [\"${HOST_IP}:5432:5432\"]\n    networks:\n      data:\n        aliases: [\"${DB_ALIAS:-database}\"]\n    mounts:\n      - type: volume\n        source: state\n        target: /var/lib/postgresql/data\n    healthcheck:\n      type: command\n      command: [pg_isready]\n      interval: 1s\n      timeout: 1s\n      retries: 3\n  api:\n    git: git@host:native.git\n    branch: main\n    dockerfile: Dockerfile\n    networks:\n      data: {}\n    depends_on:\n      database: healthy\n")
 
 	result := NewLoader(root, fakeAgents()).Load()
 	if len(result.Problems) != 0 {
@@ -127,10 +124,9 @@ func TestNativeResourcesAndInterpolationLoadAsOneProjectModel(t *testing.T) {
 
 func TestServiceRejectsImageAndDockerfileTogether(t *testing.T) {
 	root := seedTree(t)
-	write(t, filepath.Join(root, "projects", "bad", "project.yaml"), "git: git@host:bad.git\n")
 	write(t, filepath.Join(root, "projects", "bad", "prod.yaml"),
-		"branch: main\nbuilder: builder-01\nrunners: [web-01]\n"+
-			"services:\n  app:\n    image: redis:7\n    dockerfile: Dockerfile\n")
+		"builder: builder-01\nrunners: [web-01]\n"+
+			"services:\n  app:\n    git: git@host:bad.git\n    branch: main\n    image: redis:7\n    dockerfile: Dockerfile\n")
 
 	result := NewLoader(root, fakeAgents()).Load()
 
@@ -145,30 +141,29 @@ func TestServiceRejectsImageAndDockerfileTogether(t *testing.T) {
 	}
 }
 
-func TestSingleServiceProjectsStayFlat(t *testing.T) {
+func TestSingleServiceProjectsRemainExplicit(t *testing.T) {
 	result := NewLoader(seedTree(t), fakeAgents()).Load()
 
 	for _, project := range result.Projects {
-		if project.MultiService() {
-			t.Fatalf("%s became multi-service unexpectedly", project.Name)
+		if !project.MultiService() {
+			t.Fatalf("%s did not retain its explicit service", project.Name)
 		}
 		list := project.ServiceList()
-		if len(list) != 1 || list[0].Name != "" {
-			t.Fatalf("%s implicit service = %+v", project.Name, list)
+		if len(list) != 1 || list[0].Name != "api" {
+			t.Fatalf("%s services = %+v", project.Name, list)
 		}
 	}
 }
 
 func TestServicesLoadHealthchecksAndLabels(t *testing.T) {
 	root := seedTree(t)
-	write(t, filepath.Join(root, "projects", "checks", "project.yaml"), "git: git@host:checks.git\n")
 	write(t, filepath.Join(root, "projects", "checks", "prod.yaml"),
-		"branch: main\nbuilder: builder-01\nrunners: [web-01]\nservices:\n"+
-			"  api:\n    dockerfile: Dockerfile\n    healthcheck:\n      type: http\n      path: /health\n      port: 8080\n      interval: 2s\n      timeout: 1s\n      retries: 4\n"+
+		"builder: builder-01\nrunners: [web-01]\nservices:\n"+
+			"  api:\n    git: git@host:checks.git\n    branch: main\n    dockerfile: Dockerfile\n    healthcheck:\n      type: http\n      path: /health\n      port: 8080\n      interval: 2s\n      timeout: 1s\n      retries: 4\n"+
 			"    labels:\n      traefik.enable: \"true\"\n      monitor.team: platform\n"+
 			"  cache:\n    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n    healthcheck:\n      type: tcp\n      port: 6379\n"+
 			"    labels:\n      metrics.enabled: \"yes\"\n"+
-			"  worker:\n    dockerfile: Dockerfile.worker\n    healthcheck:\n      type: running\n      stable_for: 8s\n")
+			"  worker:\n    git: git@host:checks.git\n    branch: main\n    dockerfile: Dockerfile.worker\n    healthcheck:\n      type: running\n      stable_for: 8s\n")
 
 	result := NewLoader(root, fakeAgents()).Load()
 	if len(result.Problems) != 0 {
@@ -213,9 +208,8 @@ func TestInvalidHealthchecksAndReservedLabelsAreRejected(t *testing.T) {
 	for name, serviceConfig := range cases {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			write(t, filepath.Join(root, "projects", "bad", "project.yaml"), "git: git@host:bad.git\n")
 			write(t, filepath.Join(root, "projects", "bad", "prod.yaml"),
-				"branch: main\nbuilder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    dockerfile: Dockerfile\n    "+serviceConfig)
+				"builder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    git: git@host:bad.git\n    branch: main\n    dockerfile: Dockerfile\n    "+serviceConfig)
 			result := NewLoader(root, fakeAgents()).Load()
 			if len(result.Problems) == 0 {
 				t.Fatal("invalid service configuration was accepted")
@@ -229,9 +223,8 @@ func TestInvalidHealthchecksAndReservedLabelsAreRejected(t *testing.T) {
 
 func TestUnknownHealthcheckKeyIsRejected(t *testing.T) {
 	root := t.TempDir()
-	write(t, filepath.Join(root, "projects", "bad", "project.yaml"), "git: git@host:bad.git\n")
 	write(t, filepath.Join(root, "projects", "bad", "prod.yaml"),
-		"branch: main\nbuilder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    healthcheck:\n      type: tcp\n      port: 80\n      intervaal: 2s\n")
+		"builder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    git: git@host:bad.git\n    branch: main\n    healthcheck:\n      type: tcp\n      port: 80\n      intervaal: 2s\n")
 	result := NewLoader(root, fakeAgents()).Load()
 	if len(result.Problems) == 0 || !strings.Contains(result.Problems[0].Error(), "intervaal") {
 		t.Fatalf("unknown healthcheck key was not reported: %v", result.Problems)

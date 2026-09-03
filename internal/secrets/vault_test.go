@@ -120,6 +120,15 @@ func TestReferenceParsing(t *testing.T) {
 	}
 }
 
+func TestReferenceNameRequiresTheWholeValue(t *testing.T) {
+	if name, ok := ReferenceName("${secret:api-prod.DATABASE_URL}"); !ok || name != "api-prod.DATABASE_URL" {
+		t.Fatalf("reference = %q, %v", name, ok)
+	}
+	if _, ok := ReferenceName("prefix-${secret:token}"); ok {
+		t.Fatal("an embedded reference was treated as the whole value")
+	}
+}
+
 func TestResolveSubstitutesAndReportsMissing(t *testing.T) {
 	lookup := func(name string) (string, error) {
 		if name == "db_url" {

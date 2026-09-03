@@ -29,24 +29,22 @@ import (
 )
 
 const (
-	definitionMode = 0o644
-	secretMode     = 0o600
-	directoryMode  = 0o755
+	yamlMode      = 0o644
+	secretMode    = 0o600
+	directoryMode = 0o755
 )
 
 type Draft struct {
 	Project     string
 	Env         string
-	Definition  Definition
 	Environment Environment
 	RawYAML     string
 	RawEnv      string
 }
 
-func (l *Loader) Paths(project, env string) (definition, environment, variables string) {
+func (l *Loader) Paths(project, env string) (environment, variables string) {
 	dir := filepath.Join(l.dir, project)
-	return filepath.Join(dir, ProjectFile),
-		filepath.Join(dir, env+YAMLSuffix),
+	return filepath.Join(dir, env+YAMLSuffix),
 		filepath.Join(dir, env+EnvSuffix)
 }
 
@@ -64,26 +62,16 @@ func (l *Loader) Write(draft Draft) error {
 		return err
 	}
 
-	definitionPath, environmentPath, variablesPath := l.Paths(draft.Project, draft.Env)
-	if err := os.MkdirAll(filepath.Dir(definitionPath), directoryMode); err != nil {
-		return err
-	}
-
-	definition, err := yaml.Marshal(mergeDefinition(definitionPath, draft.Definition))
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(definitionPath, definition, definitionMode); err != nil {
-		return err
-	}
+	environmentPath, variablesPath := l.Paths(draft.Project, draft.Env)
 
 	environment := []byte(draft.RawYAML)
+	var err error
 	if strings.TrimSpace(draft.RawYAML) == "" {
 		if environment, err = yaml.Marshal(mergeEnvironment(environmentPath, draft.Environment)); err != nil {
 			return err
 		}
 	}
-	if err := os.WriteFile(environmentPath, environment, definitionMode); err != nil {
+	if err := l.WriteEnvironment(draft.Project, draft.Env, environment); err != nil {
 		return err
 	}
 
@@ -91,7 +79,21 @@ func (l *Loader) Write(draft Draft) error {
 		os.Remove(variablesPath)
 		return nil
 	}
-	return os.WriteFile(variablesPath, []byte(draft.RawEnv), secretMode)
+	return writeAtomic(variablesPath, []byte(draft.RawEnv), secretMode)
+}
+
+func (l *Loader) WriteEnvironment(project, env string, content []byte) error {
+	if err := validName(project); err != nil {
+		return err
+	}
+	if err := validName(env); err != nil {
+		return err
+	}
+	path, _ := l.Paths(project, env)
+	if err := os.MkdirAll(filepath.Dir(path), directoryMode); err != nil {
+		return err
+	}
+	return writeAtomic(path, content, yamlMode)
 }
 
 func (l *Loader) Create(draft Draft) error {
@@ -112,7 +114,13 @@ func (l *Loader) Create(draft Draft) error {
 	}
 	destination := filepath.Join(l.dir, draft.Project)
 	if _, err := os.Stat(destination); err == nil {
-		return fmt.Errorf("project %q already exists", draft.Project)
+		environmentPath, _ := l.Paths(draft.Project, draft.Env)
+		if _, environmentErr := os.Stat(environmentPath); environmentErr == nil {
+			return fmt.Errorf("project environment %q already exists", draft.Project+NameSeparator+draft.Env)
+		} else if !os.IsNotExist(environmentErr) {
+			return environmentErr
+		}
+		return l.Write(draft)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -130,43 +138,22 @@ func (l *Loader) Create(draft Draft) error {
 }
 
 func (l *Loader) Remove(project, env string) error {
-	definitionPath, environmentPath, variablesPath := l.Paths(project, env)
+	environmentPath, variablesPath := l.Paths(project, env)
 
 	os.Remove(environmentPath)
 	os.Remove(variablesPath)
 
-	dir := filepath.Dir(definitionPath)
+	dir := filepath.Dir(environmentPath)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), YAMLSuffix) && entry.Name() != ProjectFile {
+		if strings.HasSuffix(entry.Name(), YAMLSuffix) {
 			return nil
 		}
 	}
 	return os.RemoveAll(dir)
-}
-
-func mergeDefinition(path string, incoming Definition) Definition {
-	existing, err := readDefinition(path)
-	if err != nil {
-		return incoming
-	}
-
-	existing.Git = incoming.Git
-	existing.Dockerfile = incoming.Dockerfile
-	existing.Context = incoming.Context
-	if incoming.Name != "" {
-		existing.Name = incoming.Name
-	}
-	if len(incoming.BuildArgs) > 0 {
-		existing.BuildArgs = incoming.BuildArgs
-	}
-	if len(incoming.Env) > 0 {
-		existing.Env = incoming.Env
-	}
-	return existing
 }
 
 func mergeEnvironment(path string, incoming Environment) Environment {
@@ -175,16 +162,12 @@ func mergeEnvironment(path string, incoming Environment) Environment {
 		return incoming
 	}
 
-	existing.Branch = incoming.Branch
 	existing.Workflow = incoming.Workflow
 	existing.Builder = incoming.Builder
 	existing.Runners = incoming.Runners
 	existing.Ports = incoming.Ports
 	existing.Volumes = incoming.Volumes
 	existing.Network = incoming.Network
-	if incoming.AutoDeploy != nil {
-		existing.AutoDeploy = incoming.AutoDeploy
-	}
 	if incoming.Restart != "" {
 		existing.Restart = incoming.Restart
 	}
@@ -214,4 +197,28 @@ func validName(value string) error {
 		return fmt.Errorf("%q must start with a lowercase letter or digit, contain only lowercase letters, digits, ., - and _, and be at most 63 characters", value)
 	}
 	return nil
+}
+
+func writeAtomic(path string, content []byte, mode os.FileMode) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".uruflow-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if _, err := temporary.Write(content); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(temporaryPath, mode); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }

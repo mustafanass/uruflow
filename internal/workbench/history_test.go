@@ -29,7 +29,6 @@ func TestCommandHistoryPersistsWithoutSensitiveValues(t *testing.T) {
 	m := &model{historyPath: path}
 	m.remember("status")
 	m.remember("status")
-	m.remember("secret set database-password")
 	m.remember("agent add build-01 --key one-time-key")
 	m.remember("project list")
 

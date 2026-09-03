@@ -172,9 +172,8 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("create agent: %v", err)
 	}
 	if err := store.SaveProject(&models.Project{
-		Name: "api", GitURL: "git@host:api.git", Branch: "main",
-		Builder: "a1", Runners: []string{"a1"}, AutoDeploy: true,
-		Runtime: models.Runtime{Ports: []models.Port{{Host: 8080, Container: 80}}},
+		Name: "api", Builder: "a1", Runners: []string{"a1"},
+		Services: []models.Service{{GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile", Ports: []models.Port{{Host: 8080, Container: 80}}}},
 	}); err != nil {
 		t.Fatalf("save project: %v", err)
 	}

@@ -57,7 +57,7 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 	if request.Project == "" || filepath.Base(request.Project) != request.Project || request.Project == "." {
 		return nil, fmt.Errorf("invalid project name %q", request.Project)
 	}
-	result := &Result{Images: make(map[string]string, len(request.Targets)), Commits: make(map[string]string, len(request.Targets)), Commit: request.Commit}
+	result := &Result{Images: make(map[string]string, len(request.Targets)), Commits: make(map[string]string, len(request.Targets))}
 	type sourceCheckout struct {
 		dir    string
 		commit string
@@ -65,19 +65,14 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 	checkouts := make(map[string]sourceCheckout)
 
 	for _, target := range request.Targets {
-		gitURL, branch, requestedCommit, primary := targetSource(request, target)
+		gitURL, branch, requestedCommit := targetSource(target)
 		key := gitURL + "\x00" + branch + "\x00" + requestedCommit
 		checkout, ok := checkouts[key]
 		if !ok {
-			sourceDir := filepath.Join(b.workDir, request.Project)
-			if gitURL != request.GitURL || branch != request.Branch || requestedCommit != request.Commit {
-				digest := sha256.Sum256([]byte(gitURL + "\x00" + branch))
-				sourceDir = filepath.Join(b.workDir, request.Project+"-sources", fmt.Sprintf("%x", digest[:8]))
-			}
+			digest := sha256.Sum256([]byte(gitURL + "\x00" + branch))
+			sourceDir := filepath.Join(b.workDir, request.Project+"-sources", fmt.Sprintf("%x", digest[:8]))
 			log(ufp.StreamStdout, fmt.Sprintf("fetching source %s (%s)", gitURL, branch))
-			sourceRequest := request
-			sourceRequest.GitURL, sourceRequest.Branch, sourceRequest.Commit = gitURL, branch, requestedCommit
-			if err := b.sync(ctx, sourceDir, sourceRequest, log); err != nil {
+			if err := b.sync(ctx, sourceDir, gitURL, branch, requestedCommit, log); err != nil {
 				return nil, err
 			}
 			commit, err := capture(ctx, sourceDir, gitBinary, "rev-parse", "HEAD")
@@ -89,9 +84,7 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 		}
 		sourceDir, commit := checkout.dir, checkout.commit
 		result.Commits[target.Service] = commit
-		if primary {
-			result.Commit = commit
-		} else if result.Commit == "" {
+		if result.Commit == "" {
 			result.Commit = commit
 		}
 		if _, err := safeBuildPath(sourceDir, target.Dockerfile); err != nil {
@@ -133,22 +126,8 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 	return result, nil
 }
 
-func targetSource(request ufp.BuildRequest, target ufp.BuildTarget) (gitURL, branch, commit string, primary bool) {
-	gitURL, branch = request.GitURL, request.Branch
-	if target.GitURL != "" {
-		gitURL = target.GitURL
-	}
-	if target.Branch != "" {
-		branch = target.Branch
-	}
-	primary = gitURL == request.GitURL && branch == request.Branch
-	if primary {
-		commit = request.Commit
-	}
-	if target.Commit != "" {
-		commit = target.Commit
-	}
-	return gitURL, branch, commit, primary
+func targetSource(target ufp.BuildTarget) (gitURL, branch, commit string) {
+	return target.GitURL, target.Branch, target.Commit
 }
 
 func (b *Builder) digestReference(ctx context.Context, sourceDir, repository, tagged string) (string, error) {
@@ -171,7 +150,7 @@ func (b *Builder) digestReference(ctx context.Context, sourceDir, repository, ta
 	return "", fmt.Errorf("registry returned no digest for %s", repository)
 }
 
-func (b *Builder) sync(ctx context.Context, sourceDir string, request ufp.BuildRequest, log LogFunc) error {
+func (b *Builder) sync(ctx context.Context, sourceDir, gitURL, branch, commit string, log LogFunc) error {
 	if _, err := os.Stat(filepath.Join(sourceDir, ".git")); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(sourceDir), 0o755); err != nil {
 			return err
@@ -180,7 +159,7 @@ func (b *Builder) sync(ctx context.Context, sourceDir string, request ufp.BuildR
 			return err
 		}
 		if err := stream(ctx, b.workDir, log, gitBinary,
-			"clone", "--branch", request.Branch, "--", request.GitURL, sourceDir); err != nil {
+			"clone", "--branch", branch, "--", gitURL, sourceDir); err != nil {
 			return err
 		}
 	} else {
@@ -192,9 +171,9 @@ func (b *Builder) sync(ctx context.Context, sourceDir string, request ufp.BuildR
 		}
 	}
 
-	target := request.Commit
+	target := commit
 	if target == "" {
-		target = "origin/" + request.Branch
+		target = "origin/" + branch
 	}
 	if strings.HasPrefix(target, "-") {
 		return fmt.Errorf("invalid git target %q", target)

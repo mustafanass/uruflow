@@ -53,9 +53,9 @@ func TestDeployAdvancesFromCommandToLoadedProjects(t *testing.T) {
 		t.Fatalf("project trail = %q", completion.Trail)
 	}
 	items := sourceProjector(completion.Source)(completion.Prefix, ops.Table("projects",
-		[]string{"NAME", "ENV", "WORKFLOW", "SERVICES", "BRANCH", "SOURCE"}, [][]string{
-			{"api-prod", "prod", "build_deploy", "2", "main", "projects/api/project.yaml"},
-			{"web-prod", "prod", "deploy_only", "1", "main", "projects/web/project.yaml"},
+		[]string{"NAME", "ENV", "WORKFLOW", "SERVICES", "SOURCE"}, [][]string{
+			{"api-prod", "prod", "build_deploy", "2", "projects/api/prod.yaml"},
+			{"web-prod", "prod", "deploy_only", "1", "projects/web/prod.yaml"},
 		}))
 	input := textinput.New()
 	input.SetValue("project deploy api")
@@ -79,7 +79,7 @@ func TestCreationCommandsAdvanceToGuidedInput(t *testing.T) {
 		label string
 	}{
 		{"agent add ", "NEW AGENT"},
-		{"secret set ", "SECRET NAME"},
+		{"project variables ", "PROJECT"},
 		{"project apply ", "PROJECT ENVIRONMENT"},
 		{"project validate ", "YAML FILE"},
 		{"project create ", "NEW PROJECT"},
@@ -153,8 +153,8 @@ func TestCompoundResourceChoicesUseNamedColumns(t *testing.T) {
 		t.Fatal("project apply completion is missing")
 	}
 	items = sourceProjector(apply.Source)(apply.Prefix, ops.Table("projects",
-		[]string{"NAME", "ENV", "WORKFLOW", "SERVICES", "BRANCH", "SOURCE"},
-		[][]string{{"api-prod", "prod", "build_deploy", "2", "main", "projects/api/project.yaml"}}))
+		[]string{"NAME", "ENV", "WORKFLOW", "SERVICES", "SOURCE"},
+		[][]string{{"api-prod", "prod", "build_deploy", "2", "projects/api/prod.yaml"}}))
 	if len(items) != 1 || items[0].Command != "project apply api prod" {
 		t.Fatalf("project environment choices = %#v", items)
 	}

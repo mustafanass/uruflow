@@ -163,11 +163,8 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 }
 
 func validateBuildRequest(request ufp.BuildRequest) error {
-	if request.JobID == "" || request.Project == "" || request.GitURL == "" || request.Branch == "" {
+	if request.JobID == "" || request.Project == "" {
 		return fmt.Errorf("build request is incomplete")
-	}
-	if request.Commit != "" && !models.ValidGitCommit(request.Commit) {
-		return fmt.Errorf("build request has an invalid commit")
 	}
 	if len(request.Targets) == 0 {
 		return fmt.Errorf("build request has no targets")
@@ -176,6 +173,12 @@ func validateBuildRequest(request ufp.BuildRequest) error {
 	for _, target := range request.Targets {
 		if target.Image == "" || target.Dockerfile == "" || target.Context == "" || seen[target.Service] {
 			return fmt.Errorf("build target %q is invalid", target.Service)
+		}
+		if target.GitURL == "" || target.Branch == "" {
+			return fmt.Errorf("build target %q source is incomplete", target.Service)
+		}
+		if target.Commit != "" && !models.ValidGitCommit(target.Commit) {
+			return fmt.Errorf("build target %q has an invalid commit", target.Service)
 		}
 		seen[target.Service] = true
 	}

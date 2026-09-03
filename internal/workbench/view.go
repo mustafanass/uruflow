@@ -87,15 +87,21 @@ func (m *model) View() string {
 	state, shortState, stateColor := "ready", "ready", cliui.ANSISuccess
 	if m.running && m.editorSubmission {
 		state, shortState, stateColor = "validating YAML", "validating", cliui.ANSIInformation
-		if len(m.active) >= 2 && m.active[0] == "project" && m.active[1] == "create" {
+		if isVariableEditor(m.active) {
+			state, shortState = "saving variables", "saving"
+		} else if len(m.active) >= 2 && m.active[0] == "project" && m.active[1] == "create" {
 			state, shortState = "creating project", "creating"
 		}
+	} else if m.running && isVariableEditor(m.active) {
+		state, shortState, stateColor = "loading variables", "loading", cliui.ANSIInformation
 	} else if m.running {
 		state, shortState = "streaming · Ctrl+C detaches", "live"
 	} else if m.paste {
-		state, shortState, stateColor = "editing YAML", "YAML", cliui.ANSIWarning
-	} else if m.secret {
-		state, shortState, stateColor = "secure input", "secret", cliui.ANSIWarning
+		if isVariableEditor(m.pending) {
+			state, shortState, stateColor = "editing variables", "variables", cliui.ANSIWarning
+		} else {
+			state, shortState, stateColor = "editing YAML", "YAML", cliui.ANSIWarning
+		}
 	} else if m.confirm {
 		state, shortState, stateColor = "confirmation", "confirm", cliui.ANSIWarning
 	}
@@ -107,7 +113,7 @@ func (m *model) View() string {
 	header := brand + strings.Repeat(" ", max(1, m.width-utf8Width(cliui.PlainWordmark)-utf8Width(status))) + m.paint(stateColor, status)
 	rule := m.paint(cliui.ANSIBorder, strings.Repeat("─", max(1, m.width)))
 	if m.paste {
-		return header + "\n" + rule + "\n" + m.renderYAMLArea()
+		return header + "\n" + rule + "\n" + m.renderEditorArea()
 	}
 	return header + "\n" + rule + "\n" + m.viewport.View() + "\n" + m.renderCommandArea()
 }
@@ -120,8 +126,6 @@ func (m *model) renderCommandArea() string {
 		title = " " + completion.Trail + " "
 	} else if len(visible) > 0 {
 		title = " COMMANDS "
-	} else if m.secret {
-		title = " SECURE VALUE "
 	} else if m.confirm {
 		title = " CONFIRM "
 	}
@@ -186,7 +190,7 @@ func (m *model) renderCommandArea() string {
 			action = "retry"
 		}
 		hint = "  Type to filter · ↑↓ select · Enter " + action
-	} else if m.secret || m.confirm {
+	} else if m.confirm {
 		hint = "  Enter continue · Esc cancel"
 	}
 	if m.width < utf8Width(hint) {
@@ -206,7 +210,7 @@ func suggestionValue(item commandSpec, completion argumentContext, completing bo
 	return item.Command
 }
 
-func (m *model) renderYAMLArea() string {
+func (m *model) renderEditorArea() string {
 	title := m.editorTitle
 	if title == "" {
 		title = "YAML"
@@ -215,9 +219,16 @@ func (m *model) renderYAMLArea() string {
 	if hint == "" {
 		hint = "Ctrl+S validate and apply · Esc cancel"
 	}
-	footer := "  " + hint + " · Enter smart indent · Tab/Shift+Tab indent"
+	footer := "  " + hint
+	if !isVariableEditor(m.pending) && !isVariableEditor(m.active) {
+		footer += " · Enter smart indent · Tab/Shift+Tab indent"
+	}
 	if utf8Width(footer) > m.width {
-		footer = "  Ctrl+S save · Esc cancel · Enter/Tab smart indent"
+		if isVariableEditor(m.pending) || isVariableEditor(m.active) {
+			footer = "  Ctrl+S store · Esc cancel"
+		} else {
+			footer = "  Ctrl+S save · Esc cancel · Enter/Tab smart indent"
+		}
 	}
 	footer = truncateText(footer, max(1, m.width))
 	lines := []string{m.frameTop(" " + title + " ")}

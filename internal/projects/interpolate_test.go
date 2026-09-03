@@ -18,7 +18,10 @@
 
 package projects
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestInterpolateComposeFormsAndPreservesSecrets(t *testing.T) {
 	variables := map[string]string{"TAG": "1.5.5", "PASSWORD": "${secret:db_password}"}
@@ -65,7 +68,7 @@ func TestBuildServicesLoadsNativeRuntimeModel(t *testing.T) {
 }
 
 func TestEnvironmentValidationUsesDotEnvVariables(t *testing.T) {
-	content := "branch: main\nbuilder: builder-01\nrunners: [web-01]\nresources:\n  networks:\n    edge:\n      name: ${NETWORK:?required}\nservices:\n  api:\n    image: ${IMAGE:?required}\n    networks:\n      edge: {}\n"
+	content := "workflow: deploy_only\nrunners: [web-01]\nresources:\n  networks:\n    edge:\n      name: ${NETWORK:?required}\nservices:\n  api:\n    image: ${IMAGE:?required}\n    networks:\n      edge: {}\n"
 	variables := map[string]string{
 		"NETWORK": "shared-edge",
 		"IMAGE":   "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -75,5 +78,31 @@ func TestEnvironmentValidationUsesDotEnvVariables(t *testing.T) {
 	}
 	if err := ValidateEnvironmentYAML(content); err == nil {
 		t.Fatal("required values were accepted without the environment")
+	}
+}
+
+func TestLoaderValidationUsesDefaultsYAMLAndTargetDotEnv(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "defaults.yaml"), "env:\n  DOCKERFILE: Dockerfile\n")
+	path := filepath.Join(root, "projects", "api", "prod.yaml")
+	write(t, filepath.Join(root, "projects", "api", "prod.env"), "SERVICE_GIT=git@host:api.git\nSERVICE_BRANCH=release\n")
+	content := `workflow: build_deploy
+builder: builder-01
+runners: [web-01]
+env:
+  BUILD_CONTEXT: .
+services:
+  api:
+    git: ${SERVICE_GIT:?git required}
+    branch: ${SERVICE_BRANCH:?branch required}
+    dockerfile: ${DOCKERFILE:?dockerfile required}
+    context: ${BUILD_CONTEXT:?context required}
+`
+
+	if err := NewLoader(root, fakeAgents()).Validate(path, content); err != nil {
+		t.Fatalf("target variables were not used: %v", err)
+	}
+	if err := ValidateEnvironmentYAML(content); err == nil {
+		t.Fatal("context-free validation unexpectedly resolved target variables")
 	}
 }

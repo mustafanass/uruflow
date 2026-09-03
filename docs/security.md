@@ -109,9 +109,10 @@ and branch match. Treat the secret as a deployment credential.
 
 ## 7. Secrets
 
-URUFLOW provides a secret store for values that must not appear in files or on screen. `uruflow
-secret set <name>` reads the value from a masked terminal prompt or stdin, so it is never passed as a
-command argument and never enters workspace history.
+URUFLOW provides a secret store for values that must not remain in project files or ordinary
+workspace output. `project variables <project>` manages plain and secret variables together. A plain
+line uses `NAME=value`; a protected line uses `secret NAME=value`. Secret values never enter command
+arguments, history, or the response transcript.
 
 A project references it as `${secret:api_db_url}` in an ordinary variable. The reference is resolved
 when a release is dispatched.
@@ -124,7 +125,7 @@ when a release is dispatched.
 | Key storage | `<data_dir>/pki/secrets.key`, mode `0600`, generated on first use |
 | Not deterministic | A fresh nonce per value, so identical secrets have different ciphertext |
 | Tamper detection | GCM authentication rejects modified ciphertext |
-| Never displayed | The workspace shows only the reference, never the value |
+| Not displayed after storage | Lists and responses show only references; bulk values are visible only while the editor is open |
 | Never in files | Project files carry the reference, so they are safe to commit |
 | Not in logs | Resolution happens at dispatch; values never enter a release log |
 | Fails closed | A missing secret fails the deploy before any build starts |
@@ -140,6 +141,10 @@ container. Consequently:
 
 **Ordinary variables are still plaintext.** Only values you deliberately move into the secret store
 are encrypted. Anything written directly in a `.env` file or a project remains readable.
+
+**Secret entry is visible in the terminal editor until saved.** Take care with shoulder-surfing,
+terminal recording, and scrollback capture. Editor content is cleared after a successful save or
+cancellation and is not added to the transcript or command history.
 
 **Losing the key file loses every secret.** `pki/secrets.key` cannot be reconstructed. It joins
 `ca.key` as material that must be backed up — see [Operations](operations.md#backup-and-restore).

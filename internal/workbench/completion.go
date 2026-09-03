@@ -143,8 +143,6 @@ func completionTrail(command grammar.Command, index int) string {
 			label = "AGENT"
 		case "AGENT ROLE":
 			label = "ROLE"
-		case "SECRET NAME":
-			label = "SECRET"
 		case "YAML FILE":
 			label = "YAML"
 		case "PROJECT ENVIRONMENT":
@@ -219,7 +217,7 @@ func sourceProjector(source grammar.Source) choiceProjector {
 	case grammar.SourceAgents:
 		return tableChoices([]string{"NAME"}, "NAME", []string{"ROLES", "STATE", "VERSION"})
 	case grammar.SourceProjects:
-		return tableChoices([]string{"NAME"}, "NAME", []string{"WORKFLOW", "ENV", "BRANCH"})
+		return tableChoices([]string{"NAME"}, "NAME", []string{"WORKFLOW", "ENV", "SOURCE"})
 	case grammar.SourceProjectEnvironments:
 		return projectEnvironmentChoices
 	case grammar.SourceReleases:
@@ -230,8 +228,6 @@ func sourceProjector(source grammar.Source) choiceProjector {
 		return registryChoices
 	case grammar.SourceAlerts:
 		return tableChoices([]string{"ID"}, "ID", []string{"SEVERITY", "AGENT", "MESSAGE"})
-	case grammar.SourceSecrets:
-		return tableChoices([]string{"NAME"}, "NAME", []string{"REFERENCE", "UPDATED"})
 	default:
 		return nil
 	}
@@ -249,7 +245,7 @@ func (m *model) retryArgumentCompletion() tea.Cmd {
 }
 
 func (m *model) suggestions() []commandSpec {
-	if m.running || m.paste || m.secret || m.confirm {
+	if m.running || m.paste || m.confirm {
 		return nil
 	}
 	if completion, ok := argumentCompletion(m.input.Value()); ok {

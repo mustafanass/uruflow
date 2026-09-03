@@ -25,6 +25,24 @@ import (
 	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
+func TestBuildRequestAcceptsServiceOwnedSourcesWithoutAPrimary(t *testing.T) {
+	request := ufp.BuildRequest{
+		JobID: "r1", Project: "urufi-prod",
+		Targets: []ufp.BuildTarget{{
+			Service: "core", Image: "registry/urufi-core:latest", Dockerfile: "Dockerfile", Context: ".",
+			GitURL: "git@example/core.git", Branch: "main",
+		}},
+	}
+	if err := validateBuildRequest(request); err != nil {
+		t.Fatalf("service-owned source rejected: %v", err)
+	}
+
+	request.Targets[0].Branch = ""
+	if err := validateBuildRequest(request); err == nil {
+		t.Fatal("incomplete service-owned source was accepted")
+	}
+}
+
 func TestReleaseRequestValidatesHealthchecksAndLabels(t *testing.T) {
 	request := ufp.ReleaseRequest{JobID: "r1", Project: "api", Services: []ufp.ServiceSpec{{
 		Image:       "repo/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -95,20 +95,30 @@ func (l *Loader) readDefaults() (Defaults, error) {
 	return defaults, yaml.Unmarshal(data, &defaults)
 }
 
-func (l *Loader) loadProject(dir, folder string, defaults Defaults, result *Result) {
-	definitionPath := filepath.Join(dir, ProjectFile)
-
-	definition, err := readDefinition(definitionPath)
+func (l *Loader) Validate(path, content string) error {
+	var environment Environment
+	if err := decodeStrict([]byte(content), &environment); err != nil {
+		return err
+	}
+	defaults, err := l.readDefaults()
 	if err != nil {
-		result.Problems = append(result.Problems, Problem{Path: definitionPath, Reason: err})
-		return
+		return err
 	}
-	if definition.Name == "" {
-		definition.Name = folder
+	var environmentValues map[string]string
+	if path != "" && path != "-" {
+		envName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		environmentValues, err = l.readEnvFile(filepath.Dir(path), envName)
+		if err != nil {
+			return err
+		}
 	}
-	if err := validName(definition.Name); err != nil {
+	return validateEnvironment(environment, mergeEnv(defaults.Env, environment.Env, environmentValues))
+}
+
+func (l *Loader) loadProject(dir, folder string, defaults Defaults, result *Result) {
+	if err := validName(folder); err != nil {
 		result.Problems = append(result.Problems, Problem{
-			Path: definitionPath, Reason: err})
+			Path: dir, Reason: err})
 		return
 	}
 	entries, err := os.ReadDir(dir)
@@ -120,7 +130,7 @@ func (l *Loader) loadProject(dir, folder string, defaults Defaults, result *Resu
 	found := false
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || name == ProjectFile || !strings.HasSuffix(name, YAMLSuffix) {
+		if entry.IsDir() || !strings.HasSuffix(name, YAMLSuffix) {
 			continue
 		}
 
@@ -128,7 +138,7 @@ func (l *Loader) loadProject(dir, folder string, defaults Defaults, result *Resu
 		envName := strings.TrimSuffix(name, YAMLSuffix)
 		path := filepath.Join(dir, name)
 
-		project, err := l.buildProject(dir, path, envName, definition, defaults)
+		project, err := l.buildProject(dir, path, folder, envName, defaults)
 		if err != nil {
 			result.Problems = append(result.Problems, Problem{Path: path, Reason: err})
 			continue
@@ -142,14 +152,8 @@ func (l *Loader) loadProject(dir, folder string, defaults Defaults, result *Resu
 	}
 }
 
-func (l *Loader) buildProject(dir, path, envName string, definition Definition, defaults Defaults) (*models.Project, error) {
+func (l *Loader) buildProject(dir, path, folder, envName string, defaults Defaults) (*models.Project, error) {
 	if err := validName(envName); err != nil {
-		return nil, err
-	}
-	if err := validateBuildPath("dockerfile", definition.Dockerfile); err != nil {
-		return nil, err
-	}
-	if err := validateBuildPath("context", definition.Context); err != nil {
 		return nil, err
 	}
 	environment, err := readEnvironment(path)
@@ -161,12 +165,7 @@ func (l *Loader) buildProject(dir, path, envName string, definition Definition, 
 		return nil, err
 	}
 
-	autoDeploy := true
-	if environment.AutoDeploy != nil {
-		autoDeploy = *environment.AutoDeploy
-	}
-
-	effectiveEnv := mergeEnv(defaults.Env, definition.Env, environment.Env, environmentValues)
+	effectiveEnv := mergeEnv(defaults.Env, environment.Env, environmentValues)
 	effectiveEnv, err = resolveVariables(effectiveEnv)
 	if err != nil {
 		return nil, fmt.Errorf("environment: %w", err)
@@ -187,15 +186,17 @@ func (l *Loader) buildProject(dir, path, envName string, definition Definition, 
 	if err != nil {
 		return nil, err
 	}
+	if len(services) == 0 {
+		return nil, errors.New("services must define at least one service")
+	}
 	workflow := environment.Workflow
 	if !models.ValidWorkflow(workflow) {
 		return nil, fmt.Errorf("workflow %q is not supported", workflow)
 	}
 	probe := models.Project{
-		Workflow:   workflow,
-		Dockerfile: definition.Dockerfile,
-		Services:   services,
-		Runners:    environment.Runners,
+		Workflow: workflow,
+		Services: services,
+		Runners:  environment.Runners,
 	}
 	workflow = probe.EffectiveWorkflow()
 	built := false
@@ -208,8 +209,18 @@ func (l *Loader) buildProject(dir, path, envName string, definition Definition, 
 	if workflow != models.WorkflowDeployOnly && !built {
 		return nil, fmt.Errorf("%s requires at least one source-built service", workflow)
 	}
-	if probe.NeedsBuilder() && (definition.Git == "" || environment.Branch == "" || environment.Builder == "") {
-		return nil, errors.New("build workflows require git, branch, and builder")
+	if probe.NeedsBuilder() && environment.Builder == "" {
+		return nil, errors.New("build workflows require a builder")
+	}
+	if probe.NeedsBuilder() {
+		for _, service := range probe.ServiceList() {
+			if !service.Built() {
+				continue
+			}
+			if service.GitURL == "" || service.Branch == "" {
+				return nil, fmt.Errorf("service %q requires git and branch", service.Name)
+			}
+		}
 	}
 	if !probe.NeedsBuilder() && environment.Builder != "" {
 		return nil, errors.New("deploy_only must not set a builder")
@@ -251,7 +262,7 @@ func (l *Loader) buildProject(dir, path, envName string, definition Definition, 
 		}
 		declaredVolumes = environment.VolumeResources
 	}
-	projectName := definition.Name + NameSeparator + envName
+	projectName := folder + NameSeparator + envName
 	if !models.ValidResourceName(projectName) {
 		return nil, fmt.Errorf("project name %q is invalid after adding the environment suffix", projectName)
 	}
@@ -276,21 +287,15 @@ func (l *Loader) buildProject(dir, path, envName string, definition Definition, 
 	}
 
 	return &models.Project{
-		Name:       projectName,
-		Env:        envName,
-		Source:     path,
-		GitURL:     definition.Git,
-		Branch:     environment.Branch,
-		Dockerfile: definition.Dockerfile,
-		Context:    definition.Context,
-		BuildArgs:  definition.BuildArgs,
-		Builder:    builderID,
-		Runners:    runners,
-		AutoDeploy: autoDeploy,
-		Workflow:   workflow,
-		Services:   services,
-		Networks:   networks,
-		Volumes:    volumesResources,
+		Name:     projectName,
+		Env:      envName,
+		Source:   path,
+		Builder:  builderID,
+		Runners:  runners,
+		Workflow: workflow,
+		Services: services,
+		Networks: networks,
+		Volumes:  volumesResources,
 		Runtime: models.Runtime{
 			Ports:       ports,
 			Volumes:     volumes,
@@ -330,11 +335,6 @@ func (l *Loader) agent(name string, role models.Role) (*models.Agent, error) {
 		return nil, fmt.Errorf("agent %q does not carry the %s role", name, role)
 	}
 	return agent, nil
-}
-
-func readDefinition(path string) (Definition, error) {
-	var definition Definition
-	return definition, decodeFile(path, &definition)
 }
 
 func readEnvironment(path string) (Environment, error) {

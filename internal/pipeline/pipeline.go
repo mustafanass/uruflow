@@ -121,6 +121,9 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 	if err := p.validateProject(project); err != nil {
 		return nil, err
 	}
+	if commit != "" {
+		return nil, fmt.Errorf("project %s sources are selected per service; project-level commits are not supported", project.Name)
+	}
 
 	targets := p.buildTargets(project)
 	workflow := project.EffectiveWorkflow()
@@ -141,7 +144,6 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 		release := &models.Release{
 			ID:        helper.GenerateID(),
 			Project:   project.Name,
-			Branch:    project.Branch,
 			Image:     services[0].Image,
 			Images:    prebuilt,
 			Digest:    digest,
@@ -165,8 +167,6 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 	release := &models.Release{
 		ID:          helper.GenerateID(),
 		Project:     project.Name,
-		Branch:      project.Branch,
-		Commit:      commit,
 		Status:      models.StatusBuilding,
 		Builder:     builder.ID,
 		BuilderName: builder.Name,
@@ -182,9 +182,6 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 	request := ufp.BuildRequest{
 		JobID:   release.ID,
 		Project: project.Name,
-		GitURL:  project.GitURL,
-		Branch:  project.Branch,
-		Commit:  commit,
 		Tags:    []string{TagLatest},
 		Targets: targets,
 	}

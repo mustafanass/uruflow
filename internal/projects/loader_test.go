@@ -61,17 +61,16 @@ func seedTree(t *testing.T) string {
 
 	write(t, filepath.Join(root, "defaults.yaml"), "env:\n  TZ: Asia/Baghdad\n  LOG_LEVEL: info\n")
 
-	write(t, filepath.Join(root, "projects", "api", "project.yaml"),
-		"git: git@github.com:acme/api.git\ndockerfile: Dockerfile\ncontext: .\nenv:\n  APP: api\n  LOG_LEVEL: warn\n")
-
 	write(t, filepath.Join(root, "projects", "api", "dev.yaml"),
-		"branch: develop\nbuilder: builder-01\nrunners: [dev-01]\nports: [\"8081:80\"]\nauto_deploy: true\n")
+		"builder: builder-01\nrunners: [dev-01]\nports: [\"8081:80\"]\n"+
+			"env:\n  APP: api\n  LOG_LEVEL: warn\nservices:\n  api:\n    git: git@github.com:acme/api.git\n    branch: develop\n    dockerfile: Dockerfile\n    context: .\n")
 	write(t, filepath.Join(root, "projects", "api", "dev.env"),
 		"# comment\nLOG_LEVEL=debug\nDATABASE_URL=postgres://dev\n")
 
 	write(t, filepath.Join(root, "projects", "api", "prod.yaml"),
-		"branch: main\nbuilder: builder-01\nrunners: [web-01, web-02]\nports: [\"80:80\"]\n"+
-			"volumes: [\"/srv/api:/data:ro\"]\nauto_deploy: false\nenv:\n  MODE: production\n")
+		"builder: builder-01\nrunners: [web-01, web-02]\nports: [\"80:80\"]\n"+
+			"volumes: [\"/srv/api:/data:ro\"]\nenv:\n  APP: api\n  LOG_LEVEL: warn\n  MODE: production\n"+
+			"services:\n  api:\n    git: git@github.com:acme/api.git\n    branch: main\n    dockerfile: Dockerfile\n    context: .\n")
 
 	return root
 }
@@ -97,14 +96,11 @@ func TestLoaderExpandsEnvironmentsIntoProjects(t *testing.T) {
 		t.Fatal("a file-backed project is not marked managed")
 	}
 
-	if dev.Branch != "develop" || prod.Branch != "main" {
-		t.Fatalf("branches = %q, %q", dev.Branch, prod.Branch)
+	if dev.Services[0].Branch != "develop" || prod.Services[0].Branch != "main" {
+		t.Fatalf("service branches = %q, %q", dev.Services[0].Branch, prod.Services[0].Branch)
 	}
-	if dev.GitURL != prod.GitURL {
-		t.Fatal("both environments should inherit one git url")
-	}
-	if dev.AutoDeploy == prod.AutoDeploy {
-		t.Fatal("auto_deploy should differ per environment")
+	if dev.GitURL != "" || prod.GitURL != "" || dev.AutoDeploy || prod.AutoDeploy {
+		t.Fatal("project-level source or auto deploy was populated")
 	}
 	if len(prod.Runners) != 2 || len(dev.Runners) != 1 {
 		t.Fatalf("runners dev=%v prod=%v", dev.Runners, prod.Runners)
@@ -117,7 +113,68 @@ func TestLoaderExpandsEnvironmentsIntoProjects(t *testing.T) {
 	}
 }
 
-func TestEnvPrecedenceDefaultsThenProjectThenYAMLThenDotEnv(t *testing.T) {
+func TestLoaderLoadsServiceOwnedSources(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "projects", "urufi", "prod.yaml"), `workflow: build_deploy
+builder: builder-01
+runners: [web-01]
+services:
+  core:
+    git: git@host:urufi/core.git
+    branch: main
+    dockerfile: Dockerfile
+  cache:
+    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+`)
+
+	result := NewLoader(root, fakeAgents()).Load()
+	if len(result.Problems) != 0 || len(result.Projects) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	project := result.Projects[0]
+	if project.Name != "urufi-prod" || project.GitURL != "" || project.Branch != "" || project.AutoDeploy {
+		t.Fatalf("project = %+v", project)
+	}
+	services := make(map[string]models.Service, len(project.Services))
+	for _, service := range project.Services {
+		services[service.Name] = service
+	}
+	if len(services) != 2 || services["core"].GitURL != "git@host:urufi/core.git" || services["cache"].Image == "" {
+		t.Fatalf("services = %+v", project.Services)
+	}
+}
+
+func TestEnvironmentRejectsAutoDeploy(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "projects", "api", "prod.yaml"), `builder: builder-01
+runners: [web-01]
+auto_deploy: true
+services:
+  api:
+    git: git@host:api.git
+    branch: main
+    dockerfile: Dockerfile
+`)
+
+	result := NewLoader(root, fakeAgents()).Load()
+	if len(result.Projects) != 0 || len(result.Problems) != 1 || !strings.Contains(result.Problems[0].Error(), "field auto_deploy not found") {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestEnvironmentRejectsProjectLevelSourceFields(t *testing.T) {
+	for _, field := range []string{"git", "branch", "dockerfile", "context", "build_args"} {
+		t.Run(field, func(t *testing.T) {
+			content := field + ": value\nworkflow: deploy_only\nrunners: [web-01]\nservices:\n  cache:\n    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+			err := ValidateEnvironmentYAML(content)
+			if err == nil || !strings.Contains(err.Error(), "field "+field+" not found") {
+				t.Fatalf("project-level field error = %v", err)
+			}
+		})
+	}
+}
+
+func TestEnvPrecedenceDefaultsThenYAMLThenDotEnv(t *testing.T) {
 	result := NewLoader(seedTree(t), fakeAgents()).Load()
 
 	byName := map[string]models.Project{}
@@ -130,10 +187,10 @@ func TestEnvPrecedenceDefaultsThenProjectThenYAMLThenDotEnv(t *testing.T) {
 		t.Errorf("defaults.yaml did not reach the project: %v", dev)
 	}
 	if dev["APP"] != "api" {
-		t.Errorf("project.yaml env did not reach the project: %v", dev)
+		t.Errorf("environment YAML did not reach the project: %v", dev)
 	}
 	if dev["LOG_LEVEL"] != "debug" {
-		t.Errorf("dev.env should win over project.yaml and defaults, got %q", dev["LOG_LEVEL"])
+		t.Errorf("dev.env should win over environment YAML and defaults, got %q", dev["LOG_LEVEL"])
 	}
 	if dev["DATABASE_URL"] != "postgres://dev" {
 		t.Errorf("dotenv value missing: %v", dev)
@@ -141,7 +198,7 @@ func TestEnvPrecedenceDefaultsThenProjectThenYAMLThenDotEnv(t *testing.T) {
 
 	prod := byName["api-prod"].Runtime.Env
 	if prod["LOG_LEVEL"] != "warn" {
-		t.Errorf("without a .env, project.yaml should win over defaults, got %q", prod["LOG_LEVEL"])
+		t.Errorf("without a .env, environment YAML should win over defaults, got %q", prod["LOG_LEVEL"])
 	}
 	if prod["MODE"] != "production" {
 		t.Errorf("environment yaml env missing: %v", prod)
@@ -151,8 +208,10 @@ func TestEnvPrecedenceDefaultsThenProjectThenYAMLThenDotEnv(t *testing.T) {
 func TestLoaderReportsBadFilesWithoutLosingGoodOnes(t *testing.T) {
 	root := seedTree(t)
 	write(t, filepath.Join(root, "projects", "api", "broken.yaml"),
-		"branch: main\nbuilder: nobody\nrunners: [web-01]\n")
-	write(t, filepath.Join(root, "projects", "web", "project.yaml"), "dockerfile: Dockerfile\n")
+		"builder: nobody\nrunners: [web-01]\nservices:\n  api:\n    git: git@host:api.git\n    branch: main\n")
+	if err := os.MkdirAll(filepath.Join(root, "projects", "web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	result := NewLoader(root, fakeAgents()).Load()
 
@@ -172,7 +231,7 @@ func TestLoaderReportsBadFilesWithoutLosingGoodOnes(t *testing.T) {
 func TestLoaderRejectsWrongRole(t *testing.T) {
 	root := seedTree(t)
 	write(t, filepath.Join(root, "projects", "api", "bad.yaml"),
-		"branch: main\nbuilder: web-01\nrunners: [web-01]\n")
+		"builder: web-01\nrunners: [web-01]\nservices:\n  api:\n    git: git@host:api.git\n    branch: main\n")
 
 	result := NewLoader(root, fakeAgents()).Load()
 

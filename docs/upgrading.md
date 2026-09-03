@@ -3,6 +3,12 @@
 How to move between URUFLOW versions. Protocol-changing releases require coordinated server and agent
 replacement. Moving from 1.x remains a rebuild.
 
+## From 2.4.0 to 2.4.1
+
+Version 2.4.1 retains UFP protocol byte `0x04`. Wait for active releases to finish, replace the server,
+then replace every agent. Existing containers continue running while the control plane is stopped.
+Complete the rollout promptly so server and agent behavior stays aligned.
+
 ## From 2.3.1 to 2.4.0
 
 Version 2.4.0 retains UFP protocol byte `0x04`. Wait for active releases to finish, replace the server,

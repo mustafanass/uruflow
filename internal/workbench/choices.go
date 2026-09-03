@@ -53,7 +53,7 @@ func projectEnvironmentChoices(prefix string, event ops.Event) []commandSpec {
 		project := strings.TrimSuffix(name, "-"+environment)
 		items = append(items, commandSpec{
 			Command: commandWith(prefix, project, environment), Display: project + " · " + environment,
-			Summary: joinValues(values, []string{"WORKFLOW", "BRANCH", "SOURCE"}),
+			Summary: joinValues(values, []string{"WORKFLOW", "SOURCE"}),
 		})
 	}
 	return items

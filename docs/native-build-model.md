@@ -20,20 +20,12 @@ multi-service application as one unit.
 
 ```text
 /etc/uruflow/projects/urufi/
-├── project.yaml
 ├── prod.yaml
 └── prod.env
 ```
 
-`project.yaml` supplies the primary source. Services may override it when a project builds several
-repositories.
-
-```yaml
-name: urufi
-git: git@gitlab.com:urufi/deployment.git
-dockerfile: Dockerfile
-context: .
-```
+The directory and filename produce `urufi-prod`. The YAML file contains the complete build and runtime
+model. Every built service declares its own source; prebuilt services declare an immutable image.
 
 `prod.env` supplies non-secret interpolation and runtime values:
 
@@ -49,10 +41,8 @@ literal dollar sign. Secret references are preserved during interpolation.
 ## 3. Complete Environment Shape
 
 ```yaml
-branch: main
 builder: controller-01
 runners: [controller-01]
-auto_deploy: false
 
 resources:
   networks:
@@ -163,7 +153,7 @@ The placeholder image digest in this example must be replaced by the reviewed di
 
 ## 4. Build Sources
 
-The project-level `git` and environment `branch` remain the default. A built service may override both:
+Every built service declares its repository and branch:
 
 ```yaml
 services:
@@ -177,15 +167,14 @@ services:
 The builder keeps one checkout per Git URL and branch, builds each target inside its own source root,
 and rejects Dockerfile or context paths that escape that root. Services sharing a source reuse the
 same checkout. A release records the resolved commit for every built service alongside its image
-digest. Webhooks still match the project's primary Git URL and branch; changes in secondary sources
-are deployed manually or through a webhook targeting an appropriate project.
+digest. Service-owned projects are deployed manually.
 
 ## 5. Runtime Fields
 
 | Field | Meaning |
 | :--- | :--- |
 | `image` | Immutable prebuilt image; mutually exclusive with `dockerfile` |
-| `git`, `branch` | Optional source override for a built service |
+| `git`, `branch` | Source repository and branch for a built service |
 | `dockerfile`, `context`, `build_args` | Docker build input inside that source root |
 | `entrypoint` | Exact OCI entrypoint string list |
 | `command` | String runs through `sh -c`; string list is exact OCI `Cmd` |

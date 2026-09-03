@@ -34,6 +34,10 @@ func ValidateEnvironmentYAMLWithVariables(content string, variables map[string]s
 	if err := decodeStrict([]byte(content), &environment); err != nil {
 		return err
 	}
+	return validateEnvironment(environment, mergeEnv(environment.Env, variables))
+}
+
+func validateEnvironment(environment Environment, variables map[string]string) error {
 	resolved, err := resolveVariables(variables)
 	if err != nil {
 		return fmt.Errorf("environment: %w", err)
@@ -55,13 +59,14 @@ func ValidateEnvironmentYAMLWithVariables(content string, variables map[string]s
 	if err != nil {
 		return err
 	}
+	if len(services) == 0 {
+		return errors.New("services must define at least one service")
+	}
 	if !models.ValidWorkflow(environment.Workflow) {
 		return fmt.Errorf("workflow %q is not supported", environment.Workflow)
 	}
-	if environment.Workflow != "" {
-		if err := validateExplicitWorkflow(environment, services); err != nil {
-			return err
-		}
+	if err := validateExplicitWorkflow(environment, services); err != nil {
+		return err
 	}
 	if _, err := models.OrderServices(services); err != nil {
 		return err
@@ -104,8 +109,13 @@ func validateExplicitWorkflow(environment Environment, services []models.Service
 	if workflow != models.WorkflowDeployOnly && !built {
 		return fmt.Errorf("%s requires at least one source-built service", workflow)
 	}
-	if probe.NeedsBuilder() && (environment.Branch == "" || environment.Builder == "") {
-		return errors.New("build workflows require branch and builder")
+	if probe.NeedsBuilder() && environment.Builder == "" {
+		return errors.New("build workflows require a builder")
+	}
+	for _, service := range probe.ServiceList() {
+		if service.Built() && (service.GitURL == "" || service.Branch == "") {
+			return fmt.Errorf("service %q requires git and branch", service.Name)
+		}
 	}
 	if !probe.NeedsBuilder() && environment.Builder != "" {
 		return errors.New("deploy_only must not set a builder")
