@@ -205,7 +205,7 @@ Constraints that shaped the implementation and should be preserved:
 5. **Configuration has one authoritative location.** Project YAML is desired state; the database
    contains its loaded model and observed runtime state, never a competing editable definition.
 6. **Presentation holds no pipeline logic.** The workbench renders typed command events and owns only
-   interaction concerns such as history, confirmation, masked input and layout.
+   interaction concerns such as history, confirmation, inline editors and layout.
 
 ## 12. Where a Change Belongs
 

@@ -34,14 +34,13 @@ const (
 	SourceContainers          Source = "containers"
 	SourceRegistry            Source = "registry"
 	SourceAlerts              Source = "alerts"
-	SourceSecrets             Source = "secrets"
 )
 
 type InputMode string
 
 const (
-	InputYAML   InputMode = "yaml"
-	InputSecret InputMode = "secret"
+	InputYAML      InputMode = "yaml"
+	InputVariables InputMode = "variables"
 )
 
 type Action string
@@ -110,22 +109,24 @@ var commands = []Command{
 	}},
 	{Path: []string{"agent", "remove"}, Summary: "Remove an enrolled agent", Confirm: true, Arguments: []Argument{resource("AGENT", SourceAgents, []string{"agent", "list"}, "No agents are enrolled.")}},
 	{Path: []string{"project", "list"}, Summary: "List YAML-owned projects"},
-	{Path: []string{"project", "create"}, Summary: "Create authoritative project YAML", Input: InputYAML, Arguments: []Argument{
+	{Path: []string{"project", "create"}, Summary: "Create a project environment", Input: InputYAML, Arguments: []Argument{
 		{Name: "PROJECT", Label: "NEW PROJECT", EmptyTip: "Type a lowercase project name to continue.", Advance: true},
 		{Name: "ENV", Label: "ENVIRONMENT", EmptyTip: "Type an environment name to open the project editor."},
 	}},
 	{Path: []string{"project", "show"}, Summary: "Inspect a project and its services", Arguments: []Argument{project()}},
-	{Path: []string{"project", "edit"}, Summary: "Edit authoritative project YAML", ExternalEditor: true, Arguments: []Argument{project()}},
-	{Path: []string{"project", "path"}, Summary: "Resolve authoritative project YAML", Hidden: true, Arguments: []Argument{project()}},
+	{Path: []string{"project", "edit"}, Summary: "Edit authoritative environment YAML", ExternalEditor: true, Arguments: []Argument{project()}},
+	{Path: []string{"project", "path"}, Summary: "Resolve authoritative environment YAML", Hidden: true, Arguments: []Argument{project()}},
 	{Path: []string{"project", "validate"}, Summary: "Validate environment YAML", Input: InputYAML, Arguments: []Argument{{Name: "FILE", Label: "YAML FILE", EmptyTip: "Type a YAML path, or - to open the inline editor."}}},
-	{Path: []string{"project", "apply"}, Summary: "Validate and atomically apply project YAML", Input: InputYAML, Arguments: []Argument{
+	{Path: []string{"project", "apply"}, Summary: "Validate and atomically apply environment YAML", Input: InputYAML, Arguments: []Argument{
 		{Name: "PROJECT ENV", Label: "PROJECT ENVIRONMENT", Width: 2, Source: SourceProjectEnvironments, Request: []string{"project", "list"}, EmptyTip: "No loaded project environments. Add YAML, then run project reload."},
 		{Name: "FILE", Label: "YAML FILE", EmptyTip: "Type a YAML path, or - to open the inline editor."},
 	}},
-	{Path: []string{"project", "reload"}, Summary: "Reload authoritative project YAML"},
+	{Path: []string{"project", "reload"}, Summary: "Reload authoritative environment YAML"},
 	{Path: []string{"project", "deploy"}, Summary: "Start and follow a project release", Durable: true, Arguments: []Argument{project(), runMode()}},
 	{Path: []string{"project", "rollback"}, Summary: "Restore a project's previous release", Durable: true, Arguments: []Argument{project(), runMode()}},
 	{Path: []string{"project", "stop"}, Summary: "Stop a project on every runner", Confirm: true, Arguments: []Argument{project()}},
+	{Path: []string{"project", "variables"}, Summary: "Manage optional plain and secret variables", Input: InputVariables, Arguments: []Argument{project()}},
+	{Path: []string{"project", "variables-source"}, Summary: "Load variables for the project editor", Hidden: true, Arguments: []Argument{project()}},
 	{Path: []string{"release", "list"}, Summary: "List recent releases", Arguments: []Argument{{Name: "LIMIT", Label: "LIMIT", Usage: "[--limit N]", Prefix: []string{"--limit"}, Optional: true, Validation: ValidationLimit}}},
 	{Path: []string{"release", "show"}, Summary: "Inspect a release", Arguments: []Argument{release()}},
 	{Path: []string{"release", "logs"}, Summary: "Read or follow release output", Arguments: []Argument{release(), logMode()}},
@@ -146,9 +147,6 @@ var commands = []Command{
 	}},
 	{Path: []string{"alert", "list"}, Summary: "List active alerts"},
 	{Path: []string{"alert", "resolve"}, Summary: "Resolve an alert", Confirm: true, Arguments: []Argument{resource("ALERT", SourceAlerts, []string{"alert", "list"}, "There are no active alerts.")}},
-	{Path: []string{"secret", "list"}, Summary: "List encrypted secret names"},
-	{Path: []string{"secret", "set"}, Summary: "Store a value using masked input", Input: InputSecret, Arguments: []Argument{{Name: "NAME", Label: "SECRET NAME", EmptyTip: "Type a secret name; its value is entered securely next."}}},
-	{Path: []string{"secret", "remove"}, Summary: "Remove an encrypted secret", Confirm: true, Arguments: []Argument{resource("SECRET", SourceSecrets, []string{"secret", "list"}, "There are no stored secrets.")}},
 	{Path: []string{"help"}, Summary: "Explain every workspace command"},
 	{Path: []string{"clear"}, Summary: "Clear the response transcript", Action: ActionClear},
 	{Path: []string{"exit"}, Summary: "Close the workspace", Action: ActionExit},

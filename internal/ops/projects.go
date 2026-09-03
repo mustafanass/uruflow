@@ -42,11 +42,16 @@ func (e *Engine) projects(ctx context.Context, args []string, input string, emit
 		rows := make([][]string, 0, len(values))
 		for _, project := range values {
 			rows = append(rows, []string{project.Name, project.Env, project.EffectiveWorkflow(),
-				strconv.Itoa(len(project.ServiceList())), project.Branch, project.Source})
+				strconv.Itoa(len(project.ServiceList())), project.Source})
 		}
-		return emit(Table("projects", []string{"NAME", "ENV", "WORKFLOW", "SERVICES", "BRANCH", "SOURCE"}, rows))
+		return emit(Table("projects", []string{"NAME", "ENV", "WORKFLOW", "SERVICES", "SOURCE"}, rows))
 	}
 	switch args[0] {
+	case "variables", "variables-source":
+		if len(args) != 2 {
+			return grammar.UsageError("project", args[0])
+		}
+		return e.projectVariables(args[1], input, args[0] == "variables-source", emit)
 	case "create":
 		if len(args) != 3 {
 			return grammar.UsageError("project", "create")
@@ -86,21 +91,24 @@ func (e *Engine) projects(ctx context.Context, args []string, input string, emit
 			}
 		}
 		if err := emit(Table(project.Name, []string{"FIELD", "VALUE"}, [][]string{
-			{"source", project.Source}, {"branch", project.Branch}, {"workflow", project.EffectiveWorkflow()},
+			{"source", project.Source}, {"workflow", project.EffectiveWorkflow()},
 			{"builder", builder}, {"runners", strings.Join(runners, ", ")},
-			{"auto deploy", strconv.FormatBool(project.AutoDeploy)}, {"services", strconv.Itoa(len(project.ServiceList()))},
+			{"services", strconv.Itoa(len(project.ServiceList()))},
 		})); err != nil {
 			return err
 		}
 		rows := make([][]string, 0, len(project.ServiceList()))
 		for _, service := range project.ServiceList() {
 			source := service.Image
+			branch := ""
+			build := ""
 			if service.Built() {
-				source = "build " + service.BuildFile()
+				source, branch, build = service.GitURL, service.Branch, service.BuildFile()
 			}
-			rows = append(rows, []string{service.Name, service.EffectiveMode(), source, strings.Join(models.FormatPorts(service.Ports), ","), service.Restart})
+			rows = append(rows, []string{service.Name, service.EffectiveMode(), source, branch, build,
+				strings.Join(models.FormatPorts(service.Ports), ","), service.Restart})
 		}
-		return emit(Table("services", []string{"NAME", "MODE", "SOURCE", "PORTS", "RESTART"}, rows))
+		return emit(Table("services", []string{"NAME", "MODE", "SOURCE", "BRANCH", "BUILD", "PORTS", "RESTART"}, rows))
 	case "reload":
 		loaded := e.server.ReloadProjects()
 		problems := e.server.ProjectProblems()
@@ -151,7 +159,7 @@ func (e *Engine) projects(ctx context.Context, args []string, input string, emit
 		if err != nil {
 			return err
 		}
-		if err := projects.ValidateEnvironmentYAML(content); err != nil {
+		if err := e.server.Loader().Validate(args[1], content); err != nil {
 			return err
 		}
 		return emit(Message("success", "YAML is valid"))
@@ -169,34 +177,34 @@ func (e *Engine) createProject(project, environment, input string, emit Emit) er
 	if !models.ValidResourceName(project) || !models.ValidResourceName(environment) {
 		return errors.New("project and environment must be lowercase resource names")
 	}
-	document, err := projects.ParseCreationYAML(input)
+	environmentDefinition, err := projects.ParseCreationYAML(input)
 	if err != nil {
-		return fmt.Errorf("validate project YAML: %w", err)
+		return fmt.Errorf("validate environment YAML: %w", err)
 	}
-	if document.Project.Name != "" && document.Project.Name != project {
-		return fmt.Errorf("project.name %q must match %q", document.Project.Name, project)
-	}
-	document.Project.Name = project
 	draft := projects.Draft{
-		Project: project, Env: environment,
-		Definition: document.Project, Environment: document.Environment,
+		Project: project, Env: environment, Environment: environmentDefinition,
+	}
+	environmentPath, _ := e.server.Loader().Paths(project, environment)
+	_, projectErr := os.Stat(filepath.Dir(environmentPath))
+	newProject := errors.Is(projectErr, os.ErrNotExist)
+	if projectErr != nil && !newProject {
+		return projectErr
 	}
 	if err := e.server.Loader().Create(draft); err != nil {
 		return err
 	}
-	definitionPath, environmentPath, _ := e.server.Loader().Paths(project, environment)
 	loaded := e.server.ReloadProjects()
-	projectDir := filepath.Dir(definitionPath)
+	projectDir := filepath.Dir(environmentPath)
 	for _, problem := range e.server.ProjectProblems() {
-		if pathWithin(projectDir, problem.Path) {
+		if problem.Path == environmentPath || newProject && pathWithin(projectDir, problem.Path) {
 			_ = e.server.Loader().Remove(project, environment)
 			e.server.ReloadProjects()
 			return fmt.Errorf("project was not created: %w", problem.Reason)
 		}
 	}
 	return emit(Event{Type: EventResult, Time: time.Now(), Title: "project created", Data: map[string]any{
-		"project": project, "environment": environment, "services": len(document.Environment.Services),
-		"project_file": definitionPath, "environment_file": environmentPath, "loaded": loaded,
+		"project": project, "environment": environment, "services": len(environmentDefinition.Services),
+		"environment_file": environmentPath, "loaded": loaded,
 	}})
 }
 
@@ -227,50 +235,37 @@ func (e *Engine) applyProject(project, environment, source, input string, emit E
 	if err != nil {
 		return err
 	}
-	if err := projects.ValidateEnvironmentYAML(content); err != nil {
-		return fmt.Errorf("validate YAML: %w", err)
-	}
-	_, destination, _ := e.server.Loader().Paths(project, environment)
+	destination, _ := e.server.Loader().Paths(project, environment)
 	if _, err := os.Stat(filepath.Dir(destination)); err != nil {
-		return fmt.Errorf("project definition does not exist: %s", filepath.Join(filepath.Dir(destination), projects.ProjectFile))
+		return fmt.Errorf("project does not exist: %s", filepath.Dir(destination))
+	}
+	if err := e.server.Loader().Validate(destination, content); err != nil {
+		return fmt.Errorf("validate YAML: %w", err)
 	}
 	previous, previousErr := os.ReadFile(destination)
 	hadPrevious := previousErr == nil
 	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
 		return previousErr
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(destination), ".uruflow-*.yaml")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if _, err := temporary.WriteString(content); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(temporaryPath, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temporaryPath, destination); err != nil {
+	if err := e.server.Loader().WriteEnvironment(project, environment, []byte(content)); err != nil {
 		return err
 	}
 	loaded := e.server.ReloadProjects()
 	for _, problem := range e.server.ProjectProblems() {
 		if problem.Path == destination {
+			var restoreErr error
 			if hadPrevious {
-				_ = os.WriteFile(destination, previous, 0o644)
+				restoreErr = e.server.Loader().WriteEnvironment(project, environment, previous)
 			} else {
-				_ = os.Remove(destination)
+				restoreErr = os.Remove(destination)
+				if errors.Is(restoreErr, os.ErrNotExist) {
+					restoreErr = nil
+				}
 			}
 			e.server.ReloadProjects()
+			if restoreErr != nil {
+				return fmt.Errorf("YAML was not applied: %v; restore previous YAML: %w", problem.Reason, restoreErr)
+			}
 			return fmt.Errorf("YAML was not applied: %w", problem.Reason)
 		}
 	}

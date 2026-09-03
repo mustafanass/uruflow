@@ -21,6 +21,7 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
@@ -28,14 +29,44 @@ import (
 )
 
 func (s *Store) SetSecret(name string, value []byte) error {
-	_, err := s.db.Exec(`
+	return s.UpdateSecrets(map[string][]byte{name: value}, nil)
+}
+
+func (s *Store) UpdateSecrets(values map[string][]byte, remove []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	removed := append([]string{}, remove...)
+	sort.Strings(removed)
+	for _, name := range removed {
+		if _, err := tx.Exec(`DELETE FROM secrets WHERE name = ?`, name); err != nil {
+			return err
+		}
+	}
+	statement, err := tx.Prepare(`
 		INSERT INTO secrets (name, value, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			value = excluded.value,
-			updated_at = excluded.updated_at`,
-		name, value, time.Now())
-	return err
+			updated_at = excluded.updated_at`)
+	if err != nil {
+		return err
+	}
+	defer statement.Close()
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	now := time.Now()
+	for _, name := range names {
+		if _, err := statement.Exec(name, values[name], now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) GetSecret(name string) ([]byte, error) {
@@ -64,15 +95,4 @@ func (s *Store) ListSecrets() ([]models.Secret, error) {
 		secrets = append(secrets, secret)
 	}
 	return secrets, rows.Err()
-}
-
-func (s *Store) DeleteSecret(name string) error {
-	result, err := s.db.Exec(`DELETE FROM secrets WHERE name = ?`, name)
-	if err != nil {
-		return err
-	}
-	if affected, _ := result.RowsAffected(); affected == 0 {
-		return storage.ErrNotFound
-	}
-	return nil
 }

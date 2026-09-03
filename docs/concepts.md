@@ -54,10 +54,10 @@ One agent may hold both roles. One builder can serve every project.
 
 ## Project
 
-A project is one repository deployed to one set of runners. It owns:
+A project is one release unit deployed to one set of runners. It owns:
 
-- a git source and branch
-- how to build it — Dockerfile path, build context, build arguments
+- one source and build definition for each built service
+- immutable image digests for prebuilt services
 - which agent builds it, and which agents run it
 - the runtime shape — ports, volumes, network, environment variables, restart policy
 - whether webhook pushes deploy it automatically
@@ -70,9 +70,8 @@ produces one of each per service. See [Projects](projects.md).
 An environment is a name such as `dev`, `stg` or `prod`. **URUFLOW has no environment type.** A file
 called `projects/api/dev.yaml` produces an ordinary project named `api-dev`.
 
-Environments exist in the file format, where they remove
-duplication, and are expanded into flat projects before anything else sees them. The pipeline, the
-runner, the registry and the release history never learn the word.
+The directory and filename are expanded into a flat project name before anything else sees them. The
+pipeline, runner, registry and release history never learn the word.
 
 The practical effects:
 

@@ -35,9 +35,6 @@ func (p *Pipeline) validateProject(project *models.Project) error {
 		return fmt.Errorf("project %s has invalid workflow %q", project.Name, project.Workflow)
 	}
 	workflow := project.EffectiveWorkflow()
-	if project.NeedsBuilder() && strings.TrimSpace(project.Branch) == "" {
-		return fmt.Errorf("project %s build workflow requires a branch", project.Name)
-	}
 	if !project.NeedsBuilder() && project.Builder != "" {
 		return fmt.Errorf("project %s deploy-only workflow must not set a builder", project.Name)
 	}
@@ -79,13 +76,10 @@ func (p *Pipeline) validateProject(project *models.Project) error {
 		if !models.ValidRestartPolicy(service.Restart) {
 			return fmt.Errorf("service %q has invalid restart policy %q", service.Name, service.Restart)
 		}
-		if service.GitURL != "" && strings.TrimSpace(service.Branch) == "" {
-			return fmt.Errorf("service %q source requires a branch", service.Name)
-		}
 		if service.Built() {
 			builtServices++
-			if service.GitURL == "" && strings.TrimSpace(project.GitURL) == "" {
-				return fmt.Errorf("service %q requires a project or service git URL", service.Name)
+			if strings.TrimSpace(service.GitURL) == "" || strings.TrimSpace(service.Branch) == "" {
+				return fmt.Errorf("service %q requires git and branch", service.Name)
 			}
 		}
 		if service.Resources.MemoryBytes < 0 || service.Resources.CPUs < 0 || service.Resources.PIDs < 0 {
@@ -163,16 +157,7 @@ func (p *Pipeline) validateBuildResult(release *models.Release, status ufp.JobSt
 	}
 	commits := status.Commits
 	if len(commits) == 0 {
-		commits = make(map[string]string, len(expected))
-		for _, service := range release.Spec.ServiceList() {
-			if !service.Built() {
-				continue
-			}
-			if service.GitURL != "" {
-				return fmt.Errorf("builder did not report the commit for service %q", service.Name)
-			}
-			commits[service.Name] = status.Commit
-		}
+		return fmt.Errorf("builder did not report per-service commits")
 	}
 	if len(commits) != len(expected) {
 		return fmt.Errorf("builder returned %d source commits, expected %d", len(commits), len(expected))
@@ -184,9 +169,6 @@ func (p *Pipeline) validateBuildResult(release *models.Release, status ufp.JobSt
 		commit := commits[service.Name]
 		if !models.ValidGitCommit(commit) {
 			return fmt.Errorf("builder returned an invalid commit for service %q", service.Name)
-		}
-		if service.GitURL == "" && release.Commit != "" && commit != release.Commit && !strings.HasPrefix(commit, release.Commit) {
-			return fmt.Errorf("builder resolved service %q commit %s instead of %s", service.Name, commit, release.Commit)
 		}
 	}
 	return nil

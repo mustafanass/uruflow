@@ -20,9 +20,6 @@ package ops
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/mustafanass/uruflow/internal/grammar"
 )
@@ -67,45 +64,6 @@ func (e *Engine) registry(ctx context.Context, args []string, emit Emit) error {
 		return err
 	}
 	return emit(Message("success", "deleted manifest "+args[1]+":"+args[2]))
-}
-
-func (e *Engine) secrets(args []string, input string, emit Emit) error {
-	if len(args) == 0 || args[0] == "list" {
-		values, err := e.server.Store().ListSecrets()
-		if err != nil {
-			return err
-		}
-		rows := make([][]string, 0, len(values))
-		for _, secret := range values {
-			rows = append(rows, []string{secret.Name, "${secret:" + secret.Name + "}", since(secret.UpdatedAt)})
-		}
-		return emit(Table("secrets", []string{"NAME", "REFERENCE", "UPDATED"}, rows))
-	}
-	if len(args) != 2 {
-		return grammar.GroupUsageError("secret")
-	}
-	switch args[0] {
-	case "set":
-		input = strings.TrimSuffix(input, "\n")
-		if input == "" {
-			return errors.New("secret value must be supplied on stdin")
-		}
-		sealed, err := e.server.Vault().Seal(input)
-		if err != nil {
-			return err
-		}
-		if err := e.server.Store().SetSecret(args[1], sealed); err != nil {
-			return err
-		}
-		return emit(Message("success", "stored "+args[1]+" · ${secret:"+args[1]+"}"))
-	case "remove":
-		if err := e.server.Store().DeleteSecret(args[1]); err != nil {
-			return err
-		}
-		return emit(Message("success", "removed secret "+args[1]))
-	default:
-		return fmt.Errorf("unknown secret command %q", args[0])
-	}
 }
 
 func contains(values []string, wanted string) bool {

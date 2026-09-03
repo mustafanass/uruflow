@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.4.0-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.4.1-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
   <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp-F5A524?style=flat-square" alt="ufp protocol"></a>
@@ -50,8 +50,8 @@ URUFLOW builds once and ships the artifact:
 
 A release runs in two stages.
 
-**Build.** The server sends `build.run` to the project's builder. The builder checks out the primary
-repository and any per-service source overrides, builds every source-backed service, tags its image
+**Build.** The server sends `build.run` to the project's builder. The builder checks out each
+service-owned repository, builds every source-backed service, tags its image
 with the resolved commit and `latest`, pushes it, and records an immutable digest and source commit
 for each service. Build output streams back as it happens.
 
@@ -68,7 +68,7 @@ the production project schema, see [Native Build Model](docs/native-build-model.
 
 ## Installation
 
-Latest release: **v2.4.0** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
+Latest release: **v2.4.1** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
 
 There are **two different binaries and they are not interchangeable** — installing the wrong one on a
 machine is the most common setup mistake:
@@ -89,19 +89,19 @@ uname -m      # x86_64 -> amd64      aarch64 / arm64 -> arm64
 **linux/amd64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-2.4.0-linux-amd64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-2.4.1-linux-amd64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-2.4.0-linux-amd64 && sudo mv uruflow-2.4.0-linux-amd64 /usr/local/bin/uruflow
+chmod +x uruflow-2.4.1-linux-amd64 && sudo mv uruflow-2.4.1-linux-amd64 /usr/local/bin/uruflow
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-2.4.0-linux-arm64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-2.4.1-linux-arm64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-2.4.0-linux-arm64 && sudo mv uruflow-2.4.0-linux-arm64 /usr/local/bin/uruflow
+chmod +x uruflow-2.4.1-linux-arm64 && sudo mv uruflow-2.4.1-linux-arm64 /usr/local/bin/uruflow
 ```
 
 ### Agent — `uruflow-agent`
@@ -109,24 +109,24 @@ chmod +x uruflow-2.4.0-linux-arm64 && sudo mv uruflow-2.4.0-linux-arm64 /usr/loc
 **linux/amd64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-agent-2.4.0-linux-amd64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-agent-2.4.1-linux-amd64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-agent-2.4.0-linux-amd64 && sudo mv uruflow-agent-2.4.0-linux-amd64 /usr/local/bin/uruflow-agent
+chmod +x uruflow-agent-2.4.1-linux-amd64 && sudo mv uruflow-agent-2.4.1-linux-amd64 /usr/local/bin/uruflow-agent
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/uruflow-agent-2.4.0-linux-arm64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.0/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-agent-2.4.1-linux-arm64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.1/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-agent-2.4.0-linux-arm64 && sudo mv uruflow-agent-2.4.0-linux-arm64 /usr/local/bin/uruflow-agent
+chmod +x uruflow-agent-2.4.1-linux-arm64 && sudo mv uruflow-agent-2.4.1-linux-arm64 /usr/local/bin/uruflow-agent
 ```
 
 ### Checksums
 
-`SHA256SUMS.txt` on the v2.4.0 release page covers every asset, including the `.tar.gz` archives:
+`SHA256SUMS.txt` on the v2.4.1 release page covers every asset, including the `.tar.gz` archives:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
@@ -195,7 +195,7 @@ The full walkthrough, including rollback, is in [Getting Started](docs/getting-s
 | **Agent** | A process on a target machine. Connects outward to the server. |
 | **Builder** | An agent role permitted to clone source and build images. |
 | **Runner** | An agent role permitted to pull and run images. Never receives source. |
-| **Project** | One repository deployed to one set of runners. Produces one image and one container per runner. |
+| **Project** | One release unit deployed to one set of runners. It may contain services from several repositories. |
 | **Environment** | A name such as `dev` or `prod` that expands into a separate project. Not a type in the system. |
 | **Release** | One attempt to build a commit and roll the image out, with a per-runner outcome. |
 | **Registry** | A `registry:2` instance URUFLOW starts, secures and manages itself. |
@@ -232,31 +232,32 @@ See [Deployments](docs/deployments.md#3-release-safety).
 
 ## Example Project
 
-Two environments of one service, defined as files:
-
-```yaml
-# projects/api/project.yaml — shared by every environment
-git: git@github.com:acme/api.git
-dockerfile: Dockerfile
-context: .
-```
+Two environments of one service, each defined by one authoritative file:
 
 ```yaml
 # projects/api/dev.yaml — becomes the project api-dev
-branch: develop
 builder: builder-01
 runners: [dev-01]
-auto_deploy: true
-ports: ["8081:80"]
+services:
+  api:
+    git: git@github.com:acme/api.git
+    branch: develop
+    dockerfile: Dockerfile
+    context: .
+    ports: ["8081:80"]
 ```
 
 ```yaml
 # projects/api/prod.yaml — becomes the project api-prod
-branch: main
 builder: builder-01
 runners: [web-01, web-02]
-auto_deploy: false
-ports: ["80:80"]
+services:
+  api:
+    git: git@github.com:acme/api.git
+    branch: main
+    dockerfile: Dockerfile
+    context: .
+    ports: ["80:80"]
 ```
 
 ```ini
@@ -265,8 +266,7 @@ LOG_LEVEL=debug
 DATABASE_URL=postgres://dev-host/api
 ```
 
-A push to `develop` deploys `api-dev` automatically. A push to `main` does nothing, because production
-is released deliberately.
+Both environments are released deliberately.
 
 The workspace can validate, edit, and atomically apply these files without introducing another source
 of truth. See [Projects](docs/projects.md).
@@ -282,9 +282,9 @@ of truth. See [Projects](docs/projects.md).
 - Rollback by re-releasing a stored image, without rebuilding
 - Environments as separate projects, defined by authoritative YAML files
 - Environment variables merged from shared defaults down to a per-environment `.env`
-- Encrypted secret storage, referenced as `${secret:name}` so project files stay safe to commit
+- One project-variable editor for plain and encrypted values, with `${secret:name}` references
 - Multi-service projects — an app, a worker and a prebuilt dependency in one project
-- Webhook deployment matched on git URL and branch, so one repository can feed several projects
+- Optional legacy primary repositories support webhook deployment matched on Git URL and branch
 - Live streaming of build output and container logs over a persistent connection
 - One release per project at a time, enforced across restarts
 - One colored command workspace with controlled input and live output over an ordinary SSH session

@@ -23,28 +23,25 @@ import (
 	"testing"
 )
 
-func TestCreationDocumentIsStrictAndValidatesTheEnvironment(t *testing.T) {
-	document, err := ParseCreationYAML(`project:
-  name: api
-  git: https://github.com/example/api.git
-environment:
-  workflow: build_deploy
-  branch: main
-  builder: builder-01
-  runners: [dev-01]
-  services:
-    api:
-      dockerfile: Dockerfile
-      context: .
+func TestCreationYAMLIsStrictAndValidatesTheEnvironment(t *testing.T) {
+	environment, err := ParseCreationYAML(`workflow: build_deploy
+builder: builder-01
+runners: [dev-01]
+services:
+  api:
+    git: https://github.com/example/api.git
+    branch: main
+    dockerfile: Dockerfile
+    context: .
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.Project.Name != "api" || document.Environment.Services["api"].Dockerfile != "Dockerfile" {
-		t.Fatalf("document = %+v", document)
+	if environment.Services["api"].Git != "https://github.com/example/api.git" || environment.Services["api"].Dockerfile != "Dockerfile" {
+		t.Fatalf("environment = %+v", environment)
 	}
 
-	_, err = ParseCreationYAML("project:\n  name: api\n  git: x\nenvironment:\n  workflo: build_deploy\n")
+	_, err = ParseCreationYAML("workflo: build_deploy\n")
 	if err == nil || !strings.Contains(err.Error(), "workflo") {
 		t.Fatalf("unknown field error = %v", err)
 	}

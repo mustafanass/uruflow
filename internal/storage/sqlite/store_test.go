@@ -63,6 +63,36 @@ func TestAgentRolesAndMetricsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSecretsBatchRoundTripAndClear(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.UpdateSecrets(map[string][]byte{
+		"database-url": []byte("sealed-one"),
+		"api_token":    []byte("sealed-two"),
+	}, nil); err != nil {
+		t.Fatalf("set secrets: %v", err)
+	}
+	if err := store.UpdateSecrets(map[string][]byte{
+		"api_token": []byte("replaced"),
+		"third":     []byte("sealed-three"),
+	}, nil); err != nil {
+		t.Fatalf("replace secrets: %v", err)
+	}
+	stored, err := store.ListSecrets()
+	if err != nil || len(stored) != 3 {
+		t.Fatalf("list secrets = %+v, err = %v", stored, err)
+	}
+	value, err := store.GetSecret("api_token")
+	if err != nil || string(value) != "replaced" {
+		t.Fatalf("replaced secret = %q, err = %v", value, err)
+	}
+	if err := store.UpdateSecrets(nil, []string{"api_token", "database-url", "third"}); err != nil {
+		t.Fatalf("remove secrets: %v", err)
+	}
+	if remaining, err := store.ListSecrets(); err != nil || len(remaining) != 0 {
+		t.Fatalf("remaining secrets = %+v, err = %v", remaining, err)
+	}
+}
+
 func TestProjectRuntimeRoundTrip(t *testing.T) {
 	store := newTestStore(t)
 

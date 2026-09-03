@@ -95,9 +95,6 @@ func safeForHistory(line string) bool {
 	if err != nil || len(args) == 0 {
 		return false
 	}
-	if len(args) >= 2 && args[0] == "secret" && args[1] == "set" {
-		return false
-	}
 	for _, argument := range args {
 		name := strings.ToLower(strings.SplitN(argument, "=", 2)[0])
 		switch name {

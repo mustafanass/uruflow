@@ -30,11 +30,10 @@ func TestPastedConfigAloneCreatesTheFiles(t *testing.T) {
 	loader := NewLoader(root, fakeAgents())
 
 	item := Draft{
-		Project:    "web",
-		Env:        "stg",
-		Definition: Definition{Git: "git@github.com:acme/web.git"},
-		RawYAML: "branch: staging\nbuilder: builder-01\nrunners: [web-01, web-02]\n" +
-			"ports: [\"8090:80\"]\nauto_deploy: false\n",
+		Project: "web",
+		Env:     "stg",
+		RawYAML: "builder: builder-01\nrunners: [web-01, web-02]\n" +
+			"services:\n  web:\n    git: git@github.com:acme/web.git\n    branch: staging\n    dockerfile: Dockerfile\n    ports: [\"8090:80\"]\n",
 		RawEnv: "MODE=staging\n",
 	}
 
@@ -51,14 +50,11 @@ func TestPastedConfigAloneCreatesTheFiles(t *testing.T) {
 	}
 
 	project := result.Projects[0]
-	if project.Name != "web-stg" || project.Branch != "staging" {
-		t.Fatalf("project = %q branch = %q", project.Name, project.Branch)
+	if project.Name != "web-stg" || project.Services[0].Branch != "staging" {
+		t.Fatalf("project = %q services = %+v", project.Name, project.Services)
 	}
 	if len(project.Runners) != 2 {
 		t.Fatalf("runners = %v", project.Runners)
-	}
-	if project.AutoDeploy {
-		t.Error("auto_deploy from the pasted config was ignored")
 	}
 	if project.Runtime.Env["MODE"] != "staging" {
 		t.Fatalf("variables = %v", project.Runtime.Env)
@@ -69,46 +65,31 @@ func TestEditingPreservesKeysTheFormDoesNotOwn(t *testing.T) {
 	root := t.TempDir()
 	loader := NewLoader(root, fakeAgents())
 
-	definitionPath, environmentPath, _ := loader.Paths("api", "dev")
-	os.MkdirAll(filepath.Dir(definitionPath), 0o755)
-	os.WriteFile(definitionPath, []byte(
-		"git: git@host:api.git\nbuild_args:\n  VERSION: \"2\"\nenv:\n  APP: api\n"), 0o644)
+	environmentPath, _ := loader.Paths("api", "dev")
+	os.MkdirAll(filepath.Dir(environmentPath), 0o755)
 	os.WriteFile(environmentPath, []byte(
-		"branch: develop\nbuilder: builder-01\nrunners: [dev-01]\ncommand: sh -c 'serve'\nenv:\n  TIER: edge\n"), 0o644)
+		"builder: builder-01\nrunners: [dev-01]\ncommand: sh -c 'serve'\nenv:\n  TIER: edge\n"+
+			"services:\n  api:\n    git: git@host:api.git\n    branch: develop\n    dockerfile: Dockerfile\n    build_args:\n      VERSION: \"2\"\n"), 0o644)
 
-	auto := false
 	if err := loader.Write(Draft{
-		Project:    "api",
-		Env:        "dev",
-		Definition: Definition{Git: "git@host:api.git", Dockerfile: "Dockerfile"},
+		Project: "api",
+		Env:     "dev",
 		Environment: Environment{
-			Branch: "main", Builder: "builder-01",
-			Runners: []string{"web-01"}, AutoDeploy: &auto, Ports: []string{"80:80"},
+			Builder: "builder-01", Runners: []string{"web-01"}, Ports: []string{"80:80"},
 		},
 	}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	definition, _ := os.ReadFile(definitionPath)
-	if !strings.Contains(string(definition), "VERSION") {
-		t.Errorf("build_args were lost:\n%s", definition)
-	}
-	if !strings.Contains(string(definition), "APP") {
-		t.Errorf("project env was lost:\n%s", definition)
-	}
-	if strings.Contains(string(definition), `name: ""`) {
-		t.Errorf("empty keys were written:\n%s", definition)
-	}
-
 	environment, _ := os.ReadFile(environmentPath)
+	if !strings.Contains(string(environment), "VERSION") {
+		t.Errorf("service build_args were lost:\n%s", environment)
+	}
 	if !strings.Contains(string(environment), "serve") {
 		t.Errorf("command was lost:\n%s", environment)
 	}
 	if !strings.Contains(string(environment), "TIER") {
 		t.Errorf("environment env block was lost:\n%s", environment)
-	}
-	if !strings.Contains(string(environment), "branch: main") {
-		t.Errorf("the form value did not win:\n%s", environment)
 	}
 	if !strings.Contains(string(environment), "web-01") {
 		t.Errorf("runners were not replaced:\n%s", environment)
@@ -119,11 +100,10 @@ func TestTyposAreRejectedWithTheFieldName(t *testing.T) {
 	root := t.TempDir()
 	loader := NewLoader(root, fakeAgents())
 
-	definitionPath, environmentPath, _ := loader.Paths("api", "dev")
-	os.MkdirAll(filepath.Dir(definitionPath), 0o755)
-	os.WriteFile(definitionPath, []byte("git: git@host:api.git\n"), 0o644)
+	environmentPath, _ := loader.Paths("api", "dev")
+	os.MkdirAll(filepath.Dir(environmentPath), 0o755)
 	os.WriteFile(environmentPath, []byte(
-		"brnach: main\nbuilder: builder-01\nrunners: [dev-01]\n"), 0o644)
+		"brnach: main\nbuilder: builder-01\nrunners: [dev-01]\nservices:\n  api:\n    git: git@host:api.git\n    branch: main\n"), 0o644)
 
 	result := loader.Load()
 
@@ -142,7 +122,7 @@ func TestStructuredServicesWriteAndLoadBack(t *testing.T) {
 	retries := 4
 	item.Environment.Services = map[string]Service{
 		"api": {
-			Dockerfile: "Dockerfile", Ports: []string{"8080:8080"},
+			Git: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile", Ports: []string{"8080:8080"},
 			Healthcheck: &Healthcheck{Type: "http", Path: "/ready", Port: 8080, Interval: "2s", Timeout: "1s", Retries: &retries},
 			Labels:      map[string]string{"traefik.enable": "true"},
 		},

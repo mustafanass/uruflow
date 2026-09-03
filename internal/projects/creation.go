@@ -21,29 +21,18 @@ package projects
 import (
 	"errors"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
-type CreationDocument struct {
-	Project     Definition  `yaml:"project"`
-	Environment Environment `yaml:"environment"`
-}
-
-func ParseCreationYAML(content string) (CreationDocument, error) {
-	var document CreationDocument
+func ParseCreationYAML(content string) (Environment, error) {
+	var environment Environment
 	if strings.TrimSpace(content) == "" {
-		return document, errors.New("project YAML cannot be empty")
+		return environment, errors.New("environment YAML cannot be empty")
 	}
-	if err := decodeStrict([]byte(content), &document); err != nil {
-		return document, err
+	if err := decodeStrict([]byte(content), &environment); err != nil {
+		return environment, err
 	}
-	environment, err := yaml.Marshal(document.Environment)
-	if err != nil {
-		return document, err
+	if err := ValidateEnvironmentYAML(content); err != nil {
+		return environment, err
 	}
-	if err := ValidateEnvironmentYAML(string(environment)); err != nil {
-		return document, err
-	}
-	return document, nil
+	return environment, nil
 }

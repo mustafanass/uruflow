@@ -32,8 +32,24 @@ const (
 )
 
 var pattern = regexp.MustCompile(`\$\{secret:([A-Za-z0-9_.-]+)\}`)
+var namePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 type Lookup func(name string) (string, error)
+
+func ValidateName(name string) error {
+	if !namePattern.MatchString(name) {
+		return fmt.Errorf("invalid secret name %q; use letters, numbers, dots, dashes or underscores", name)
+	}
+	return nil
+}
+
+func ReferenceName(value string) (string, bool) {
+	matches := pattern.FindStringSubmatch(value)
+	if len(matches) != 2 || matches[0] != value {
+		return "", false
+	}
+	return matches[1], true
+}
 
 func References(value string) []string {
 	matches := pattern.FindAllStringSubmatch(value, -1)

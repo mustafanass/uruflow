@@ -66,11 +66,13 @@ func integrationServer(t *testing.T) (*Server, string) {
 
 func TestDeletingAFileReportsAnOrphanedProject(t *testing.T) {
 	server, _ := integrationServer(t)
-	auto := true
 	draft := projects.Draft{
-		Project: "api", Env: "dev", Definition: projects.Definition{Git: "git@host:api.git"},
+		Project: "api", Env: "dev",
 		Environment: projects.Environment{
-			Branch: "main", Builder: "builder-01", Runners: []string{"builder-01"}, AutoDeploy: &auto,
+			Builder: "builder-01", Runners: []string{"builder-01"},
+			Services: map[string]projects.Service{"api": {
+				Git: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile",
+			}},
 		},
 	}
 	if err := server.Loader().Write(draft); err != nil {
@@ -82,7 +84,7 @@ func TestDeletingAFileReportsAnOrphanedProject(t *testing.T) {
 	if problems := server.ProjectProblems(); len(problems) != 0 {
 		t.Fatalf("unexpected problems: %v", problems)
 	}
-	_, environmentPath, _ := server.Loader().Paths("api", "dev")
+	environmentPath, _ := server.Loader().Paths("api", "dev")
 	if err := os.Remove(environmentPath); err != nil {
 		t.Fatalf("remove file: %v", err)
 	}

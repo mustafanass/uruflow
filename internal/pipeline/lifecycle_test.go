@@ -111,7 +111,7 @@ func TestReleaseOnlySkipsBuilder(t *testing.T) {
 	harness := newHarness(t)
 	project, _ := harness.store.GetProject("api")
 	project.Workflow = models.WorkflowDeployOnly
-	project.GitURL, project.Branch, project.Builder = "", "", ""
+	project.Builder = ""
 	project.Services = []models.Service{{Name: "cache", Image: prebuiltImage}}
 	if err := harness.store.SaveProject(project); err != nil {
 		t.Fatal(err)

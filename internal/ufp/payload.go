@@ -68,9 +68,6 @@ type RegistryConfig struct {
 type BuildRequest struct {
 	JobID   string        `json:"job_id"`
 	Project string        `json:"project"`
-	GitURL  string        `json:"git_url"`
-	Branch  string        `json:"branch"`
-	Commit  string        `json:"commit"`
 	Tags    []string      `json:"tags"`
 	Targets []BuildTarget `json:"targets"`
 }

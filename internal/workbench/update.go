@@ -124,12 +124,24 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.append(m.paint(cliui.ANSISuccess, "✔ editor closed; reloading YAML") + "\n")
 		return m, m.start([]string{"project", "reload"}, "")
+	case variableEditorMsg:
+		m.running = false
+		m.active = nil
+		if msg.err != nil {
+			m.input.Focus()
+			m.append(m.paint(cliui.ANSIError, "✘ "+cliui.SafeText(msg.err.Error())) + "\n")
+			return m, textinput.Blink
+		}
+		m.pending, m.paste = append([]string{}, msg.args...), true
+		m.prepareEditor(msg.args)
+		m.editor.SetValue(msg.content)
+		m.editor.CursorEnd()
+		m.editor.Focus()
+		m.resize()
+		return m, textarea.Blink
 	case tea.KeyMsg:
 		if m.paste {
 			return m.updatePaste(msg)
-		}
-		if m.secret {
-			return m.updateSecret(msg)
 		}
 		if m.confirm {
 			return m.updateConfirm(msg)
@@ -253,22 +265,18 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoTop()
 			}
 			m.append(m.paint(cliui.ANSIAccent, "› "+line) + "\n\n")
+			if command.Input == grammar.InputVariables {
+				m.running = true
+				m.active = append([]string{}, args...)
+				m.input.Blur()
+				return m, m.loadVariableEditor(args)
+			}
 			if wantsPaste(command, args) {
 				m.pending, m.paste = args, true
 				m.prepareEditor(args)
 				m.editor.Focus()
 				m.resize()
 				return m, textarea.Blink
-			}
-			if command.Input == grammar.InputSecret {
-				m.pending, m.secret = args, true
-				m.input.SetValue("")
-				m.input.Prompt = "Secret › "
-				m.input.Placeholder = "value is hidden"
-				m.input.EchoMode = textinput.EchoPassword
-				m.input.EchoCharacter = '•'
-				m.resize()
-				return m, textinput.Blink
 			}
 			if command.Confirm {
 				m.pending, m.confirm = args, true

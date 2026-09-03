@@ -34,6 +34,8 @@ func TestCanonicalCommandsResolve(t *testing.T) {
 		{"project", "deploy", "api-stg", "--no-follow"},
 		{"release", "list", "--limit", "100"},
 		{"container", "logs", "runner-01", "abc123", "--tail", "250", "--follow"},
+		{"project", "variables", "api-prod"},
+		{"project", "variables-source", "api-prod"},
 	}
 	for _, args := range valid {
 		if _, err := Resolve(args); err != nil {
@@ -92,13 +94,12 @@ func TestInteractionMetadataLivesWithTheCommand(t *testing.T) {
 		durable bool
 		focused bool
 	}{
-		{path: []string{"secret", "set"}, input: InputSecret},
+		{path: []string{"project", "variables"}, input: InputVariables},
 		{path: []string{"project", "create"}, input: InputYAML},
 		{path: []string{"agent", "remove"}, confirm: true},
 		{path: []string{"project", "stop"}, confirm: true},
 		{path: []string{"registry", "remove"}, confirm: true},
 		{path: []string{"alert", "resolve"}, confirm: true},
-		{path: []string{"secret", "remove"}, confirm: true},
 		{path: []string{"project", "deploy"}, durable: true},
 		{path: []string{"project", "rollback"}, durable: true},
 		{path: []string{"events"}, focused: true},

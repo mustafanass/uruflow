@@ -68,9 +68,9 @@ type Store interface {
 	ListRecentAlerts(limit int) ([]models.Alert, error)
 
 	SetSecret(name string, value []byte) error
+	UpdateSecrets(values map[string][]byte, remove []string) error
 	GetSecret(name string) ([]byte, error)
 	ListSecrets() ([]models.Secret, error)
-	DeleteSecret(name string) error
 	ClaimWebhookDelivery(provider, deliveryID string) (bool, error)
 
 	SetAllAgentsOffline() error

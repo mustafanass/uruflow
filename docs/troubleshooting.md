@@ -146,12 +146,13 @@ the container produce nothing here. The empty state distinguishes the two cases.
 **`references "x": secret is not set`**
 
 A project variable references a secret that does not exist. The deploy is refused before any build
-starts. Run `secret set <name>` in the workspace.
+starts. Run `project variables <project>`, find the affected `secret NAME=${secret:...}` line, and
+replace the reference with the real value before saving.
 
 **A secret cannot be read back**
 
-By design. The interface shows names and masks only. To change one, store it again under the same
-name.
+By design. The project-variable editor shows only the stored reference. Replace that reference with the
+new value and save to rotate it.
 
 **`secret material is malformed` after a restore**
 
@@ -188,9 +189,8 @@ reload validation fails; editor changes remain on disk so you can correct them a
 
 **Pushes do nothing**
 
-Check, in order: the project's branch matches the pushed branch; `auto_deploy` is true; the git URL in
-the project resolves to the same repository as the push. The response body states which condition
-failed.
+Service-owned multi-repository projects are deployed manually. A pushed commit cannot safely stand
+for every repository in one release.
 
 **`invalid signature`**
 

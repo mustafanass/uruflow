@@ -48,6 +48,12 @@ type editPathMsg struct {
 
 type editorDoneMsg struct{ err error }
 
+type variableEditorMsg struct {
+	args    []string
+	content string
+	err     error
+}
+
 const (
 	maxTranscriptLines  = 5000
 	keptTranscriptLines = 4000
@@ -69,7 +75,6 @@ type model struct {
 	editorRows        int
 	running           bool
 	paste             bool
-	secret            bool
 	confirm           bool
 	pending           []string
 	active            []string

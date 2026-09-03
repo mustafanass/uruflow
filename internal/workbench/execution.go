@@ -31,27 +31,6 @@ import (
 	"github.com/mustafanass/uruflow/internal/ops"
 )
 
-func (m *model) updateSecret(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch key.String() {
-	case "esc", "ctrl+c":
-		m.resetInputMode()
-		m.append(m.paint(cliui.ANSIWarning, "▲ secret input cancelled") + "\n")
-		return m, textinput.Blink
-	case "enter":
-		value := m.input.Value()
-		args := append([]string{}, m.pending...)
-		m.resetInputMode()
-		if value == "" {
-			m.append(m.paint(cliui.ANSIError, "✘ secret value cannot be empty") + "\n")
-			return m, textinput.Blink
-		}
-		return m, m.start(args, value)
-	}
-	var command tea.Cmd
-	m.input, command = m.input.Update(key)
-	return m, command
-}
-
 func (m *model) updateConfirm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc", "ctrl+c":
@@ -74,11 +53,10 @@ func (m *model) updateConfirm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) resetInputMode() {
-	m.secret, m.confirm, m.pending = false, false, nil
+	m.confirm, m.pending = false, nil
 	m.input.SetValue("")
 	m.input.Prompt = "› "
 	m.input.Placeholder = "Type a command or / to browse …"
-	m.input.EchoMode = textinput.EchoNormal
 	m.input.Focus()
 	m.resize()
 }

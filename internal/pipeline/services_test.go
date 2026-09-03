@@ -30,11 +30,11 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 	harness := newHarness(t)
 	project, _ := harness.store.GetProject("api")
 	project.Services = []models.Service{
-		{Name: "app", Dockerfile: "Dockerfile", Context: ".",
+		{Name: "app", GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile", Context: ".",
 			Ports:       []models.Port{{Host: 8080, Container: 80}},
 			Healthcheck: &models.Healthcheck{Type: "http", Scheme: "http", Path: "/ready", Port: 80, Interval: 2 * time.Second, Timeout: time.Second, Retries: 5},
 			Labels:      map[string]string{"traefik.enable": "true"}},
-		{Name: "worker", Dockerfile: "Dockerfile.worker", Command: "./worker"},
+		{Name: "worker", GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile.worker", Command: "./worker"},
 		{Name: "cache", Image: prebuiltImage, Volumes: []models.Volume{{Source: "/srv/redis", Target: "/data"}}},
 	}
 	project.Runtime.Env = map[string]string{"SHARED": "yes"}
@@ -94,13 +94,41 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 	}
 }
 
+func TestServiceOwnedRepositoriesNeedNoPrimarySource(t *testing.T) {
+	harness := newHarness(t)
+	project, _ := harness.store.GetProject("api")
+	project.Services = []models.Service{
+		{Name: "core", GitURL: "git@host:core.git", Branch: "main", Dockerfile: "Dockerfile"},
+		{Name: "commerce", GitURL: "git@host:commerce.git", Branch: "release", Dockerfile: "Dockerfile"},
+	}
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := <-harness.agent.builds
+	if len(build.Targets) != 2 {
+		t.Fatalf("build = %+v", build)
+	}
+	for _, target := range build.Targets {
+		if target.GitURL == "" || target.Branch == "" {
+			t.Fatalf("target source = %+v", target)
+		}
+	}
+	<-harness.agent.releases
+	harness.await(t, release.ID, models.StatusSucceeded)
+}
+
 func TestNativeBuildModelReachesBuilderAndRunner(t *testing.T) {
 	harness := newHarness(t)
 	project, _ := harness.store.GetProject("api")
 	project.Networks = map[string]models.NetworkResource{"data": {Name: "api-data", Driver: "bridge", Internal: true}}
 	project.Volumes = map[string]models.VolumeResource{"state": {Name: "api-state", Driver: "local"}}
 	project.Services = []models.Service{
-		{Name: "core", Dockerfile: "Dockerfile", DependsOn: []models.Dependency{{Service: "migrate", Condition: models.DependencyCompleted}}, Networks: []models.NetworkAttachment{{Name: "data", Aliases: []string{"core-api"}}}, Ports: []models.Port{{HostIP: "127.0.0.1", Host: 8080, Container: 8080}}, Resources: models.ResourceLimits{MemoryBytes: 256 << 20, CPUs: 1.5, PIDs: 128}, Security: models.Security{NoNewPrivileges: true, ReadOnlyRootFS: true, CapDrop: []string{"ALL"}}, Logging: models.LogConfig{Driver: "json-file", Options: map[string]string{"max-size": "10m"}}, Entrypoint: []string{"/app/core"}, CommandExec: []string{"serve"}},
+		{Name: "core", GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile", DependsOn: []models.Dependency{{Service: "migrate", Condition: models.DependencyCompleted}}, Networks: []models.NetworkAttachment{{Name: "data", Aliases: []string{"core-api"}}}, Ports: []models.Port{{HostIP: "127.0.0.1", Host: 8080, Container: 8080}}, Resources: models.ResourceLimits{MemoryBytes: 256 << 20, CPUs: 1.5, PIDs: 128}, Security: models.Security{NoNewPrivileges: true, ReadOnlyRootFS: true, CapDrop: []string{"ALL"}}, Logging: models.LogConfig{Driver: "json-file", Options: map[string]string{"max-size": "10m"}}, Entrypoint: []string{"/app/core"}, CommandExec: []string{"serve"}},
 		{Name: "migrate", GitURL: "git@host:database.git", Branch: "release", Dockerfile: "Dockerfile.migrate", Mode: models.ServiceModeJob, Job: models.Job{Timeout: 2 * time.Minute}, DependsOn: []models.Dependency{{Service: "database", Condition: models.DependencyHealthy}}, Networks: []models.NetworkAttachment{{Name: "data"}}},
 		{Name: "database", Image: prebuiltImage, Networks: []models.NetworkAttachment{{Name: "data"}}, Volumes: []models.Volume{{Type: "volume", Source: "state", Target: "/data"}}, Healthcheck: &models.Healthcheck{Type: "command", Command: []string{"CMD", "check-ready"}, Interval: time.Second, Timeout: time.Second, Retries: 3, StartPeriod: 2 * time.Second}},
 	}

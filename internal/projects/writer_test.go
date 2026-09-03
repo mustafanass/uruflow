@@ -26,21 +26,16 @@ import (
 )
 
 func draft() Draft {
-	auto := true
 	return Draft{
 		Project: "api",
 		Env:     "dev",
-		Definition: Definition{
-			Git:        "git@github.com:acme/api.git",
-			Dockerfile: "Dockerfile",
-			Context:    ".",
-		},
 		Environment: Environment{
-			Branch:     "develop",
-			Builder:    "builder-01",
-			Runners:    []string{"dev-01"},
-			AutoDeploy: &auto,
-			Ports:      []string{"8081:80"},
+			Builder: "builder-01",
+			Runners: []string{"dev-01"},
+			Ports:   []string{"8081:80"},
+			Services: map[string]Service{"api": {
+				Git: "git@github.com:acme/api.git", Branch: "develop", Dockerfile: "Dockerfile", Context: ".",
+			}},
 		},
 		RawEnv: "LOG_LEVEL=debug\nDATABASE_URL=postgres://dev\n",
 	}
@@ -66,8 +61,11 @@ func TestWrittenFilesLoadBackIdentically(t *testing.T) {
 	if project.Name != "api-dev" || project.Env != "dev" {
 		t.Fatalf("project = %q env = %q", project.Name, project.Env)
 	}
-	if project.Branch != "develop" || !project.AutoDeploy {
-		t.Fatalf("branch = %q auto = %v", project.Branch, project.AutoDeploy)
+	if len(project.Services) != 1 || project.Services[0].GitURL != "git@github.com:acme/api.git" {
+		t.Fatalf("service sources = %+v", project.Services)
+	}
+	if project.GitURL != "" || project.Branch != "" || project.AutoDeploy {
+		t.Fatalf("git = %q branch = %q auto = %v", project.GitURL, project.Branch, project.AutoDeploy)
 	}
 	if len(project.Runtime.Ports) != 1 || project.Runtime.Ports[0].Host != 8081 {
 		t.Fatalf("ports = %+v", project.Runtime.Ports)
@@ -77,21 +75,16 @@ func TestWrittenFilesLoadBackIdentically(t *testing.T) {
 	}
 }
 
-func TestCreatePublishesProjectAndEnvironmentTogether(t *testing.T) {
+func TestCreatePublishesOneAuthoritativeEnvironmentFile(t *testing.T) {
 	root := t.TempDir()
 	loader := NewLoader(root, fakeAgents())
 	item := draft()
-	item.Environment.Services = map[string]Service{
-		"api": {Dockerfile: "Dockerfile", Context: ".", Ports: []string{"8080:8080"}},
-	}
 	if err := loader.Create(item); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	definitionPath, environmentPath, _ := loader.Paths("api", "dev")
-	for _, path := range []string{definitionPath, environmentPath} {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("created file %s: %v", path, err)
-		}
+	environmentPath, _ := loader.Paths("api", "dev")
+	if _, err := os.Stat(environmentPath); err != nil {
+		t.Fatalf("created file %s: %v", environmentPath, err)
 	}
 	if err := loader.Create(item); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("duplicate create error = %v", err)
@@ -102,11 +95,30 @@ func TestCreatePublishesProjectAndEnvironmentTogether(t *testing.T) {
 	}
 }
 
+func TestCreateAddsAnEnvironmentToAnExistingProjectDirectory(t *testing.T) {
+	root := t.TempDir()
+	loader := NewLoader(root, fakeAgents())
+	if err := loader.Create(draft()); err != nil {
+		t.Fatal(err)
+	}
+	production := draft()
+	production.Env = "prod"
+	production.RawEnv = ""
+	if err := loader.Create(production); err != nil {
+		t.Fatal(err)
+	}
+
+	result := loader.Load()
+	if len(result.Problems) != 0 || len(result.Projects) != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestRawYAMLIsWrittenVerbatim(t *testing.T) {
 	root := t.TempDir()
 	loader := NewLoader(root, fakeAgents())
 
-	pasted := "# pasted by hand\nbranch: main\nbuilder: builder-01\nrunners: [web-01]\nports: [\"80:80\"]\n"
+	pasted := "# pasted by hand\nbuilder: builder-01\nrunners: [web-01]\nservices:\n  api:\n    git: git@host:api.git\n    branch: main\n    dockerfile: Dockerfile\n"
 	item := draft()
 	item.RawYAML = pasted
 
@@ -114,7 +126,7 @@ func TestRawYAMLIsWrittenVerbatim(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, environmentPath, _ := loader.Paths("api", "dev")
+	environmentPath, _ := loader.Paths("api", "dev")
 	written, _ := os.ReadFile(environmentPath)
 	if string(written) != pasted {
 		t.Fatalf("pasted yaml was rewritten:\n%s", written)
@@ -127,8 +139,8 @@ func TestRawYAMLIsWrittenVerbatim(t *testing.T) {
 	if len(result.Problems) != 0 {
 		t.Fatalf("pasted yaml did not load: %v", result.Problems)
 	}
-	if result.Projects[0].Branch != "main" {
-		t.Fatalf("pasted branch was ignored: %q", result.Projects[0].Branch)
+	if result.Projects[0].Services[0].Branch != "main" {
+		t.Fatalf("pasted branch was ignored: %q", result.Projects[0].Services[0].Branch)
 	}
 }
 
@@ -137,7 +149,7 @@ func TestEmptyEnvRemovesTheFile(t *testing.T) {
 	loader := NewLoader(root, fakeAgents())
 
 	loader.Write(draft())
-	_, _, variablesPath := loader.Paths("api", "dev")
+	_, variablesPath := loader.Paths("api", "dev")
 	if _, err := os.Stat(variablesPath); err != nil {
 		t.Fatalf("env file was not written: %v", err)
 	}
@@ -186,19 +198,19 @@ func TestRemoveDropsTheEnvironmentAndFolderWhenLast(t *testing.T) {
 	if err := loader.Remove("api", "dev"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	_, devPath, _ := loader.Paths("api", "dev")
+	devPath, _ := loader.Paths("api", "dev")
 	if _, err := os.Stat(devPath); !os.IsNotExist(err) {
 		t.Error("dev.yaml survived removal")
 	}
-	definitionPath, _, _ := loader.Paths("api", "prod")
-	if _, err := os.Stat(definitionPath); err != nil {
-		t.Error("project.yaml was removed while another environment remained")
+	prodPath, _ := loader.Paths("api", "prod")
+	if _, err := os.Stat(prodPath); err != nil {
+		t.Error("the other environment was removed")
 	}
 
 	if err := loader.Remove("api", "prod"); err != nil {
 		t.Fatalf("remove last: %v", err)
 	}
-	if _, err := os.Stat(filepath.Dir(definitionPath)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Dir(prodPath)); !os.IsNotExist(err) {
 		t.Error("the project folder survived removing its last environment")
 	}
 }
