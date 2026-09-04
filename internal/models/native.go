@@ -36,6 +36,8 @@ const (
 	DependencyStarted   = "started"
 	DependencyHealthy   = "healthy"
 	DependencyCompleted = "completed"
+
+	DefaultDeploymentTimeout = 2 * time.Hour
 )
 
 func ValidWorkflow(workflow string) bool {
@@ -65,6 +67,13 @@ func (p Project) NeedsBuilder() bool {
 func (p Project) NeedsRunners() bool {
 	workflow := p.EffectiveWorkflow()
 	return workflow == WorkflowDeployOnly || workflow == WorkflowBuildDeploy
+}
+
+func (p Project) EffectiveTimeout() time.Duration {
+	if p.Timeout > 0 {
+		return p.Timeout
+	}
+	return DefaultDeploymentTimeout
 }
 
 type Dependency struct {

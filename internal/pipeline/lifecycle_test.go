@@ -46,6 +46,9 @@ func TestBuildThenReleaseReachesRunners(t *testing.T) {
 		if build.Targets[0].Dockerfile != "Dockerfile" || build.Targets[0].Context != "." {
 			t.Fatalf("build defaults = %q %q", build.Targets[0].Dockerfile, build.Targets[0].Context)
 		}
+		if build.Timeout != 90*time.Minute {
+			t.Fatalf("build timeout = %s", build.Timeout)
+		}
 	case <-time.After(settleWindow):
 		t.Fatal("the builder never received build.run")
 	}
@@ -57,6 +60,9 @@ func TestBuildThenReleaseReachesRunners(t *testing.T) {
 		}
 		if len(run.Services[0].Ports) != 1 || run.Services[0].Ports[0].Host != 8080 {
 			t.Fatalf("runtime ports = %+v", run.Services[0].Ports)
+		}
+		if run.Timeout <= 0 || run.Timeout > 90*time.Minute {
+			t.Fatalf("remaining release timeout = %s", run.Timeout)
 		}
 	case <-time.After(settleWindow):
 		t.Fatal("the runner never received release.run")

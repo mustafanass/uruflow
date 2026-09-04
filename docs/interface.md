@@ -84,36 +84,18 @@ project list
 project create api prod
 project show api-prod
 project edit api-prod
-project validate /etc/uruflow/projects/api/prod.yaml
-project apply api prod /etc/uruflow/projects/api/prod.yaml
 project reload
 ```
 
-`project edit` temporarily opens the authoritative environment file in `$VISUAL`, then `$EDITOR`,
-falling back to `vi`. The workspace returns to the same page and reloads YAML when the editor exits.
-
-`project validate` and `project apply` resolve defaults, YAML variables and the target's adjacent
-`.env` file exactly as reload does.
-
-`project create api prod` opens the full-width project editor with an environment and service
-template. It supports paste, scrolling, line numbers, automatic YAML indentation, `Tab` and
-`Shift+Tab`. Press `Ctrl+S` to format, validate, write `projects/api/prod.yaml`, and reload it. A validation
-error returns to the editor without losing the text.
-
-To keep the whole edit inside the workspace, use:
-
-```text
-project apply api prod -
-```
-
-The prompt becomes a multiline YAML editor. Paste or write the document, press `Ctrl+S` to validate
-and apply it, or `Esc` to cancel. URUFLOW atomically replaces the environment file. If full project
-validation fails, it restores the previous file through the same atomic path and reports restoration
-failures.
+`project create api prod` and `project edit api-prod` use the same full-width internal editor. It
+supports paste, scrolling, line numbers, automatic YAML indentation, `Tab` and `Shift+Tab`. Press
+`Ctrl+S` to format, validate, atomically save, and reload the environment file, or `Esc` to cancel. A
+validation error returns to the editor without losing the text. No external editor configuration is
+used.
 
 Environment definitions remain normal files at `projects/<name>/<env>.yaml`, so they work naturally
-with Git, any editor, and configuration management. The interface never creates a competing
-definition in SQLite.
+with Git and configuration management. Run `project reload` after editing one outside URUFLOW. The
+interface never creates a competing definition in SQLite.
 
 ## Command reference
 

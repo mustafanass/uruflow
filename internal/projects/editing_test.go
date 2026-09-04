@@ -115,6 +115,13 @@ func TestTyposAreRejectedWithTheFieldName(t *testing.T) {
 	}
 }
 
+func TestDeploymentTimeoutMustBePositive(t *testing.T) {
+	content := "timeout: 0s\nbuilder: builder-01\nrunners: [dev-01]\nservices:\n  api:\n    git: git@host:api.git\n    branch: main\n"
+	if err := ValidateEnvironmentYAML(content); err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("invalid deployment timeout error = %v", err)
+	}
+}
+
 func TestStructuredServicesWriteAndLoadBack(t *testing.T) {
 	root := t.TempDir()
 	loader := NewLoader(root, fakeAgents())

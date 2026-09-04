@@ -13,8 +13,8 @@ environments work, and how environment variables resolve.
 Every project is defined by version-controlled YAML under `projects/<name>/`. The database holds the
 loaded effective model and runtime history, but it is never a competing configuration source.
 
-Create files with any editor, `project edit` in the operations workspace, configuration management,
-or inline YAML input in the same page. Validate and reload them from its prompt.
+Create or edit files with the internal project editor. Configuration management may also write the
+same files; run `project reload` afterward.
 
 ## 2. Creating and Operating a Project
 
@@ -27,8 +27,8 @@ The stage is explicit and derived from build targets and release targets:
 | `build_deploy` | Required | Required | Build, publish, then release together |
 
 ```text
-project validate projects/api/prod.yaml
-project reload
+project create api prod
+project edit api-prod
 project show api-prod
 project deploy api-prod
 ```
@@ -61,6 +61,7 @@ The complete project environment.
 builder: builder-01                  # required; agent name, must hold the builder role
 runners: [web-01, web-02]            # required; agent names, must hold the runner role
 workflow: build_deploy                # build_deploy, build_only, or deploy_only
+timeout: 2h                           # whole release: build, push, and deployment
 env:                                 # optional; variables for this environment
   MODE: production
 services:
@@ -307,12 +308,11 @@ replacing the reference rotates it. A missing reference fails the deploy **befor
 
 ## 7. Editing Safely
 
-`project edit <name>` in the workspace opens the authoritative environment YAML in `$VISUAL` or
-`$EDITOR` and reloads after the editor closes. It also accepts `project apply <project> <env> -`; paste
-YAML and press `Ctrl+S` to validate and save it atomically. Failed full validation restores the
-previous file atomically, so invalid desired state is not left behind. Validation of a project path
-or apply target resolves `defaults.yaml`, the YAML `env` block and its adjacent `<env>.env` with the
-same precedence used by reload.
+`project edit <name>` opens the authoritative environment YAML in the workspace's internal editor.
+Press `Ctrl+S` to format, validate, atomically save, and reload it. Failed validation keeps the editor
+open with its content intact; a failed full reload restores the previous file atomically. Validation
+resolves `defaults.yaml`, the YAML `env` block, and the adjacent `<env>.env` with the same precedence
+used by reload.
 
 ## 8. Reloading
 

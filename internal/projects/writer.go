@@ -163,6 +163,7 @@ func mergeEnvironment(path string, incoming Environment) Environment {
 	}
 
 	existing.Workflow = incoming.Workflow
+	existing.Timeout = incoming.Timeout
 	existing.Builder = incoming.Builder
 	existing.Runners = incoming.Runners
 	existing.Ports = incoming.Ports

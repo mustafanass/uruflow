@@ -103,6 +103,7 @@ type Project struct {
 	Runners    []string                   `json:"runners"`
 	AutoDeploy bool                       `json:"auto_deploy"`
 	Workflow   string                     `json:"workflow,omitempty"`
+	Timeout    time.Duration              `json:"timeout,omitempty"`
 	Runtime    Runtime                    `json:"runtime"`
 	Services   []Service                  `json:"services,omitempty"`
 	Networks   map[string]NetworkResource `json:"networks,omitempty"`

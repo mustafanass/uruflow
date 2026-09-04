@@ -173,6 +173,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	if err := store.SaveProject(&models.Project{
 		Name: "api", Builder: "a1", Runners: []string{"a1"},
+		Timeout:  90 * time.Minute,
 		Services: []models.Service{{GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile", Ports: []models.Port{{Host: 8080, Container: 80}}}},
 	}); err != nil {
 		t.Fatalf("save project: %v", err)

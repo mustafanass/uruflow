@@ -142,7 +142,24 @@ Paths default to the user's home directory when the agent runs as a non-root use
 non-root agent cannot install the registry CA into `/etc/docker/certs.d`. See
 [Operations](operations.md#agent-permissions).
 
-## 4. Project Service Specification
+## 4. Project Environment Specification
+
+Each environment YAML defines one project-level workflow:
+
+| Field | Default | Meaning |
+| :--- | :--- | :--- |
+| `workflow` | inferred | `build_deploy`, `build_only`, or `deploy_only` |
+| `timeout` | `2h` | Maximum total release time across Git fetch, all builds and pushes, and runner deployment |
+| `builder` | workflow-dependent | Agent name used by build workflows |
+| `runners` | workflow-dependent | Agent names used by deployment workflows |
+| `env` | empty | Environment variables shared by the project's services |
+| `services` | required | Service definitions |
+| `resources` | empty | Project networks and volumes |
+
+The top-level `timeout` applies to the complete project release, not to each service. A job service's
+nested `timeout` remains its own maximum execution time and is also capped by the project deadline.
+
+## 5. Project Service Specification
 
 Services are declared under `services` in an environment YAML file. Unknown keys are rejected.
 The complete model and a production-sized example are in [Native Build Model](native-build-model.md).
@@ -186,7 +203,7 @@ The environment's `<name>.env` file supplies `${NAME}`, `${NAME:-default}`, and
 `${NAME:?error message}` interpolation. `$$` emits a literal dollar. `${secret:name}` is preserved
 for release-time resolution by the encrypted URUFLOW secret store.
 
-## 5. Data Directory Layout
+## 6. Data Directory Layout
 
 ```text
 /var/lib/uruflow/
@@ -209,7 +226,7 @@ changing `advertise`.
 
 For what to back up and why, see [Operations](operations.md#backup-and-restore).
 
-## 6. Command Reference
+## 7. Command Reference
 
 ### Server Commands
 
@@ -250,7 +267,7 @@ configuration file, or set `URUFLOW_CONFIG`.
 `uruflow-agent` accepts `--config` / `-c` on every subcommand, or `URUFLOW_AGENT_CONFIG` in the
 environment.
 
-## 7. Webhooks
+## 8. Webhooks
 
 Point your git host at `https://<server>:<http_port><webhook.path>`.
 

@@ -20,6 +20,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -29,9 +30,7 @@ import (
 )
 
 const (
-	buildTimeout   = 30 * time.Minute
-	releaseTimeout = 10 * time.Minute
-	actionTimeout  = 2 * time.Minute
+	actionTimeout = 2 * time.Minute
 )
 
 func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
@@ -166,6 +165,9 @@ func validateBuildRequest(request ufp.BuildRequest) error {
 	if request.JobID == "" || request.Project == "" {
 		return fmt.Errorf("build request is incomplete")
 	}
+	if request.Timeout < 0 {
+		return fmt.Errorf("build timeout must not be negative")
+	}
 	if len(request.Targets) == 0 {
 		return fmt.Errorf("build request has no targets")
 	}
@@ -189,6 +191,9 @@ func validateReleaseRequest(request ufp.ReleaseRequest) error {
 	if request.JobID == "" || request.Project == "" || len(request.Services) == 0 {
 		return fmt.Errorf("release request is incomplete")
 	}
+	if request.Timeout < 0 {
+		return fmt.Errorf("release timeout must not be negative")
+	}
 	seen := make(map[string]bool, len(request.Services))
 	for _, service := range request.Services {
 		if !models.ValidDigestReference(service.Image) || seen[service.Name] {
@@ -205,6 +210,7 @@ func validateReleaseRequest(request ufp.ReleaseRequest) error {
 				Path: service.Healthcheck.Path, Port: service.Healthcheck.Port,
 				Interval: service.Healthcheck.Interval, Timeout: service.Healthcheck.Timeout,
 				Retries: service.Healthcheck.Retries, StableFor: service.Healthcheck.StableFor,
+				Command: service.Healthcheck.Command, StartPeriod: service.Healthcheck.StartPeriod,
 			}
 			if err := models.ValidateHealthcheck(healthcheck); err != nil {
 				return fmt.Errorf("release service %q: %w", service.Name, err)
@@ -249,12 +255,19 @@ func (d *Daemon) runBuild(request ufp.BuildRequest, job *activeJob) {
 	})
 	logger.Info("[AGENT] build %s: %s", request.JobID, request.Project)
 
-	ctx, cancel := context.WithTimeout(job.ctx, buildTimeout)
+	timeout := request.Timeout
+	if timeout <= 0 {
+		timeout = models.DefaultDeploymentTimeout
+	}
+	ctx, cancel := context.WithTimeout(job.ctx, timeout)
 	defer cancel()
 
 	result, err := d.builder.Build(ctx, request, log)
 	d.endJob(request.Project, job)
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			err = fmt.Errorf("deployment timed out after %s during build", timeout)
+		}
 		log(ufp.StreamStderr, err.Error())
 		d.finishJob(request.JobID, ufp.StageBuild, err, started, ufp.JobStatus{})
 		return
@@ -279,12 +292,19 @@ func (d *Daemon) runRelease(request ufp.ReleaseRequest, job *activeJob) {
 	})
 	logger.Info("[AGENT] release %s: %s (%d service(s))", request.JobID, request.Project, len(request.Services))
 
-	ctx, cancel := context.WithTimeout(job.ctx, releaseTimeout)
+	timeout := request.Timeout
+	if timeout <= 0 {
+		timeout = models.DefaultDeploymentTimeout
+	}
+	ctx, cancel := context.WithTimeout(job.ctx, timeout)
 	defer cancel()
 
 	err := d.runner.Release(ctx, request, log)
 	d.endJob(request.Project, job)
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			err = fmt.Errorf("deployment timed out during release")
+		}
 		log(ufp.StreamStderr, err.Error())
 	}
 	d.finishJob(request.JobID, ufp.StageRelease, err, started, ufp.JobStatus{})

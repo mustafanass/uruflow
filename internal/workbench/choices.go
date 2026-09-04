@@ -42,23 +42,6 @@ func tableChoices(arguments []string, display string, details []string) choicePr
 	}
 }
 
-func projectEnvironmentChoices(prefix string, event ops.Event) []commandSpec {
-	items := make([]commandSpec, 0, len(event.Rows))
-	for _, row := range event.Rows {
-		values := tableRow(event.Columns, row)
-		name, environment := values["NAME"], values["ENV"]
-		if name == "" || environment == "" {
-			continue
-		}
-		project := strings.TrimSuffix(name, "-"+environment)
-		items = append(items, commandSpec{
-			Command: commandWith(prefix, project, environment), Display: project + " · " + environment,
-			Summary: joinValues(values, []string{"WORKFLOW", "SOURCE"}),
-		})
-	}
-	return items
-}
-
 func containerChoices(prefix string, event ops.Event) []commandSpec {
 	items := make([]commandSpec, 0, len(event.Rows))
 	for _, row := range event.Rows {

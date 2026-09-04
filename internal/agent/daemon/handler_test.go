@@ -63,3 +63,17 @@ func TestReleaseRequestValidatesHealthchecksAndLabels(t *testing.T) {
 		t.Fatal("reserved label was accepted")
 	}
 }
+
+func TestReleaseRequestPreservesCommandHealthcheckFields(t *testing.T) {
+	request := ufp.ReleaseRequest{JobID: "r1", Project: "edge", Services: []ufp.ServiceSpec{{
+		Name:  "traefik",
+		Image: "repo/traefik@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Healthcheck: &ufp.HealthcheckSpec{
+			Type: "command", Command: []string{"CMD", "traefik", "healthcheck", "--ping"},
+			Interval: 15 * time.Second, Timeout: 5 * time.Second, Retries: 5, StartPeriod: 10 * time.Second,
+		},
+	}}}
+	if err := validateReleaseRequest(request); err != nil {
+		t.Fatalf("valid command healthcheck rejected: %v", err)
+	}
+}

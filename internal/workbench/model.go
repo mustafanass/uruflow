@@ -41,12 +41,11 @@ type streamMsg struct {
 	done  bool
 }
 
-type editPathMsg struct {
-	path string
-	err  error
+type projectEditorMsg struct {
+	args    []string
+	content string
+	err     error
 }
-
-type editorDoneMsg struct{ err error }
 
 type variableEditorMsg struct {
 	args    []string
@@ -101,7 +100,7 @@ func Run(socket string, noColor bool) error {
 	input.Placeholder = "Type a command or / to browse …"
 	input.Focus()
 	editor := textarea.New()
-	editor.Placeholder = "Paste YAML here. Ctrl+S validates and applies; Esc cancels."
+	editor.Placeholder = "Paste YAML here. Ctrl+S validates and saves; Esc cancels."
 	editor.ShowLineNumbers = true
 	editor.SetHeight(10)
 	editor.SetWidth(80)

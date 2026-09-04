@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS projects (
 	runners     TEXT NOT NULL DEFAULT '[]',
 	auto_deploy INTEGER NOT NULL DEFAULT 1,
 	workflow    TEXT NOT NULL DEFAULT '',
+	timeout_ns  INTEGER NOT NULL DEFAULT 0,
 	runtime     TEXT NOT NULL DEFAULT '{}',
 	services    TEXT NOT NULL DEFAULT '[]',
 	env         TEXT NOT NULL DEFAULT '',

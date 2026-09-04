@@ -99,6 +99,7 @@ func TestProjectRuntimeRoundTrip(t *testing.T) {
 	project := &models.Project{
 		Name: "api", GitURL: "git@host:api.git", Branch: "main",
 		Builder: "a1", Runners: []string{"a1", "a2"}, AutoDeploy: true,
+		Timeout: 90 * time.Minute,
 		Runtime: models.Runtime{
 			Ports: []models.Port{{Host: 8080, Container: 80}},
 			Env:   map[string]string{"MODE": "prod"},
@@ -119,7 +120,7 @@ func TestProjectRuntimeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get project: %v", err)
 	}
-	if loaded.Branch != "release" || len(loaded.Runners) != 2 {
+	if loaded.Branch != "release" || len(loaded.Runners) != 2 || loaded.Timeout != 90*time.Minute {
 		t.Fatalf("branch = %s runners = %v", loaded.Branch, loaded.Runners)
 	}
 	if len(loaded.Runtime.Ports) != 1 || loaded.Runtime.Ports[0].Host != 8080 {

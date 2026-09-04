@@ -97,7 +97,11 @@ func (p *Pipeline) releaseRequest(release *models.Release, project *models.Proje
 		built = map[string]string{"": release.Image}
 	}
 
-	request := &ufp.ReleaseRequest{JobID: release.ID, Project: project.Name, Networks: make(map[string]ufp.NetworkResource), Volumes: make(map[string]ufp.VolumeResource)}
+	timeout := time.Until(release.StartedAt.Add(project.EffectiveTimeout()))
+	if timeout <= 0 {
+		return nil, fmt.Errorf("deployment timed out after %s before release", project.EffectiveTimeout())
+	}
+	request := &ufp.ReleaseRequest{JobID: release.ID, Project: project.Name, Timeout: timeout, Networks: make(map[string]ufp.NetworkResource), Volumes: make(map[string]ufp.VolumeResource)}
 	for key, resource := range project.Networks {
 		request.Networks[key] = ufp.NetworkResource{Name: resource.Name, Driver: resource.Driver, External: resource.External, Internal: resource.Internal, Attachable: resource.Attachable, Options: resource.Options, Labels: resource.Labels}
 	}

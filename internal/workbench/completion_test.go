@@ -80,8 +80,7 @@ func TestCreationCommandsAdvanceToGuidedInput(t *testing.T) {
 	}{
 		{"agent add ", "NEW AGENT"},
 		{"project variables ", "PROJECT"},
-		{"project apply ", "PROJECT ENVIRONMENT"},
-		{"project validate ", "YAML FILE"},
+		{"project edit ", "PROJECT"},
 		{"project create ", "NEW PROJECT"},
 	} {
 		completion, ok := argumentCompletion(test.value)
@@ -148,24 +147,6 @@ func TestCompoundResourceChoicesUseNamedColumns(t *testing.T) {
 		t.Fatalf("registry choices = %#v", items)
 	}
 
-	apply, ok := argumentCompletion("project apply ")
-	if !ok {
-		t.Fatal("project apply completion is missing")
-	}
-	items = sourceProjector(apply.Source)(apply.Prefix, ops.Table("projects",
-		[]string{"NAME", "ENV", "WORKFLOW", "SERVICES", "SOURCE"},
-		[][]string{{"api-prod", "prod", "build_deploy", "2", "projects/api/prod.yaml"}}))
-	if len(items) != 1 || items[0].Command != "project apply api prod" {
-		t.Fatalf("project environment choices = %#v", items)
-	}
-	file, ok := argumentCompletion(items[0].Command + " ")
-	if !ok || file.Label != "YAML FILE" || file.NeedsNext || file.AllowRaw {
-		t.Fatalf("project file stage = %#v, %v", file, ok)
-	}
-	file, ok = argumentCompletion(items[0].Command + " -")
-	if !ok || !file.AllowRaw {
-		t.Fatalf("project YAML input = %#v, %v", file, ok)
-	}
 }
 
 func TestEveryArgumentCommandHasAGuidedFlow(t *testing.T) {

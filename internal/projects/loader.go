@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
 	"gopkg.in/yaml.v3"
@@ -193,8 +194,16 @@ func (l *Loader) buildProject(dir, path, folder, envName string, defaults Defaul
 	if !models.ValidWorkflow(workflow) {
 		return nil, fmt.Errorf("workflow %q is not supported", workflow)
 	}
+	var deploymentTimeout time.Duration
+	if environment.Timeout != "" {
+		deploymentTimeout, err = positiveDuration("timeout", environment.Timeout)
+		if err != nil {
+			return nil, err
+		}
+	}
 	probe := models.Project{
 		Workflow: workflow,
+		Timeout:  deploymentTimeout,
 		Services: services,
 		Runners:  environment.Runners,
 	}
@@ -293,6 +302,7 @@ func (l *Loader) buildProject(dir, path, folder, envName string, defaults Defaul
 		Builder:  builderID,
 		Runners:  runners,
 		Workflow: workflow,
+		Timeout:  deploymentTimeout,
 		Services: services,
 		Networks: networks,
 		Volumes:  volumesResources,

@@ -65,6 +65,11 @@ func validateEnvironment(environment Environment, variables map[string]string) e
 	if !models.ValidWorkflow(environment.Workflow) {
 		return fmt.Errorf("workflow %q is not supported", environment.Workflow)
 	}
+	if environment.Timeout != "" {
+		if _, err := positiveDuration("timeout", environment.Timeout); err != nil {
+			return err
+		}
+	}
 	if err := validateExplicitWorkflow(environment, services); err != nil {
 		return err
 	}

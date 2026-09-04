@@ -23,6 +23,10 @@ A failure at any of these returns an error and creates nothing. In particular, a
 one is running is refused with `a release is already running for this project` — this is what keeps
 two builds off the same working directory on a builder when a webhook lands during a manual deploy.
 
+Each project has one total `timeout`, defaulting to `2h`. The clock starts when the release is created
+and covers Git fetches, every service build, registry pushes, and deployment on all runners. Rollout
+receives only the time remaining after the build; the timeout is never reset per service.
+
 ## 2. Lifecycle
 
 ```mermaid

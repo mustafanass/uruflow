@@ -68,6 +68,7 @@ type RegistryConfig struct {
 type BuildRequest struct {
 	JobID   string        `json:"job_id"`
 	Project string        `json:"project"`
+	Timeout time.Duration `json:"timeout,omitempty"`
 	Tags    []string      `json:"tags"`
 	Targets []BuildTarget `json:"targets"`
 }
@@ -86,6 +87,7 @@ type BuildTarget struct {
 type ReleaseRequest struct {
 	JobID    string                     `json:"job_id"`
 	Project  string                     `json:"project"`
+	Timeout  time.Duration              `json:"timeout,omitempty"`
 	Services []ServiceSpec              `json:"services"`
 	Networks map[string]NetworkResource `json:"networks,omitempty"`
 	Volumes  map[string]VolumeResource  `json:"volumes,omitempty"`

@@ -29,14 +29,11 @@ import (
 	"github.com/mustafanass/uruflow/internal/grammar"
 )
 
-func TestApplyFromDashEntersPasteMode(t *testing.T) {
-	command, _ := grammar.Resolve([]string{"project", "apply", "api", "prod", "-"})
-	if !wantsPaste(command, []string{"project", "apply", "api", "prod", "-"}) {
-		t.Fatal("project apply from stdin did not enter paste mode")
-	}
-	command, _ = grammar.Resolve([]string{"project", "apply", "api", "prod", "file.yaml"})
-	if wantsPaste(command, []string{"project", "apply", "api", "prod", "file.yaml"}) {
-		t.Fatal("file apply unexpectedly entered paste mode")
+func TestProjectEditUsesTheInternalEditor(t *testing.T) {
+	args := []string{"project", "edit", "api-prod"}
+	command, _ := grammar.Resolve(args)
+	if command.Input != grammar.InputYAML || !isProjectEditor(args) {
+		t.Fatalf("project edit metadata = %+v", command)
 	}
 }
 
@@ -81,6 +78,19 @@ func TestLoadedEnvironmentOpensInTheEditor(t *testing.T) {
 	got := updated.(*model)
 	if !got.paste || got.running || got.editor.Value() == "" || len(got.pending) != 3 {
 		t.Fatalf("editor was not opened: paste=%v running=%v pending=%v content=%q", got.paste, got.running, got.pending, got.editor.Value())
+	}
+}
+
+func TestLoadedProjectOpensInTheEditor(t *testing.T) {
+	m := &model{input: textinput.New(), editor: textarea.New(), running: true, active: []string{"project", "edit", "api-prod"}}
+	updated, _ := m.Update(projectEditorMsg{
+		args: []string{"project", "edit", "api-prod"}, content: "workflow: build_deploy\nservices: {}\n",
+	})
+	got := updated.(*model)
+	if !got.paste || got.running || !strings.Contains(got.editor.Value(), "workflow: build_deploy") ||
+		got.editorTitle != "EDIT PROJECT · api-prod" || len(got.pending) != 3 {
+		t.Fatalf("project editor was not opened: paste=%v running=%v pending=%v title=%q content=%q",
+			got.paste, got.running, got.pending, got.editorTitle, got.editor.Value())
 	}
 }
 
@@ -140,8 +150,8 @@ func TestEditorSaveTransitionHasExplicitNotice(t *testing.T) {
 	if got := editorSubmissionNotice([]string{"project", "create", "api", "prod"}); !strings.Contains(got, "creating the environment file") {
 		t.Fatalf("create notice = %q", got)
 	}
-	if got := editorSubmissionNotice([]string{"project", "apply", "api", "prod", "-"}); !strings.Contains(got, "applying") {
-		t.Fatalf("apply notice = %q", got)
+	if got := editorSubmissionNotice([]string{"project", "edit", "api-prod"}); !strings.Contains(got, "saving the environment file") {
+		t.Fatalf("edit notice = %q", got)
 	}
 	if got := editorSubmissionNotice([]string{"project", "variables", "api-prod"}); !strings.Contains(got, "plain and secret") {
 		t.Fatalf("environment notice = %q", got)
@@ -154,8 +164,8 @@ func TestProjectCreationYAMLIsFormattedOnSave(t *testing.T) {
 	if !strings.Contains(formatted, "workflow: build_only") || !strings.Contains(formatted, "services:\n  app:") {
 		t.Fatalf("environment YAML was not normalized:\n%s", formatted)
 	}
-	if got := formatEditorYAML([]string{"project", "apply", "api", "prod", "-"}, content); got != content {
-		t.Fatal("project apply YAML was unexpectedly rewritten")
+	if got := formatEditorYAML([]string{"project", "edit", "api-prod"}, content); !strings.Contains(got, "services:\n  app:") {
+		t.Fatal("project edit YAML was not normalized")
 	}
 	broken := "project: ["
 	if got := formatEditorYAML([]string{"project", "create", "api", "prod"}, broken); got != broken {
