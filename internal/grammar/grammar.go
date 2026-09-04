@@ -27,13 +27,12 @@ import (
 type Source string
 
 const (
-	SourceAgents              Source = "agents"
-	SourceProjects            Source = "projects"
-	SourceProjectEnvironments Source = "project_environments"
-	SourceReleases            Source = "releases"
-	SourceContainers          Source = "containers"
-	SourceRegistry            Source = "registry"
-	SourceAlerts              Source = "alerts"
+	SourceAgents     Source = "agents"
+	SourceProjects   Source = "projects"
+	SourceReleases   Source = "releases"
+	SourceContainers Source = "containers"
+	SourceRegistry   Source = "registry"
+	SourceAlerts     Source = "alerts"
 )
 
 type InputMode string
@@ -80,16 +79,15 @@ type Argument struct {
 }
 
 type Command struct {
-	Path           []string
-	Summary        string
-	Arguments      []Argument
-	Input          InputMode
-	Action         Action
-	Confirm        bool
-	Durable        bool
-	Focused        bool
-	ExternalEditor bool
-	Hidden         bool
+	Path      []string
+	Summary   string
+	Arguments []Argument
+	Input     InputMode
+	Action    Action
+	Confirm   bool
+	Durable   bool
+	Focused   bool
+	Hidden    bool
 }
 
 var commands = []Command{
@@ -114,13 +112,7 @@ var commands = []Command{
 		{Name: "ENV", Label: "ENVIRONMENT", EmptyTip: "Type an environment name to open the project editor."},
 	}},
 	{Path: []string{"project", "show"}, Summary: "Inspect a project and its services", Arguments: []Argument{project()}},
-	{Path: []string{"project", "edit"}, Summary: "Edit authoritative environment YAML", ExternalEditor: true, Arguments: []Argument{project()}},
-	{Path: []string{"project", "path"}, Summary: "Resolve authoritative environment YAML", Hidden: true, Arguments: []Argument{project()}},
-	{Path: []string{"project", "validate"}, Summary: "Validate environment YAML", Input: InputYAML, Arguments: []Argument{{Name: "FILE", Label: "YAML FILE", EmptyTip: "Type a YAML path, or - to open the inline editor."}}},
-	{Path: []string{"project", "apply"}, Summary: "Validate and atomically apply environment YAML", Input: InputYAML, Arguments: []Argument{
-		{Name: "PROJECT ENV", Label: "PROJECT ENVIRONMENT", Width: 2, Source: SourceProjectEnvironments, Request: []string{"project", "list"}, EmptyTip: "No loaded project environments. Add YAML, then run project reload."},
-		{Name: "FILE", Label: "YAML FILE", EmptyTip: "Type a YAML path, or - to open the inline editor."},
-	}},
+	{Path: []string{"project", "edit"}, Summary: "Edit authoritative environment YAML", Input: InputYAML, Arguments: []Argument{project()}},
 	{Path: []string{"project", "reload"}, Summary: "Reload authoritative environment YAML"},
 	{Path: []string{"project", "deploy"}, Summary: "Start and follow a project release", Durable: true, Arguments: []Argument{project(), runMode()}},
 	{Path: []string{"project", "rollback"}, Summary: "Restore a project's previous release", Durable: true, Arguments: []Argument{project(), runMode()}},

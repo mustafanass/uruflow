@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
 )
@@ -62,7 +63,7 @@ func seedTree(t *testing.T) string {
 	write(t, filepath.Join(root, "defaults.yaml"), "env:\n  TZ: Asia/Baghdad\n  LOG_LEVEL: info\n")
 
 	write(t, filepath.Join(root, "projects", "api", "dev.yaml"),
-		"builder: builder-01\nrunners: [dev-01]\nports: [\"8081:80\"]\n"+
+		"timeout: 90m\nbuilder: builder-01\nrunners: [dev-01]\nports: [\"8081:80\"]\n"+
 			"env:\n  APP: api\n  LOG_LEVEL: warn\nservices:\n  api:\n    git: git@github.com:acme/api.git\n    branch: develop\n    dockerfile: Dockerfile\n    context: .\n")
 	write(t, filepath.Join(root, "projects", "api", "dev.env"),
 		"# comment\nLOG_LEVEL=debug\nDATABASE_URL=postgres://dev\n")
@@ -94,6 +95,9 @@ func TestLoaderExpandsEnvironmentsIntoProjects(t *testing.T) {
 	}
 	if !dev.Managed() || dev.Source == "" {
 		t.Fatal("a file-backed project is not marked managed")
+	}
+	if dev.Timeout != 90*time.Minute || prod.EffectiveTimeout() != models.DefaultDeploymentTimeout {
+		t.Fatalf("timeouts dev=%s prod=%s", dev.Timeout, prod.EffectiveTimeout())
 	}
 
 	if dev.Services[0].Branch != "develop" || prod.Services[0].Branch != "main" {

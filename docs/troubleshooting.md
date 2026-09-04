@@ -182,8 +182,8 @@ Files are read on start and by `project reload` in the workspace. There is no fi
 
 **Editing a project failed validation**
 
-The workspace reports the file and reason. Inline `project apply` restores the previous file when full
-reload validation fails; editor changes remain on disk so you can correct them and reload again.
+The internal editor reports the reason and keeps the YAML open without losing the text. Correct it and
+press `Ctrl+S` again. If the full reload fails after writing, URUFLOW restores the previous file.
 
 ## Webhooks
 

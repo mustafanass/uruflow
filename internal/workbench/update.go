@@ -20,8 +20,6 @@ package workbench
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -98,32 +96,21 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.suggestionAt = 0
 		m.resize()
 		return m, nil
-	case editPathMsg:
+	case projectEditorMsg:
+		m.running = false
+		m.active = nil
 		if msg.err != nil {
-			m.running = false
 			m.input.Focus()
 			m.append(m.paint(cliui.ANSIError, "✘ "+cliui.SafeText(msg.err.Error())) + "\n")
 			return m, textinput.Blink
 		}
-		editor := os.Getenv("VISUAL")
-		if editor == "" {
-			editor = os.Getenv("EDITOR")
-		}
-		if editor == "" {
-			editor = "vi"
-		}
-		parts := strings.Fields(editor)
-		process := exec.Command(parts[0], append(parts[1:], msg.path)...)
-		return m, tea.ExecProcess(process, func(err error) tea.Msg { return editorDoneMsg{err: err} })
-	case editorDoneMsg:
-		if msg.err != nil {
-			m.running = false
-			m.input.Focus()
-			m.append(m.paint(cliui.ANSIError, "✘ editor: "+cliui.SafeText(msg.err.Error())) + "\n")
-			return m, textinput.Blink
-		}
-		m.append(m.paint(cliui.ANSISuccess, "✔ editor closed; reloading YAML") + "\n")
-		return m, m.start([]string{"project", "reload"}, "")
+		m.pending, m.paste = append([]string{}, msg.args...), true
+		m.prepareEditor(msg.args)
+		m.editor.SetValue(msg.content)
+		m.editor.CursorStart()
+		m.editor.Focus()
+		m.resize()
+		return m, textarea.Blink
 	case variableEditorMsg:
 		m.running = false
 		m.active = nil
@@ -271,6 +258,12 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Blur()
 				return m, m.loadVariableEditor(args)
 			}
+			if isProjectEditor(args) {
+				m.running = true
+				m.active = append([]string{}, args...)
+				m.input.Blur()
+				return m, m.loadProjectEditor(args)
+			}
 			if wantsPaste(command, args) {
 				m.pending, m.paste = args, true
 				m.prepareEditor(args)
@@ -285,11 +278,6 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Placeholder = strings.Join(args, " ")
 				m.resize()
 				return m, textinput.Blink
-			}
-			if command.ExternalEditor {
-				m.running = true
-				m.input.Blur()
-				return m, m.resolveEditor(args[2])
 			}
 			return m, m.start(args, "")
 		}

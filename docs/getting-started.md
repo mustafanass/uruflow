@@ -31,7 +31,7 @@ with `sudo` so the paths match what it shows.
 **[server]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-2.4.1-linux-amd64 -o uruflow
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-2.4.2-linux-amd64 -o uruflow
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 
 sudo uruflow init --advertise uruflow.internal
@@ -99,7 +99,7 @@ two-step copy in the next section instead.
 **[target]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.1/uruflow-agent-2.4.1-linux-amd64 -o uruflow-agent
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-agent-2.4.2-linux-amd64 -o uruflow-agent
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 
 sudo uruflow-agent init \
@@ -135,12 +135,12 @@ certificate error.
 
 **[server]** — run `project create demo prod` in the workspace, or create
 `/etc/uruflow/projects/demo/prod.yaml` using the example in [Projects](projects.md#3-file-layout).
-Use `builder-01` as both builder and runner for this single-machine example, then validate and load
-the file:
+Use `builder-01` as both builder and runner for this single-machine example. Create or edit it in the
+workspace, then inspect the loaded result:
 
 ```text
-project validate /etc/uruflow/projects/demo/prod.yaml
-project reload
+project create demo prod
+project edit demo-prod
 project show demo-prod
 ```
 
@@ -200,7 +200,7 @@ Rollback fails with `no successful release to roll back to` if the project has n
 Add a webhook at your git host pointing to `https://<server>:9000/webhook`, using the `webhook.secret`
 from `config.yaml`. Pushes to a project's branch then deploy it automatically.
 
-See [Configuration](configuration.md#6-webhooks) for GitHub and GitLab setup and how pushes are matched.
+See [Configuration](configuration.md#8-webhooks) for GitHub and GitLab setup and how pushes are matched.
 
 ## Where to Next
 

@@ -15,6 +15,7 @@ multi-service application as one unit.
 6. Long-running services must become ready before dependants start.
 7. Jobs must exit with status zero. Successful job containers are removed.
 8. Created networks and volumes are persistent resources. A project delete never destroys data.
+9. One project timeout covers Git, every build and push, and deployment; it is not reset per service.
 
 ## 2. Files
 
@@ -43,6 +44,7 @@ literal dollar sign. Secret references are preserved during interpolation.
 ```yaml
 builder: controller-01
 runners: [controller-01]
+timeout: 2h
 
 resources:
   networks:
@@ -171,6 +173,9 @@ digest. Service-owned projects are deployed manually.
 
 ## 5. Runtime Fields
 
+The top-level `timeout` defaults to `2h` and caps the complete release. The service-level `timeout`
+below applies only to a `job` and cannot extend the project deadline.
+
 | Field | Meaning |
 | :--- | :--- |
 | `image` | Immutable prebuilt image; mutually exclusive with `dockerfile` |
@@ -249,11 +254,12 @@ All images and declared resources are prepared before replacement begins. Long-r
 then replaced in dependency order. A readiness failure restores already-replaced services in reverse
 order. Successful jobs are not reversed.
 
-## 9. Workspace Validation
+## 9. Workspace Editing
 
-Edit native YAML under `/etc/uruflow/projects/` with any editor or use `project apply <project>
-<environment> -` in the single-page workspace for inline paste. Run `project validate` before reload;
-inline apply validates, atomically saves and restores the previous file if full reload fails.
+Use `project create <project> <environment>` or `project edit <project-environment>` in the workspace.
+Both use the same internal editor. `Ctrl+S` validates, atomically saves, and reloads the file; a failed
+full reload restores the previous version. Files written by configuration management remain supported;
+run `project reload` after changing them externally.
 
 Unknown YAML fields, dependency cycles, invalid resource sizes, bad host IPs, source paths escaping a
 checkout, mutable image tags, and missing required interpolation values fail validation before a

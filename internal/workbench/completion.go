@@ -218,8 +218,6 @@ func sourceProjector(source grammar.Source) choiceProjector {
 		return tableChoices([]string{"NAME"}, "NAME", []string{"ROLES", "STATE", "VERSION"})
 	case grammar.SourceProjects:
 		return tableChoices([]string{"NAME"}, "NAME", []string{"WORKFLOW", "ENV", "SOURCE"})
-	case grammar.SourceProjectEnvironments:
-		return projectEnvironmentChoices
 	case grammar.SourceReleases:
 		return tableChoices([]string{"ID"}, "ID", []string{"PROJECT", "STATE", "AGE"})
 	case grammar.SourceContainers:

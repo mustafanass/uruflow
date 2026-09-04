@@ -21,19 +21,20 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 const projectColumns = `name, git_url, branch, dockerfile, context, build_args,
-	builder, runners, auto_deploy, workflow, runtime, services, env, resources, source, created_at`
+	builder, runners, auto_deploy, workflow, timeout_ns, runtime, services, env, resources, source, created_at`
 
 func (s *Store) SaveProject(project *models.Project) error {
 	_, err := s.db.Exec(`
 		INSERT INTO projects (name, git_url, branch, dockerfile, context, build_args,
-		                      builder, runners, auto_deploy, workflow, runtime, services, env, resources, source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                      builder, runners, auto_deploy, workflow, timeout_ns, runtime, services, env, resources, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			git_url = excluded.git_url,
 			branch = excluded.branch,
@@ -44,6 +45,7 @@ func (s *Store) SaveProject(project *models.Project) error {
 			runners = excluded.runners,
 			auto_deploy = excluded.auto_deploy,
 			workflow = excluded.workflow,
+			timeout_ns = excluded.timeout_ns,
 			runtime = excluded.runtime,
 			services = excluded.services,
 			env = excluded.env,
@@ -51,7 +53,7 @@ func (s *Store) SaveProject(project *models.Project) error {
 			source = excluded.source`,
 		project.Name, project.GitURL, project.Branch, project.Dockerfile, project.Context,
 		encodeJSON(project.BuildArgs), project.Builder, encodeJSON(project.Runners),
-		project.AutoDeploy, project.Workflow, encodeJSON(project.Runtime), encodeJSON(project.Services),
+		project.AutoDeploy, project.Workflow, int64(project.Timeout), encodeJSON(project.Runtime), encodeJSON(project.Services),
 		project.Env, encodeJSON(models.ProjectResources{Networks: project.Networks, Volumes: project.Volumes}), project.Source)
 	return err
 }
@@ -92,10 +94,11 @@ func (s *Store) DeleteProject(name string) error {
 func scanProject(row scanner) (*models.Project, error) {
 	var project models.Project
 	var buildArgs, runners, runtime, services, resources string
+	var timeoutNS int64
 
 	err := row.Scan(&project.Name, &project.GitURL, &project.Branch, &project.Dockerfile,
 		&project.Context, &buildArgs, &project.Builder, &runners,
-		&project.AutoDeploy, &project.Workflow, &runtime, &services, &project.Env, &resources, &project.Source, &project.CreatedAt)
+		&project.AutoDeploy, &project.Workflow, &timeoutNS, &runtime, &services, &project.Env, &resources, &project.Source, &project.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, storage.ErrNotFound
 	}
@@ -104,6 +107,7 @@ func scanProject(row scanner) (*models.Project, error) {
 	}
 
 	decodeJSON(buildArgs, &project.BuildArgs)
+	project.Timeout = time.Duration(timeoutNS)
 	decodeJSON(runners, &project.Runners)
 	decodeJSON(runtime, &project.Runtime)
 	decodeJSON(services, &project.Services)

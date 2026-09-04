@@ -182,6 +182,7 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 	request := ufp.BuildRequest{
 		JobID:   release.ID,
 		Project: project.Name,
+		Timeout: project.EffectiveTimeout(),
 		Tags:    []string{TagLatest},
 		Targets: targets,
 	}
@@ -225,6 +226,7 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 		if source.Spec.Name != "" {
 			spec = source.Spec
 		}
+		spec.Timeout = project.Timeout
 		images = source.Images
 		if len(images) == 0 {
 			images = map[string]string{"": source.Image}

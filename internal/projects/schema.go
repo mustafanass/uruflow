@@ -161,6 +161,7 @@ type Logging struct {
 
 type Environment struct {
 	Workflow        string                      `yaml:"workflow,omitempty"`
+	Timeout         string                      `yaml:"timeout,omitempty"`
 	Builder         string                      `yaml:"builder"`
 	Runners         []string                    `yaml:"runners"`
 	Ports           []string                    `yaml:"ports,omitempty"`

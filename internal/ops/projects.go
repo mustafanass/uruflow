@@ -57,19 +57,11 @@ func (e *Engine) projects(ctx context.Context, args []string, input string, emit
 			return grammar.UsageError("project", "create")
 		}
 		return e.createProject(args[1], args[2], input, emit)
-	case "path":
+	case "edit":
 		if len(args) != 2 {
-			return grammar.UsageError("project", "path")
+			return grammar.UsageError("project", "edit")
 		}
-		project, err := e.server.Store().GetProject(args[1])
-		if err != nil {
-			return fmt.Errorf("project %s: %w", args[1], err)
-		}
-		if project.Source == "" {
-			return fmt.Errorf("project %s is not owned by a YAML file", project.Name)
-		}
-		return emit(Event{Type: EventResult, Time: time.Now(), Title: "project file", Message: project.Source,
-			Data: map[string]any{"name": project.Name, "path": project.Source}})
+		return e.editProject(args[1], input, emit)
 	case "show":
 		if len(args) != 2 {
 			return grammar.UsageError("project", "show")
@@ -92,6 +84,7 @@ func (e *Engine) projects(ctx context.Context, args []string, input string, emit
 		}
 		if err := emit(Table(project.Name, []string{"FIELD", "VALUE"}, [][]string{
 			{"source", project.Source}, {"workflow", project.EffectiveWorkflow()},
+			{"timeout", project.EffectiveTimeout().String()},
 			{"builder", builder}, {"runners", strings.Join(runners, ", ")},
 			{"services", strconv.Itoa(len(project.ServiceList()))},
 		})); err != nil {
@@ -151,23 +144,6 @@ func (e *Engine) projects(ctx context.Context, args []string, input string, emit
 			return err
 		}
 		return emit(Message("success", args[1]+" stopped on every runner"))
-	case "validate":
-		if len(args) != 2 {
-			return grammar.UsageError("project", "validate")
-		}
-		content, err := readContent(args[1], input)
-		if err != nil {
-			return err
-		}
-		if err := e.server.Loader().Validate(args[1], content); err != nil {
-			return err
-		}
-		return emit(Message("success", "YAML is valid"))
-	case "apply":
-		if len(args) != 4 {
-			return grammar.UsageError("project", "apply")
-		}
-		return e.applyProject(args[1], args[2], args[3], input, emit)
 	default:
 		return fmt.Errorf("unknown project command %q", args[0])
 	}
@@ -213,61 +189,41 @@ func pathWithin(directory, path string) bool {
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))
 }
 
-func readContent(path, input string) (string, error) {
-	if path == "-" {
-		if strings.TrimSpace(input) == "" {
-			return "", errors.New("no YAML was supplied on stdin")
-		}
-		return input, nil
-	}
-	content, err := os.ReadFile(path)
+func (e *Engine) editProject(name, input string, emit Emit) error {
+	project, err := e.server.Store().GetProject(name)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("project %s: %w", name, err)
 	}
-	return string(content), nil
-}
-
-func (e *Engine) applyProject(project, environment, source, input string, emit Emit) error {
-	if !models.ValidResourceName(project) || !models.ValidResourceName(environment) {
-		return errors.New("project and environment must be lowercase resource names")
+	if !project.Managed() || project.Env == "" {
+		return fmt.Errorf("project %s has no authoritative environment file", project.Name)
 	}
-	content, err := readContent(source, input)
+	if input == "" {
+		content, err := os.ReadFile(project.Source)
+		if err != nil {
+			return err
+		}
+		return emit(Event{Type: EventResult, Time: time.Now(), Title: "project YAML editor", Message: string(content)})
+	}
+	if err := e.server.Loader().Validate(project.Source, input); err != nil {
+		return fmt.Errorf("validate YAML: %w", err)
+	}
+	previous, err := os.ReadFile(project.Source)
 	if err != nil {
 		return err
 	}
-	destination, _ := e.server.Loader().Paths(project, environment)
-	if _, err := os.Stat(filepath.Dir(destination)); err != nil {
-		return fmt.Errorf("project does not exist: %s", filepath.Dir(destination))
-	}
-	if err := e.server.Loader().Validate(destination, content); err != nil {
-		return fmt.Errorf("validate YAML: %w", err)
-	}
-	previous, previousErr := os.ReadFile(destination)
-	hadPrevious := previousErr == nil
-	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
-		return previousErr
-	}
-	if err := e.server.Loader().WriteEnvironment(project, environment, []byte(content)); err != nil {
+	if err := e.server.Loader().WriteEnvironment(project.Base(), project.Env, []byte(input)); err != nil {
 		return err
 	}
 	loaded := e.server.ReloadProjects()
 	for _, problem := range e.server.ProjectProblems() {
-		if problem.Path == destination {
-			var restoreErr error
-			if hadPrevious {
-				restoreErr = e.server.Loader().WriteEnvironment(project, environment, previous)
-			} else {
-				restoreErr = os.Remove(destination)
-				if errors.Is(restoreErr, os.ErrNotExist) {
-					restoreErr = nil
-				}
-			}
+		if problem.Path == project.Source {
+			restoreErr := e.server.Loader().WriteEnvironment(project.Base(), project.Env, previous)
 			e.server.ReloadProjects()
 			if restoreErr != nil {
-				return fmt.Errorf("YAML was not applied: %v; restore previous YAML: %w", problem.Reason, restoreErr)
+				return fmt.Errorf("YAML was not saved: %v; restore previous YAML: %w", problem.Reason, restoreErr)
 			}
-			return fmt.Errorf("YAML was not applied: %w", problem.Reason)
+			return fmt.Errorf("YAML was not saved: %w", problem.Reason)
 		}
 	}
-	return emit(Message("success", fmt.Sprintf("saved %s and loaded %d project environments", destination, loaded)))
+	return emit(Message("success", fmt.Sprintf("saved %s and loaded %d project environments", project.Source, loaded)))
 }

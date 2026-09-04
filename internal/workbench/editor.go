@@ -36,19 +36,19 @@ import (
 
 const yamlIndentWidth = 2
 
-func (m *model) resolveEditor(name string) tea.Cmd {
+func (m *model) loadProjectEditor(args []string) tea.Cmd {
 	return func() tea.Msg {
-		path := ""
-		err := m.client.Execute(context.Background(), []string{"project", "path", name}, "", func(event ops.Event) error {
-			if event.Title == "project file" {
-				path = event.Message
+		content := ""
+		err := m.client.Execute(context.Background(), args, "", func(event ops.Event) error {
+			if event.Title == "project YAML editor" {
+				content = event.Message
 			}
 			return nil
 		})
-		if err == nil && path == "" {
-			err = errors.New("server did not return a project file")
+		if err == nil && content == "" {
+			err = errors.New("server did not return project YAML")
 		}
-		return editPathMsg{path: path, err: err}
+		return projectEditorMsg{args: append([]string{}, args...), content: content, err: err}
 	}
 }
 
@@ -222,17 +222,15 @@ func editorSubmissionNotice(args []string) string {
 		switch args[1] {
 		case "create":
 			return "Validating YAML and creating the environment file …"
-		case "apply":
-			return "Validating and applying environment YAML …"
-		case "validate":
-			return "Validating environment YAML …"
+		case "edit":
+			return "Validating and saving the environment file …"
 		}
 	}
 	return "Validating YAML …"
 }
 
 func formatEditorYAML(args []string, content string) string {
-	if len(args) != 4 || args[0] != "project" || args[1] != "create" {
+	if len(args) < 3 || args[0] != "project" || (args[1] != "create" && args[1] != "edit") {
 		return content
 	}
 	var document yaml.Node
@@ -271,17 +269,14 @@ func wantsPaste(command grammar.Command, args []string) bool {
 	if len(args) == 4 && args[0] == "project" && args[1] == "create" {
 		return true
 	}
-	if len(args) == 0 || args[len(args)-1] != "-" {
-		return false
-	}
-	return len(args) >= 2 && args[0] == "project" && (args[1] == "apply" || args[1] == "validate")
+	return false
 }
 
 func (m *model) prepareEditor(args []string) {
 	m.editorTitle = "YAML"
-	m.editorHint = "Ctrl+S validate and apply · Esc cancel"
+	m.editorHint = "Ctrl+S validate and save · Esc cancel"
 	m.editorError = ""
-	m.editor.Placeholder = "Paste YAML here. Ctrl+S validates and applies; Esc cancels."
+	m.editor.Placeholder = "Paste YAML here. Ctrl+S validates and saves; Esc cancels."
 	m.editor.SetValue("")
 	if isVariableEditor(args) {
 		m.editorTitle = "VARIABLES · " + args[2]
@@ -294,6 +289,12 @@ func (m *model) prepareEditor(args []string) {
 		m.editorHint = "Ctrl+S validate and create file · Esc cancel"
 		m.editor.SetValue(projectTemplate(args[2]))
 		m.editor.CursorStart()
+		return
+	}
+	if isProjectEditor(args) {
+		m.editorTitle = "EDIT PROJECT · " + args[2]
+		m.editorHint = "Ctrl+S validate and save · Esc cancel"
+		m.editor.Placeholder = "Edit the authoritative environment YAML."
 	}
 }
 
@@ -301,8 +302,13 @@ func isVariableEditor(args []string) bool {
 	return len(args) == 3 && args[0] == "project" && args[1] == "variables"
 }
 
+func isProjectEditor(args []string) bool {
+	return len(args) == 3 && args[0] == "project" && args[1] == "edit"
+}
+
 func projectTemplate(project string) string {
 	return fmt.Sprintf(`workflow: build_deploy
+timeout: 2h
 builder: builder-01
 runners:
   - runner-01
