@@ -46,6 +46,10 @@ Set `NO_COLOR=1` or open with `uruflow --no-color` when ANSI color is not wanted
 The palette uses the URUFLOW navy, gold, ivory, and steel-blue colors. Green and red are reserved for
 health and failures.
 
+Table titles include their row count. On narrow terminals, identity and operational state columns
+stay visible while lower-priority columns collapse; `+N` in the title reports how many are hidden.
+Long messages and log lines wrap beneath their source instead of overflowing the workspace.
+
 ## Status and live activity
 
 ```text

@@ -274,26 +274,26 @@ func wantsPaste(command grammar.Command, args []string) bool {
 
 func (m *model) prepareEditor(args []string) {
 	m.editorTitle = "YAML"
-	m.editorHint = "Ctrl+S validate and save · Esc cancel"
+	m.editorHint = "Ctrl+S save · Esc cancel"
 	m.editorError = ""
 	m.editor.Placeholder = "Paste YAML here. Ctrl+S validates and saves; Esc cancels."
 	m.editor.SetValue("")
 	if isVariableEditor(args) {
 		m.editorTitle = "VARIABLES · " + args[2]
-		m.editorHint = "Ctrl+S validate and save · Esc cancel"
+		m.editorHint = "Ctrl+S save · Esc cancel"
 		m.editor.Placeholder = "NAME=value or secret NAME=value"
 		return
 	}
 	if len(args) == 4 && args[0] == "project" && args[1] == "create" {
-		m.editorTitle = "NEW PROJECT"
-		m.editorHint = "Ctrl+S validate and create file · Esc cancel"
+		m.editorTitle = "NEW PROJECT · " + args[2] + "-" + args[3]
+		m.editorHint = "Ctrl+S create · Esc cancel"
 		m.editor.SetValue(projectTemplate(args[2]))
 		m.editor.CursorStart()
 		return
 	}
 	if isProjectEditor(args) {
-		m.editorTitle = "EDIT PROJECT · " + args[2]
-		m.editorHint = "Ctrl+S validate and save · Esc cancel"
+		m.editorTitle = "PROJECT · " + args[2]
+		m.editorHint = "Ctrl+S save · Esc cancel"
 		m.editor.Placeholder = "Edit the authoritative environment YAML."
 	}
 }

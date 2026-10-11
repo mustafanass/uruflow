@@ -141,7 +141,10 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			if m.running && m.cancel != nil {
 				m.cancel()
-				message := "▲ detached from live output"
+				message := "▲ stopped waiting for command output"
+				if isLiveOperation(m.active) {
+					message = "▲ detached from live output"
+				}
 				if isDurableOperation(m.active) {
 					message += "; the server-side release continues"
 				} else if len(m.active) > 0 && m.active[0] == "events" && m.activityCursor > 0 {
@@ -156,6 +159,7 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+l":
 			m.transcript = ""
+			m.unseenLines = 0
 			m.pristine = false
 			m.viewport.SetContent("")
 			m.input.SetValue("")
@@ -242,11 +246,13 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if command.Action == grammar.ActionClear {
 				m.transcript = ""
+				m.unseenLines = 0
 				m.viewport.SetContent("")
 				return m, nil
 			}
 			if command.Focused {
 				m.activityCursor = 0
+				m.unseenLines = 0
 				m.transcript = m.streamWelcome()
 				m.viewport.SetContent(m.transcript)
 				m.viewport.GotoTop()
@@ -299,6 +305,7 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var viewportCommand tea.Cmd
 	m.viewport, viewportCommand = m.viewport.Update(message)
+	m.clearUnseenAtBottom()
 	commands = append(commands, viewportCommand)
 	return m, tea.Batch(commands...)
 }

@@ -21,6 +21,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,6 +129,67 @@ func TestTimedOutJobIsRemoved(t *testing.T) {
 	}
 	if engine.exists["uruflow-api-migrate"] || engine.jobLogs != 1 {
 		t.Fatalf("timed-out job was not logged and removed: %#v", engine)
+	}
+}
+
+func TestFailedServiceStartupOutputIsCapturedBeforeRollback(t *testing.T) {
+	startupErr := errors.New("container exited with code 1")
+	engine := &fakeEngine{
+		exists:       map[string]bool{"uruflow-api": true},
+		waitReadyErr: startupErr,
+		streamLogLines: []fakeLogLine{
+			{stream: ufp.StreamStdout, line: "loading configuration"},
+			{stream: ufp.StreamStderr, line: "DATABASE_URL is required"},
+		},
+	}
+	runner := New(engine, nil)
+	var output []string
+	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+		JobID: "r-failed", Project: "api", Services: []ufp.ServiceSpec{{Image: immutableTestImage}},
+	}, func(stream, line string) {
+		output = append(output, stream+":"+line)
+	})
+	if !errors.Is(err, startupErr) {
+		t.Fatalf("release error = %v", err)
+	}
+	if engine.streamLogID != "uruflow-api" || engine.streamLogTail != failedStartupLogTail || !engine.streamLogFound {
+		t.Fatalf("captured logs id=%q tail=%d present=%t", engine.streamLogID, engine.streamLogTail, engine.streamLogFound)
+	}
+	joined := strings.Join(output, "\n")
+	for _, expected := range []string{
+		"startup diagnostics · uruflow-api · captured 2 line(s)",
+		"stdout:uruflow-api │ loading configuration",
+		"stderr:uruflow-api │ DATABASE_URL is required",
+		"release failed, restoring the previous containers",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("release output does not contain %q:\n%s", expected, joined)
+		}
+	}
+	if !engine.exists["uruflow-api"] || engine.exists["uruflow-api-previous"] {
+		t.Fatalf("previous container was not restored: %v", engine.exists)
+	}
+}
+
+func TestStartupLogFailureDoesNotMaskReadinessFailure(t *testing.T) {
+	startupErr := errors.New("container exited with code 1")
+	engine := &fakeEngine{
+		exists:       map[string]bool{},
+		waitReadyErr: startupErr,
+		streamLogErr: errors.New("logging driver does not support reading"),
+	}
+	runner := New(engine, nil)
+	var output []string
+	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+		JobID: "r-failed", Project: "api", Services: []ufp.ServiceSpec{{Image: immutableTestImage}},
+	}, func(_ string, line string) {
+		output = append(output, line)
+	})
+	if !errors.Is(err, startupErr) {
+		t.Fatalf("release error = %v", err)
+	}
+	if !strings.Contains(strings.Join(output, "\n"), "startup diagnostics unavailable · uruflow-api") {
+		t.Fatalf("missing diagnostics failure: %v", output)
 	}
 }
 

@@ -69,3 +69,60 @@ func TestStartupDoesNotAutomaticallyRunStatus(t *testing.T) {
 		t.Fatal("startup unexpectedly began a status command")
 	}
 }
+
+func TestOperationStateDistinguishesCommandsFromLiveOutput(t *testing.T) {
+	for _, test := range []struct {
+		args  []string
+		state string
+		live  bool
+	}{
+		{[]string{"status"}, "running · status", false},
+		{[]string{"events"}, "following fleet events · Ctrl+C detaches", true},
+		{[]string{"project", "deploy", "api-prod"}, "following release · Ctrl+C detaches", true},
+		{[]string{"project", "deploy", "api-prod", "--no-follow"}, "running · project deploy", false},
+		{[]string{"release", "logs", "release-01"}, "running · release logs", false},
+		{[]string{"release", "logs", "release-01", "--follow"}, "following release output · Ctrl+C detaches", true},
+		{[]string{"container", "logs", "runner-01", "container-01", "--follow"}, "following container output · Ctrl+C detaches", true},
+	} {
+		state, _ := operationState(test.args)
+		if state != test.state || isLiveOperation(test.args) != test.live {
+			t.Errorf("%v state=%q live=%v", test.args, state, isLiveOperation(test.args))
+		}
+	}
+}
+
+func TestProjectEditorLoadingHasAnAccurateWorkspaceState(t *testing.T) {
+	input := textinput.New()
+	view := viewport.New(78, 18)
+	m := &model{
+		input: input, viewport: view, width: 80, height: 24, initialized: true,
+		running: true, active: []string{"project", "edit", "api-prod"},
+	}
+	m.resize()
+	output := m.View()
+	if !strings.Contains(output, "loading project YAML") || strings.Contains(output, "streaming") {
+		t.Fatalf("project editor loading state is inaccurate:\n%s", output)
+	}
+}
+
+func TestCtrlCUsesAccurateFiniteAndDurableMessages(t *testing.T) {
+	for _, test := range []struct {
+		args     []string
+		expected string
+	}{
+		{[]string{"status"}, "stopped waiting for command output"},
+		{[]string{"project", "deploy", "api-prod"}, "server-side release continues"},
+	} {
+		input := textinput.New()
+		view := viewport.New(80, 12)
+		cancelled := false
+		m := &model{
+			input: input, viewport: view, running: true, active: test.args,
+			cancel: func() { cancelled = true }, events: make(chan streamMsg, 1),
+		}
+		_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+		if !cancelled || !strings.Contains(m.transcript, test.expected) {
+			t.Errorf("%v cancelled=%v transcript=%q", test.args, cancelled, m.transcript)
+		}
+	}
+}

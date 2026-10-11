@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.4.2-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.5.0-2DD4BF?style=flat-square" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
   <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp-F5A524?style=flat-square" alt="ufp protocol"></a>
@@ -68,7 +68,7 @@ the production project schema, see [Native Build Model](docs/native-build-model.
 
 ## Installation
 
-Latest release: **v2.4.2** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
+Latest release: **v2.5.0** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
 
 There are **two different binaries and they are not interchangeable** — installing the wrong one on a
 machine is the most common setup mistake:
@@ -89,19 +89,19 @@ uname -m      # x86_64 -> amd64      aarch64 / arm64 -> arm64
 **linux/amd64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-2.4.2-linux-amd64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-2.5.0-linux-amd64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-2.4.2-linux-amd64 && sudo mv uruflow-2.4.2-linux-amd64 /usr/local/bin/uruflow
+chmod +x uruflow-2.5.0-linux-amd64 && sudo mv uruflow-2.5.0-linux-amd64 /usr/local/bin/uruflow
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-2.4.2-linux-arm64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-2.5.0-linux-arm64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-2.4.2-linux-arm64 && sudo mv uruflow-2.4.2-linux-arm64 /usr/local/bin/uruflow
+chmod +x uruflow-2.5.0-linux-arm64 && sudo mv uruflow-2.5.0-linux-arm64 /usr/local/bin/uruflow
 ```
 
 ### Agent — `uruflow-agent`
@@ -109,24 +109,24 @@ chmod +x uruflow-2.4.2-linux-arm64 && sudo mv uruflow-2.4.2-linux-arm64 /usr/loc
 **linux/amd64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-agent-2.4.2-linux-amd64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-agent-2.5.0-linux-amd64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-agent-2.4.2-linux-amd64 && sudo mv uruflow-agent-2.4.2-linux-amd64 /usr/local/bin/uruflow-agent
+chmod +x uruflow-agent-2.5.0-linux-amd64 && sudo mv uruflow-agent-2.5.0-linux-amd64 /usr/local/bin/uruflow-agent
 ```
 
 **linux/arm64**
 
 ```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-agent-2.4.2-linux-arm64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.4.2/SHA256SUMS.txt
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-agent-2.5.0-linux-arm64
+curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-agent-2.4.2-linux-arm64 && sudo mv uruflow-agent-2.4.2-linux-arm64 /usr/local/bin/uruflow-agent
+chmod +x uruflow-agent-2.5.0-linux-arm64 && sudo mv uruflow-agent-2.5.0-linux-arm64 /usr/local/bin/uruflow-agent
 ```
 
 ### Checksums
 
-`SHA256SUMS.txt` on the v2.4.2 release page covers every asset, including the `.tar.gz` archives:
+`SHA256SUMS.txt` on the v2.5.0 release page covers every asset, including the `.tar.gz` archives:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing

@@ -32,6 +32,7 @@ type fakeEngine struct {
 	exists         map[string]bool
 	unowned        map[string]bool
 	renameErr      error
+	waitReadyErr   error
 	started        []string
 	removed        []string
 	endpoint       string
@@ -41,6 +42,16 @@ type fakeEngine struct {
 	volumes        []docker.VolumeResource
 	state          *docker.State
 	jobLogs        int
+	streamLogID    string
+	streamLogTail  int
+	streamLogFound bool
+	streamLogLines []fakeLogLine
+	streamLogErr   error
+}
+
+type fakeLogLine struct {
+	stream string
+	line   string
 }
 
 func (f *fakeEngine) Pull(context.Context, string, *docker.Auth, func(string)) error { return nil }
@@ -67,7 +78,7 @@ func (f *fakeEngine) Run(_ context.Context, spec docker.Spec) (string, error) {
 }
 func (f *fakeEngine) WaitReady(context.Context, string, time.Duration, time.Duration) error {
 	f.waitReadyCalls++
-	return nil
+	return f.waitReadyErr
 }
 func (f *fakeEngine) State(context.Context, string) (*docker.State, error) {
 	if f.state != nil {
@@ -101,8 +112,20 @@ func (f *fakeEngine) EnsureVolume(_ context.Context, resource docker.VolumeResou
 	f.volumes = append(f.volumes, resource)
 	return nil
 }
-func (f *fakeEngine) StreamLogs(_ context.Context, _ string, _ int, _ bool, onLine func(string, string)) error {
+func (f *fakeEngine) StreamLogs(_ context.Context, id string, tail int, _ bool, onLine func(string, string)) error {
 	f.jobLogs++
-	onLine(ufp.StreamStdout, "migration complete")
+	f.streamLogID = id
+	f.streamLogTail = tail
+	f.streamLogFound = f.exists[id]
+	if f.streamLogErr != nil {
+		return f.streamLogErr
+	}
+	if f.streamLogLines == nil {
+		onLine(ufp.StreamStdout, "migration complete")
+		return nil
+	}
+	for _, entry := range f.streamLogLines {
+		onLine(entry.stream, entry.line)
+	}
 	return nil
 }

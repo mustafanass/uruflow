@@ -21,6 +21,7 @@
 package cliui
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -41,4 +42,27 @@ func TestPreviewStatus(t *testing.T) {
 		{"web-02", "runner", "offline", "0", "–", "–", "–", "3m"},
 	}))
 	_ = renderer.Render(ops.Event{Type: ops.EventLog, Time: time.Date(2026, 8, 27, 14, 3, 10, 0, time.Local), Title: "web-01", Message: "container healthy in 8s"})
+}
+
+func TestPreviewResponsiveTables(t *testing.T) {
+	for _, width := range []int{24, 40, 80, 120, 160} {
+		renderer := New(os.Stdout, os.Getenv("NO_COLOR") == "")
+		renderer.Width = width
+		fmt.Printf("\n--- containers %d columns ---\n", width)
+		_ = renderer.Render(ops.Table("containers", []string{
+			"AGENT", "NAME", "TYPE", "PROJECT", "SERVICE", "ID", "STATE", "HEALTH", "CPU", "MEMORY",
+		}, [][]string{
+			{"web-01", "uruflow-api", "service", "api-prod", "api", "0123456789ab", "running", "healthy", "34%", "382 MiB"},
+			{"web-02", "uruflow-worker-with-a-long-name", "service", "api-prod", "worker", "fedcba987654", "restarting", "starting", "2%", "74 MiB"},
+		}))
+	}
+	renderer := New(os.Stdout, os.Getenv("NO_COLOR") == "")
+	renderer.Width = 40
+	fmt.Println("\n--- release detail 40 columns ---")
+	_ = renderer.Render(ops.Table("release r1", []string{"FIELD", "VALUE"}, [][]string{
+		{"project", "api-prod"}, {"state", "failed"}, {"message", "DATABASE_URL is required"},
+	}))
+	fmt.Println("\n--- wrapped diagnostic 40 columns ---")
+	_ = renderer.Render(ops.Event{Type: ops.EventLog, Time: time.Date(2026, 8, 27, 14, 3, 10, 0, time.Local),
+		Title: "runner-01", Level: "warning", Message: "uruflow-api │ DATABASE_URL is required before the service can start"})
 }
