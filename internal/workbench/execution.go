@@ -92,6 +92,33 @@ func isDurableOperation(args []string) bool {
 	return err == nil && command.Durable
 }
 
+func isLiveOperation(args []string) bool {
+	command, err := grammar.Resolve(args)
+	if err != nil {
+		return false
+	}
+	path := grammar.Path(command)
+	switch path {
+	case "events", "release follow":
+		return true
+	case "project deploy", "project rollback":
+		return !containsArgument(args, "--no-follow")
+	case "release logs", "container logs":
+		return containsArgument(args, "--follow")
+	default:
+		return false
+	}
+}
+
+func containsArgument(args []string, wanted string) bool {
+	for _, arg := range args {
+		if arg == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 func split(line string) ([]string, error) {
 	var args []string
 	var word strings.Builder

@@ -105,6 +105,11 @@ Check readiness semantics in [Deployments](deployments.md#readiness). A release 
 the container is ready, so this usually means it exited afterwards. Use `container logs` in the
 workspace, or `docker logs uruflow-<project>`.
 
+When a replacement exits before it becomes ready, the agent copies its last 80 startup lines into
+the durable release log before removing it and restoring the previous container. Use `release logs
+<release-id>` to recover startup errors such as missing environment variables after the failed
+container has gone.
+
 **Release failed and the old version is still running**
 
 That is the intended behaviour. The replacement failed readiness and the previous container was

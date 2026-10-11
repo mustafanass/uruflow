@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mustafanass/uruflow/internal/ops"
@@ -71,6 +72,81 @@ func TestEmptyTableUsesFullWidthAndCentersMessage(t *testing.T) {
 	left = ansi.StringWidth(emptyRow[:left])
 	if difference := left - right; difference < -1 || difference > 1 {
 		t.Fatalf("empty message is not centered: left=%d right=%d", left, right)
+	}
+}
+
+func TestNarrowTableKeepsOperationalColumns(t *testing.T) {
+	renderer := New(nil, false)
+	renderer.Width = 32
+	output := renderer.RenderString(ops.Table("containers", []string{
+		"AGENT", "NAME", "TYPE", "PROJECT", "SERVICE", "ID", "STATE", "HEALTH", "CPU", "MEMORY",
+	}, [][]string{{
+		"web-01", "uruflow-api", "service", "api-prod", "api", "0123456789ab", "exited", "unhealthy", "0%", "0 B",
+	}}))
+	plain := ansi.Strip(output)
+	for _, expected := range []string{"AGENT", "NAME", "STATE", "HEALTH", "exited", "unheal", "+6"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("narrow table lost %q:\n%s", expected, plain)
+		}
+	}
+	for index, line := range strings.Split(output, "\n") {
+		if got := ansi.StringWidth(line); got > renderer.Width {
+			t.Fatalf("row %d is %d columns, want at most %d", index+1, got, renderer.Width)
+		}
+	}
+}
+
+func TestDetailTableUsesQuietLabelValueHierarchy(t *testing.T) {
+	renderer := New(nil, true)
+	renderer.Width = 48
+	output := renderer.RenderString(ops.Table("release r1", []string{"FIELD", "VALUE"}, [][]string{
+		{"project", "api-prod"}, {"state", "failed"}, {"message", "DATABASE_URL is required"},
+	}))
+	plain := ansi.Strip(output)
+	if strings.Contains(plain, "FIELD") || strings.Contains(plain, "VALUE") {
+		t.Fatalf("detail table kept redundant headings:\n%s", plain)
+	}
+	for _, expected := range []string{"project", "api-prod", "state", "failed", "DATABASE_URL is required"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("detail table lost %q:\n%s", expected, plain)
+		}
+	}
+	if !strings.Contains(output, "\x1b["+ANSIMuted+"m") || !strings.Contains(output, "\x1b["+ANSIError+"m") {
+		t.Fatalf("detail hierarchy is not colored semantically:\n%s", output)
+	}
+}
+
+func TestLogsAndMessagesWrapWithinTerminalWidth(t *testing.T) {
+	for _, width := range []int{24, 40, 80} {
+		renderer := New(nil, true)
+		renderer.Width = width
+		events := []ops.Event{
+			{Type: ops.EventLog, Time: time.Now(), Title: "runner-界", Level: "warning", Message: strings.Repeat("missing DATABASE_URL ", 8)},
+			{Type: ops.EventMessage, Time: time.Now(), Operation: "release-01", Level: "error", Message: strings.Repeat("container failed readiness ", 6)},
+		}
+		for _, event := range events {
+			output := renderer.RenderString(event)
+			for index, line := range strings.Split(output, "\n") {
+				if got := ansi.StringWidth(line); got > width {
+					t.Fatalf("width %d row %d is %d columns:\n%s", width, index+1, got, output)
+				}
+			}
+		}
+	}
+}
+
+func TestTableStatesUseOperationalColors(t *testing.T) {
+	renderer := New(nil, true)
+	renderer.Width = 72
+	output := renderer.RenderString(ops.Table("containers", []string{"NAME", "STATE", "HEALTH"}, [][]string{
+		{"api", "running", "healthy"},
+		{"worker", "restarting", "starting"},
+		{"jobs", "exited", "unhealthy"},
+	}))
+	for _, code := range []string{ANSISuccess, ANSIWarning, ANSIError} {
+		if !strings.Contains(output, "\x1b["+code+"m") {
+			t.Fatalf("table does not contain semantic color %q:\n%s", code, output)
+		}
 	}
 }
 

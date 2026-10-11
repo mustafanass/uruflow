@@ -31,7 +31,7 @@ with `sudo` so the paths match what it shows.
 **[server]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-2.4.2-linux-amd64 -o uruflow
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-2.5.0-linux-amd64 -o uruflow
 chmod +x uruflow && sudo mv uruflow /usr/local/bin/
 
 sudo uruflow init --advertise uruflow.internal
@@ -99,7 +99,7 @@ two-step copy in the next section instead.
 **[target]**
 
 ```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.4.2/uruflow-agent-2.4.2-linux-amd64 -o uruflow-agent
+curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-agent-2.5.0-linux-amd64 -o uruflow-agent
 chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
 
 sudo uruflow-agent init \

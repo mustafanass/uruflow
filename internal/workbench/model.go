@@ -86,6 +86,7 @@ type model struct {
 	editorError       string
 	editorSubmission  bool
 	activityCursor    uint64
+	unseenLines       int
 	color             bool
 	initialized       bool
 	pristine          bool

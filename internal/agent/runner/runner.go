@@ -30,10 +30,12 @@ import (
 )
 
 const (
-	NamePrefix      = "uruflow-"
-	PreviousSuffix  = "-previous"
-	stopTimeout     = 15 * time.Second
-	rollbackTimeout = 2 * time.Minute
+	NamePrefix           = "uruflow-"
+	PreviousSuffix       = "-previous"
+	stopTimeout          = 15 * time.Second
+	rollbackTimeout      = 2 * time.Minute
+	failedStartupLogTail = 80
+	startupLogTimeout    = 10 * time.Second
 )
 
 type Runner struct {
@@ -250,11 +252,41 @@ func (r *Runner) replace(ctx context.Context, request ufp.ReleaseRequest, servic
 
 	log(ufp.StreamStdout, "waiting for "+name+" to come up")
 	if err := r.waitReady(ctx, id, service.Healthcheck); err != nil {
+		r.captureStartupLogs(ctx, id, name, log)
 		return state, fmt.Errorf("%s: %w", name, err)
 	}
 
 	log(ufp.StreamStdout, fmt.Sprintf("%s is ready as %s", name, shortID(id)))
 	return state, nil
+}
+
+func (r *Runner) captureStartupLogs(ctx context.Context, id, name string, log ufp.LogFunc) {
+	engine, ok := r.docker.(logEngine)
+	if !ok {
+		return
+	}
+	type entry struct {
+		stream string
+		line   string
+	}
+	entries := make([]entry, 0, failedStartupLogTail)
+	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), startupLogTimeout)
+	defer cancel()
+	err := engine.StreamLogs(logCtx, id, failedStartupLogTail, false, func(stream, line string) {
+		entries = append(entries, entry{stream: stream, line: line})
+	})
+	if err != nil {
+		log(ufp.StreamStderr, "startup diagnostics unavailable · "+name+" · "+err.Error())
+		return
+	}
+	if len(entries) == 0 {
+		log(ufp.StreamStderr, "startup diagnostics · "+name+" · no container output")
+		return
+	}
+	log(ufp.StreamStderr, fmt.Sprintf("startup diagnostics · %s · captured %d line(s)", name, len(entries)))
+	for _, entry := range entries {
+		log(entry.stream, name+" │ "+entry.line)
+	}
 }
 
 func (r *Runner) rollback(ctx context.Context, done []replacement, log ufp.LogFunc) error {

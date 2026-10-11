@@ -45,9 +45,9 @@ func TestProjectCreateUsesTheInlineEditorTemplate(t *testing.T) {
 	}
 	m := &model{editor: textarea.New()}
 	m.prepareEditor(args)
-	if m.editorTitle != "NEW PROJECT" || !strings.Contains(m.editor.Value(), "payments:") ||
+	if m.editorTitle != "NEW PROJECT · payments-prod" || !strings.Contains(m.editor.Value(), "payments:") ||
 		!strings.Contains(m.editor.Value(), "git: https://github.com/example/payments.git") ||
-		!strings.Contains(m.editor.Value(), "services:") || !strings.Contains(m.editorHint, "create file") {
+		!strings.Contains(m.editor.Value(), "services:") || !strings.Contains(m.editorHint, "create") {
 		t.Fatalf("editor title=%q hint=%q yaml=\n%s", m.editorTitle, m.editorHint, m.editor.Value())
 	}
 }
@@ -61,7 +61,7 @@ func TestProjectVariablesUsesTheListEditor(t *testing.T) {
 	m := &model{editor: textarea.New()}
 	m.prepareEditor(args)
 	if m.editorTitle != "VARIABLES · api-prod" || !strings.Contains(m.editor.Placeholder, "secret NAME=value") ||
-		!strings.Contains(m.editorHint, "validate and save") {
+		!strings.Contains(m.editorHint, "save") {
 		t.Fatalf("editor title=%q hint=%q input=%q", m.editorTitle, m.editorHint, m.editor.Value())
 	}
 }
@@ -88,7 +88,7 @@ func TestLoadedProjectOpensInTheEditor(t *testing.T) {
 	})
 	got := updated.(*model)
 	if !got.paste || got.running || !strings.Contains(got.editor.Value(), "workflow: build_deploy") ||
-		got.editorTitle != "EDIT PROJECT · api-prod" || len(got.pending) != 3 {
+		got.editorTitle != "PROJECT · api-prod" || len(got.pending) != 3 {
 		t.Fatalf("project editor was not opened: paste=%v running=%v pending=%v title=%q content=%q",
 			got.paste, got.running, got.pending, got.editorTitle, got.editor.Value())
 	}

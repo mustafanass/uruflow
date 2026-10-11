@@ -260,10 +260,7 @@ func (m *model) visibleSuggestions() ([]commandSpec, int) {
 	if len(all) == 0 {
 		return nil, 0
 	}
-	limit := 6
-	if m.height > 0 && m.height < 18 {
-		limit = 3
-	}
+	limit := m.suggestionWindowRows()
 	if len(all) <= limit {
 		return all, 0
 	}
