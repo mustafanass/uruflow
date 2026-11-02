@@ -68,6 +68,9 @@ function GraphWorkspace({
   const [attachments, setAttachments] = useState(false)
   const [focused, setFocused] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [hoveredEdge, setHoveredEdge] = useState<string | null>(null)
+  const [allConnections, setAllConnections] = useState(false)
   const [layoutError, setLayoutError] = useState(false)
   const [instance, setInstance] = useState<ReactFlowInstance<
     ResourceFlowNode,
@@ -112,6 +115,10 @@ function GraphWorkspace({
     toggle,
     togglable: !query && !focused,
     filtered: !!query || focused,
+    hovered,
+    hoveredEdge,
+    allConnections,
+    live: connection === 'live' && !stale,
   })
   const closeInspector = useCallback(() => {
     setSelected(null)
@@ -216,6 +223,8 @@ function GraphWorkspace({
         focused={focused}
         toggleFocus={() => setFocused((value) => !value)}
         hasSelection={!!current}
+        allConnections={allConnections}
+        toggleConnections={() => setAllConnections((value) => !value)}
         saveError={layoutError}
         save={saveLayout}
         reset={resetLayout}
@@ -235,6 +244,9 @@ function GraphWorkspace({
             instance={instance}
             initialize={setInstance}
             settled={settled}
+            hoverNode={setHovered}
+            hoverEdge={setHoveredEdge}
+            allConnections={allConnections}
             fitKey={JSON.stringify([
               query,
               attachments,

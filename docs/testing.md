@@ -96,6 +96,7 @@ For this workspace, regression review includes:
 - Anonymous entry, first-admin setup, sign-in, password changes, scoped accounts and revocation.
 - Project summary, service definitions in the graph inspector, release details and compatibility with existing Services-tab links.
 - Fleet, runtime and delivery graph relationships, host expansion, search through collapsed hosts, focus and attachment controls.
+- Quiet graph connections, dependency and planned-link disclosure, selection highlights, reduced motion, and unchanged positions and viewport on dense service graphs.
 - Fleet server-to-agent and agent-to-project paths without redundant server-to-project edges; build links, stale placements and unassigned projects remain accurate.
 - Two-axis trackpad panning without changing zoom or scrolling the page, pinch and modified-scroll zoom, mouse dragging and inspector scrolling.
 - Non-overlapping card geometry, unavailable versus zero metrics, and live measurements without position or viewport changes.
@@ -108,6 +109,8 @@ For this workspace, regression review includes:
 - Fleet and project overviews with empty, degraded, stale and large observations; service readiness agrees with the infrastructure graph, and completed jobs remain visible after container cleanup.
 - Graph pan and zoom retained while the inspector opens, accessible tabs, first-admin sign-in retry and cross-tab theme changes.
 - Independent filtering, sorting and pagination when a page contains several tables.
+- Page scrolling with the pointer over a table, log following across buffer trimming, and pausing to read older output without moving the surrounding page.
+- Amber rollout progress despite temporary missing or stopped containers, with actual container failures and post-release degradation still visible.
 - Five primary destinations, ownership of direct resource links and redirects from retired index pages.
 - Simultaneous configuration and variable edits: saving or discarding one must preserve the other’s navigation guard.
 - Combined release overview, first and subsequent release diffs, saved-definition access and stable tab selection during live progress.

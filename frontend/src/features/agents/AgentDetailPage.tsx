@@ -29,9 +29,10 @@ export default function AgentDetailPage() {
   const { snapshot, canAdmin, confirm } = useWorkspace()
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
-  const tabs = ['Overview', 'Workloads', 'Metrics']
-  const requested =
-    params.get('tab') === 'Projects' ? 'Workloads' : params.get('tab') || ''
+  const tabs = ['Overview', 'Containers', 'Metrics']
+  const requested = ['Projects', 'Workloads'].includes(params.get('tab') || '')
+    ? 'Containers'
+    : params.get('tab') || ''
   const tab = tabs.includes(requested) ? requested : 'Overview'
   if (!snapshot) return <Spinner />
   const agent = snapshot.agents.find((value) => value.id === id)
@@ -44,7 +45,7 @@ export default function AgentDetailPage() {
     )
   if (params.get('tab') === 'Activity')
     return <Navigate replace to={'/activity?source=' + segment(agent.name)} />
-  const workloads = snapshot.containers.filter(
+  const containers = snapshot.containers.filter(
     (container) => container.agent_id === id,
   )
   const projects = snapshot.projects.filter(
@@ -121,11 +122,11 @@ export default function AgentDetailPage() {
             )}
           </>
         )}
-        {tab === 'Workloads' && (
+        {tab === 'Containers' && (
           <>
             <AgentProjects projects={projects} a={agent} />
             <Panel title="Runtime containers">
-              <ContainerTable containers={workloads} />
+              <ContainerTable containers={containers} />
             </Panel>
             {agent.roles.includes('builder') && (
               <Panel title="Build work">

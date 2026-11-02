@@ -17,6 +17,8 @@
 .log-output {
   height: 560px;
   overflow: auto;
+  overflow-anchor: none;
+  scroll-behavior: auto;
   background: var(--log-background);
   padding: 16px 0;
   color: var(--log-text);

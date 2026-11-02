@@ -18,6 +18,7 @@ import {
 import type { GraphNode } from '@/shared/types'
 import { Badge } from '@/shared/ui'
 import { statusTone } from '@/shared/utils/status'
+import { count } from '@/shared/utils'
 import { useResourceObservation } from './ResourceLive'
 import { NodeMetrics } from './NodeMetrics'
 
@@ -69,7 +70,19 @@ const ResourceNode = memo(function ResourceNode({
         <span className={'resource-icon ' + resource.kind}>
           <Icon size={16} aria-hidden="true" />
         </span>
-        <span>{resource.kind}</span>
+        <span>
+          {resource.kind === 'agent'
+            ? observation?.role || resource.kind
+            : resource.kind}
+        </span>
+        {!!observation?.dependencies && (
+          <span
+            className="node-dependencies"
+            title={`Select to inspect ${count(observation.dependencies, 'dependency', 'dependencies')}`}
+          >
+            Needs {observation.dependencies}
+          </span>
+        )}
         {state && <Badge value={state} />}
       </div>
       <strong title={resource.name}>

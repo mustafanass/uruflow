@@ -54,6 +54,7 @@ export function resourceObservations(snapshot: Snapshot, sourceLive: boolean) {
     const live = fresh(agent, agent.metrics?.collected_at || '')
     result.set('agent/' + agent.id, {
       state: sourceLive ? agent.status : 'unknown',
+      role: agent.roles.join(' / '),
       ...metrics(agent.metrics, live),
       live,
       containers: snapshot.containers.filter(
@@ -127,6 +128,7 @@ export function resourceObservations(snapshot: Snapshot, sourceLive: boolean) {
     })
     for (const row of health.rows)
       result.set(`service/${name}/${row.service.name}`, {
+        dependencies: row.service.depends_on?.length || 0,
         state: sourceLive ? row.state : 'unknown',
         live: sourceLive,
         ready: row.ready,

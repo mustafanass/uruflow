@@ -31,7 +31,11 @@ export function ResourceInspector({
   const agent = snapshot.agents.find((a) => a.id === node.agent_id)
   const owner =
     project ||
-    snapshot.projects.find((value) => value.name === container?.project)
+    snapshot.projects.find(
+      (value) =>
+        value.name ===
+        (node.kind === 'project' ? node.name : container?.project),
+    )
   const service =
     owner && ['service', 'job', 'instance', 'container'].includes(node.kind)
       ? services(owner).find((s) => s.name === node.service)
@@ -125,13 +129,42 @@ export function ResourceInspector({
           />
         )}
         {node.kind === 'project' && (
-          <Link
-            className="button full"
-            to={'/projects/' + encodeURIComponent(node.name)}
-          >
-            Open project
-            <ArrowUpRight size={15} />
-          </Link>
+          <>
+            {owner && (
+              <>
+                <h4>Configured agents</h4>
+                <Facts
+                  items={[
+                    [
+                      'Builder',
+                      snapshot.agents.find(
+                        (value) => value.id === owner.builder,
+                      )?.name ||
+                        owner.builder ||
+                        'None',
+                    ],
+                    [
+                      'Runners',
+                      owner.runners
+                        .map(
+                          (id) =>
+                            snapshot.agents.find((value) => value.id === id)
+                              ?.name || id,
+                        )
+                        .join(', ') || 'None',
+                    ],
+                  ]}
+                />
+              </>
+            )}
+            <Link
+              className="button full"
+              to={'/projects/' + encodeURIComponent(node.name)}
+            >
+              Open project
+              <ArrowUpRight size={15} />
+            </Link>
+          </>
         )}
         {node.kind === 'network' && (
           <p className="inspector-note">Attachment does not imply traffic.</p>

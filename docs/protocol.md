@@ -2,7 +2,7 @@
 
 UFP is URUFLOW's persistent, bidirectional server-agent protocol. It carries instructions, acceptance responses, status, logs and observations over TLS. Browser traffic uses the operator HTTP API and SSE instead.
 
-This is the wire reference for contributors. URUFLOW 3.0.0 uses UFP frame version `0x04`.
+This is the wire reference for contributors. URUFLOW 3.0.1 uses UFP frame version `0x04`.
 
 ## Transport and framing
 
@@ -155,7 +155,7 @@ The read loop answers `PING` with `PONG`. On disconnect, the agent cancels in-fl
 | Unknown event topic or unexpected frame type | Connection error            |
 | Unknown response ID                          | Ignored                     |
 
-The product version and frame version serve different purposes. `3.0.0` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
+The product version and frame version serve different purposes. `3.0.1` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
 
 Keep `internal/ufp` independent of other repository packages. Preserve ordered events, correlated requests, role enforcement and the acceptance/completion distinction. Update this page and contract tests in the same change as the wire code.
 

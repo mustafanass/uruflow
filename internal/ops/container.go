@@ -98,7 +98,7 @@ func (e *Engine) FollowContainerLogs(ctx context.Context, agentID, containerID, 
 			var accepted ufp.Accepted
 			err = response.Decode(&accepted)
 			if err == nil && accepted.StreamID != bridge.streamID {
-				err = errors.New("update this agent to support independent browser log viewers")
+				err = &LogStreamError{Code: 409, Message: "Update this agent to support independent browser log viewers, then reconnect logs."}
 			}
 		}
 		responseDone <- err
@@ -138,7 +138,7 @@ func (e *Engine) FollowContainerLogs(ctx context.Context, agentID, containerID, 
 				return nil
 			}
 			if entry.Cursor == "" {
-				return errors.New("update this agent to support resumable container logs")
+				return &LogStreamError{Code: 409, Message: "Update this agent to support resumable container logs, then reconnect logs."}
 			}
 			if _, err := ufp.ParseLogPosition(entry.Cursor); err != nil {
 				return err

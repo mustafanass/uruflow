@@ -10,6 +10,7 @@
 @import './project-overview.css';
 @import './infrastructure.css';
 @import './graph-nodes.css';
+@import './graph-connections.css';
 @import './metrics.css';
 @import './logs-editor.css';
 @import './dialogs.css';

@@ -110,6 +110,12 @@ func (s Snapshot) ContainerState(c models.Container, job bool) string {
 }
 func (s Snapshot) ProjectState(p models.Project) string {
 	latest := s.LatestRelease(p.Name)
+	if latest != nil && !latest.Status.Done() {
+		if latest.Status == models.StatusReleasing {
+			return "deploying"
+		}
+		return string(latest.Status)
+	}
 	found, unknown, bad, ready := 0, 0, 0, 0
 	for _, service := range p.ServiceList() {
 		for _, runner := range p.Runners {
@@ -147,9 +153,6 @@ func (s Snapshot) ProjectState(p models.Project) string {
 	}
 	if latest == nil && found == 0 {
 		return "undeployed"
-	}
-	if found == 0 && latest != nil && !latest.Status.Done() {
-		return string(latest.Status)
 	}
 	if p.EffectiveWorkflow() == models.WorkflowBuildOnly && latest != nil && latest.Status == models.StatusSucceeded {
 		return "built"
@@ -253,6 +256,9 @@ func (s Snapshot) ExpectedState(p models.Project, service models.Service, runner
 	a := s.Agent(runner)
 	if a == nil || a.Metrics == nil || !a.Metrics.ContainersAvailable || !s.Fresh(runner, a.Metrics.CollectedAt) {
 		return "unknown"
+	}
+	if !latest.Status.Done() {
+		return "deploying"
 	}
 	return "missing"
 }

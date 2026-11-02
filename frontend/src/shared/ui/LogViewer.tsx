@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { Download, Pause, Play, RefreshCw, Search } from 'lucide-react'
 
@@ -94,11 +94,11 @@ export function LogViewer({ url }: { url: string }) {
       flush()
     }
   }, [url, version, visiblePage])
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (following && viewport.current) {
       viewport.current.scrollTop = viewport.current.scrollHeight
     }
-  }, [lines, following, filter])
+  }, [lines, following, filter, wrap])
   const visible = filter
     ? lines.filter((line) =>
         (line.line + ' ' + line.agent_name + ' ' + line.stream)
@@ -197,6 +197,9 @@ export function LogViewer({ url }: { url: string }) {
       <div
         className={'log-output ' + (wrap ? 'wrap' : '')}
         ref={viewport}
+        tabIndex={0}
+        role="region"
+        aria-label="Log output"
         onScroll={() => {
           const el = viewport.current
           if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 48) {

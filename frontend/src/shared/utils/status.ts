@@ -26,10 +26,15 @@ export function statusTone(state: string) {
     return 'bad'
   if (['missing', 'warning', 'restarting'].includes(state)) return 'warn'
   if (
-    ['building', 'releasing', 'pending', 'starting', 'requested'].includes(
-      state,
-    )
+    [
+      'building',
+      'releasing',
+      'deploying',
+      'pending',
+      'starting',
+      'requested',
+    ].includes(state)
   )
-    return 'active'
+    return 'warn'
   return 'neutral'
 }

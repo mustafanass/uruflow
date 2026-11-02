@@ -47,7 +47,7 @@ for arch in amd64 arm64; do
       -tags netgo,osusergo,sqlite_omit_load_extension \
       -ldflags '-s -w -linkmode external -extldflags=-static' \
       -o "$bundle/$binary" "$package"
-    COPYFILE_DISABLE=1 tar -C "$bundle" -cf "$staging/bundle.tar" "$binary" LICENSE packaging
+    COPYFILE_DISABLE=1 tar --no-xattrs --no-acls -C "$bundle" -cf "$staging/bundle.tar" "$binary" LICENSE packaging
     gzip -n -c "$staging/bundle.tar" > "$staging/assets/$artifact.tar.gz"
   done
 done
