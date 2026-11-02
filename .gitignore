@@ -13,3 +13,9 @@ dist/
 .idea/
 .vscode/
 *.log
+
+frontend/node_modules/
+frontend/*.tsbuildinfo
+internal/web/assets/*
+!internal/web/assets/.keep
+.playwright-cli/

@@ -55,7 +55,8 @@ type ErrorPayload struct {
 }
 
 type Accepted struct {
-	JobID string `json:"job_id,omitempty"`
+	StreamID string `json:"stream_id,omitempty"`
+	JobID    string `json:"job_id,omitempty"`
 }
 
 type RegistryConfig struct {
@@ -224,6 +225,11 @@ type Metrics struct {
 }
 
 type SystemMetrics struct {
+	MetricsSec    int       `json:"metrics_sec,omitempty"`
+	Available     []string  `json:"available,omitempty"`
+	Errors        []string  `json:"errors,omitempty"`
+	CPUCores      int       `json:"cpu_cores,omitempty"`
+	HostUptime    int64     `json:"host_uptime,omitempty"`
 	CPUPercent    float64   `json:"cpu_percent"`
 	MemoryPercent float64   `json:"memory_percent"`
 	MemoryUsed    uint64    `json:"memory_used"`
@@ -236,34 +242,82 @@ type SystemMetrics struct {
 }
 
 type ContainerStatus struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	Project      string  `json:"project"`
-	Service      string  `json:"service,omitempty"`
-	Image        string  `json:"image"`
-	State        string  `json:"state"`
-	Health       string  `json:"health"`
-	CPUPercent   float64 `json:"cpu_percent"`
-	MemoryUsage  uint64  `json:"memory_usage"`
-	MemoryLimit  uint64  `json:"memory_limit"`
-	NetworkRx    uint64  `json:"network_rx"`
-	NetworkTx    uint64  `json:"network_tx"`
-	RestartCount int     `json:"restart_count"`
-	StartedAt    int64   `json:"started_at"`
+	Details        *ContainerDetails `json:"details,omitempty"`
+	StatsAvailable bool              `json:"stats_available,omitempty"`
+	PIDs           uint64            `json:"pids,omitempty"`
+	BlockRead      uint64            `json:"block_read,omitempty"`
+	BlockWrite     uint64            `json:"block_write,omitempty"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Project        string            `json:"project"`
+	Service        string            `json:"service,omitempty"`
+	Image          string            `json:"image"`
+	State          string            `json:"state"`
+	Health         string            `json:"health"`
+	CPUPercent     float64           `json:"cpu_percent"`
+	MemoryUsage    uint64            `json:"memory_usage"`
+	MemoryLimit    uint64            `json:"memory_limit"`
+	NetworkRx      uint64            `json:"network_rx"`
+	NetworkTx      uint64            `json:"network_tx"`
+	RestartCount   int               `json:"restart_count"`
+	StartedAt      int64             `json:"started_at"`
 }
 
 type LogsFollow struct {
+	After       string `json:"after,omitempty"`
+	StreamID    string `json:"stream_id,omitempty"`
 	ContainerID string `json:"container_id"`
 	Tail        int    `json:"tail"`
 }
 
 type LogsStop struct {
+	StreamID    string `json:"stream_id,omitempty"`
 	ContainerID string `json:"container_id"`
 }
 
 type ContainerLog struct {
+	ErrorCode   int    `json:"error_code,omitempty"`
+	Cursor      string `json:"cursor,omitempty"`
+	Complete    bool   `json:"complete,omitempty"`
+	Error       string `json:"error,omitempty"`
+	StreamID    string `json:"stream_id,omitempty"`
 	ContainerID string `json:"container_id"`
 	Stream      string `json:"stream"`
 	Line        string `json:"line"`
 	Timestamp   int64  `json:"timestamp"`
+}
+
+type ContainerDetails struct {
+	Release    string             `json:"release,omitempty"`
+	Role       string             `json:"role,omitempty"`
+	ImageID    string             `json:"image_id,omitempty"`
+	Created    string             `json:"created,omitempty"`
+	FinishedAt string             `json:"finished_at,omitempty"`
+	ExitCode   int                `json:"exit_code"`
+	OOMKilled  bool               `json:"oom_killed"`
+	Error      string             `json:"error,omitempty"`
+	Networks   []ContainerNetwork `json:"networks,omitempty"`
+	Ports      []string           `json:"ports,omitempty"`
+	Mounts     []ContainerMount   `json:"mounts,omitempty"`
+	Probes     []HealthProbe      `json:"probes,omitempty"`
+}
+
+type ContainerNetwork struct {
+	Name    string   `json:"name"`
+	Address string   `json:"address,omitempty"`
+	Gateway string   `json:"gateway,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+}
+
+type ContainerMount struct {
+	Type     string `json:"type"`
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"read_only"`
+}
+
+type HealthProbe struct {
+	End      string `json:"end"`
+	ExitCode int    `json:"exit_code"`
+	Output   string `json:"output"`
 }

@@ -27,10 +27,7 @@ import (
 )
 
 const (
-	variableEditorPlain  = "# Plain variable: NAME=value"
-	variableEditorSecret = "# Secret variable: secret NAME=value"
-	variableEditorNote   = "# Stored secret values reopen as references and are never revealed."
-	secretLinePrefix     = "secret "
+	secretLinePrefix = "secret "
 )
 
 type VariableEdit struct {
@@ -42,7 +39,7 @@ func FormatVariableEditor(raw string) (string, error) {
 	if _, err := ParseDotEnv(raw); err != nil {
 		return "", err
 	}
-	lines := []string{variableEditorPlain, variableEditorSecret, variableEditorNote, ""}
+	lines := []string{}
 	scanner := bufio.NewScanner(strings.NewReader(raw))
 	for scanner.Scan() {
 		original := scanner.Text()
@@ -83,9 +80,7 @@ func ParseVariableEditor(input, namespace string) (VariableEdit, error) {
 			continue
 		}
 		if strings.HasPrefix(text, "#") {
-			if text != variableEditorPlain && text != variableEditorSecret && text != variableEditorNote {
-				output = append(output, original)
-			}
+			output = append(output, original)
 			continue
 		}
 		secretLine := strings.HasPrefix(text, secretLinePrefix)

@@ -1,0 +1,221 @@
+@media (max-width: 760px) {
+  .main-content {
+    padding: 22px 16px;
+  }
+  .topbar {
+    padding: 0 15px;
+    gap: 10px;
+  }
+  .global-search {
+    width: 100%;
+    max-width: unset;
+  }
+  .global-search input {
+    font-size: 12px;
+  }
+  .global-search kbd {
+    display: none;
+  }
+  .live-indicator {
+    font-size: 12px;
+  }
+  .page-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .page-title h1 {
+    font-size: 24px;
+  }
+  .page-title p {
+    font-size: 12px;
+  }
+  .page-actions {
+    flex-wrap: wrap;
+  }
+  .tabs {
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+  .two-columns {
+    grid-template-columns: 1fr;
+    gap: 17px;
+  }
+  .resource-meters {
+    gap: 16px;
+  }
+  .resource-heading {
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+  .metric-strip {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 22px;
+    padding: 20px 0;
+  }
+  .metric-strip > div:nth-child(2) {
+    border-right: 0;
+  }
+  .metric-strip > div {
+    padding: 0 18px;
+  }
+  .metric-strip > div > small {
+    font-size: 12px;
+  }
+  .metric-strip strong {
+    font-size: 23px;
+  }
+  .section-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .panel-heading {
+    padding: 15px;
+    flex-wrap: wrap;
+  }
+  .facts {
+    padding: 0 16px;
+  }
+  .facts > div {
+    grid-template-columns: 100px minmax(0, 1fr);
+    font-size: 12px;
+  }
+  .table-toolbar {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+  }
+  .filter-input {
+    max-width: 100%;
+  }
+  .data-table table {
+    min-width: 620px;
+  }
+  .table-footer {
+    font-size: 12px;
+  }
+  .host-resources {
+    padding: 18px;
+  }
+  .resource-heading h3 {
+    font-size: 12px;
+  }
+  .meter-label strong,
+  .meter-label span {
+    font-size: 12px;
+  }
+  .release-timeline {
+    flex-direction: column;
+    padding: 20px;
+    gap: 20px;
+  }
+  .release-stage:not(:last-child):after {
+    left: 16px;
+    top: 35px;
+    bottom: -20px;
+    right: unset;
+    height: auto;
+    width: 1px;
+  }
+  .release-stage h3 {
+    margin-top: 5px;
+  }
+  .release-stage p {
+    max-width: 50ch;
+  }
+  .release-stage .badge {
+    display: inline-flex;
+    margin-left: 9px;
+  }
+  .log-toolbar {
+    padding: 10px;
+  }
+  .log-toolbar .filter-input {
+    max-width: 100%;
+  }
+  .log-toolbar .toolbar-actions {
+    margin: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+  .log-output {
+    height: 480px;
+  }
+  .log-line {
+    gap: 8px;
+    padding: 3px 12px;
+    font-size: 12px;
+  }
+  .log-line time {
+    font-size: 12px;
+    min-width: 58px;
+  }
+  .log-source {
+    font-size: 12px;
+    min-width: 38px;
+  }
+  .log-footer {
+    font-size: 12px;
+    align-items: flex-start;
+  }
+  .editor-footer {
+    font-size: 12px;
+  }
+  .editor-guidance {
+    font-size: 12px;
+    padding: 12px 15px;
+  }
+  .onboarding {
+    align-items: flex-start;
+    padding: 23px 18px;
+    gap: 17px;
+  }
+  .onboarding h2 {
+    font-size: 15px;
+  }
+  .onboarding p {
+    font-size: 12px;
+  }
+  .auth-introduction {
+    width: 38%;
+    padding: 30px 25px;
+  }
+  .auth-introduction h2 {
+    font-size: 30px;
+  }
+  .auth-introduction p {
+    font-size: 12px;
+  }
+  .auth-topology {
+    gap: 8px;
+  }
+  .auth-topology > span {
+    width: 16px;
+  }
+  .auth-topology > svg {
+    width: 28px;
+  }
+  .auth-signature {
+    font-size: 12px;
+    align-items: flex-start;
+  }
+  .auth-main {
+    padding: 40px 25px;
+  }
+  .auth-form h1 {
+    font-size: 25px;
+  }
+  .modal {
+    padding: 0 19px 19px;
+  }
+  .modal-backdrop {
+    padding: 14px;
+  }
+  .toast {
+    right: 15px;
+    left: 15px;
+    bottom: 16px;
+    max-width: unset;
+    font-size: 12px;
+  }
+}

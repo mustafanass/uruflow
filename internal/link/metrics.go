@@ -30,6 +30,8 @@ import (
 
 func (s *Server) applyMetrics(identity *ufp.Identity, metrics ufp.Metrics) {
 	system := &models.Metrics{
+		MetricsSec: metrics.System.MetricsSec, ContainersAvailable: metrics.ContainersAvailable,
+		CollectedAt: time.Unix(metrics.Timestamp, 0), Available: metrics.System.Available, Errors: metrics.System.Errors, CPUCores: metrics.System.CPUCores, HostUptime: metrics.System.HostUptime,
 		CPUPercent:    metrics.System.CPUPercent,
 		MemoryPercent: metrics.System.MemoryPercent,
 		MemoryUsed:    metrics.System.MemoryUsed,
@@ -47,7 +49,8 @@ func (s *Server) applyMetrics(identity *ufp.Identity, metrics ufp.Metrics) {
 	containers := make([]models.Container, 0, len(metrics.Containers))
 	for _, reported := range metrics.Containers {
 		containers = append(containers, models.Container{
-			ID:           reported.ID,
+			ID:         reported.ID,
+			ObservedAt: system.CollectedAt, Details: reported.Details, StatsAvailable: reported.StatsAvailable, PIDs: reported.PIDs, BlockRead: reported.BlockRead, BlockWrite: reported.BlockWrite,
 			AgentID:      identity.AgentID,
 			Name:         reported.Name,
 			Project:      reported.Project,
@@ -107,11 +110,15 @@ func (s *Server) evaluateAlerts(identity *ufp.Identity, metrics ufp.Metrics, con
 		if container.State == "running" {
 			continue
 		}
-		raise(logic.CheckContainerDown(identity.AgentID, identity.Name, container.Name))
+		alert := logic.CheckContainerDown(identity.AgentID, identity.Name, container.Name)
+		alert.Project = container.Project
+		raise(alert)
 	}
 	if metrics.ContainersAvailable {
-		for _, name := range s.missingContainers(identity.AgentID, containers) {
-			raise(logic.CheckContainerDown(identity.AgentID, identity.Name, name))
+		for _, missing := range s.missingContainers(identity.AgentID, containers) {
+			alert := logic.CheckContainerDown(identity.AgentID, identity.Name, missing.Name)
+			alert.Project = missing.Project
+			raise(alert)
 		}
 	}
 
@@ -122,7 +129,7 @@ func (s *Server) evaluateAlerts(identity *ufp.Identity, metrics ufp.Metrics, con
 	}
 }
 
-func (s *Server) missingContainers(agentID string, containers []models.Container) []string {
+func (s *Server) missingContainers(agentID string, containers []models.Container) []models.Container {
 	present := make(map[string]bool, len(containers))
 	for _, container := range containers {
 		present[container.Project+"\x00"+container.Service] = true
@@ -132,7 +139,7 @@ func (s *Server) missingContainers(agentID string, containers []models.Container
 	if err != nil {
 		return nil
 	}
-	missing := make([]string, 0)
+	missing := make([]models.Container, 0)
 	for index := range projects {
 		release, err := s.store.LastSuccessfulRelease(projects[index].Name)
 		if err != nil {
@@ -146,6 +153,9 @@ func (s *Server) missingContainers(agentID string, containers []models.Container
 			continue
 		}
 		for _, service := range spec.ServiceList() {
+			if service.EffectiveMode() == models.ServiceModeJob {
+				continue
+			}
 			if present[spec.Name+"\x00"+service.Name] {
 				continue
 			}
@@ -153,7 +163,7 @@ func (s *Server) missingContainers(agentID string, containers []models.Container
 			if service.Name != "" {
 				name = fmt.Sprintf("%s-%s", name, service.Name)
 			}
-			missing = append(missing, name)
+			missing = append(missing, models.Container{Name: name, Project: spec.Name, Service: service.Name, AgentID: agentID})
 		}
 	}
 	return missing

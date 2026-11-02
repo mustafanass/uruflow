@@ -81,15 +81,22 @@ type Agent struct {
 }
 
 type Metrics struct {
-	CPUPercent    float64   `json:"cpu_percent"`
-	MemoryPercent float64   `json:"memory_percent"`
-	MemoryUsed    uint64    `json:"memory_used"`
-	MemoryTotal   uint64    `json:"memory_total"`
-	DiskPercent   float64   `json:"disk_percent"`
-	DiskUsed      uint64    `json:"disk_used"`
-	DiskTotal     uint64    `json:"disk_total"`
-	LoadAvg       []float64 `json:"load_avg,omitempty"`
-	Uptime        int64     `json:"uptime"`
+	MetricsSec          int       `json:"metrics_sec,omitempty"`
+	ContainersAvailable bool      `json:"containers_available"`
+	CollectedAt         time.Time `json:"collected_at,omitempty"`
+	Available           []string  `json:"available,omitempty"`
+	Errors              []string  `json:"errors,omitempty"`
+	CPUCores            int       `json:"cpu_cores,omitempty"`
+	HostUptime          int64     `json:"host_uptime,omitempty"`
+	CPUPercent          float64   `json:"cpu_percent"`
+	MemoryPercent       float64   `json:"memory_percent"`
+	MemoryUsed          uint64    `json:"memory_used"`
+	MemoryTotal         uint64    `json:"memory_total"`
+	DiskPercent         float64   `json:"disk_percent"`
+	DiskUsed            uint64    `json:"disk_used"`
+	DiskTotal           uint64    `json:"disk_total"`
+	LoadAvg             []float64 `json:"load_avg,omitempty"`
+	Uptime              int64     `json:"uptime"`
 }
 
 type Project struct {
@@ -194,7 +201,9 @@ type Release struct {
 	Trigger     Trigger           `json:"trigger"`
 	Message     string            `json:"message,omitempty"`
 	Targets     []ReleaseTarget   `json:"targets,omitempty"`
-	Spec        Project           `json:"spec"`
+	Spec        Project           `json:"spec,omitzero"`
+	Workflow    string            `json:"workflow,omitempty"`
+	RunnerCount int               `json:"runner_count,omitempty"`
 	StartedAt   time.Time         `json:"started_at"`
 	EndedAt     *time.Time        `json:"ended_at,omitempty"`
 	Duration    int64             `json:"duration"`
@@ -220,21 +229,27 @@ type LogLine struct {
 }
 
 type Container struct {
-	ID           string    `json:"id"`
-	AgentID      string    `json:"agent_id"`
-	Name         string    `json:"name"`
-	Project      string    `json:"project"`
-	Service      string    `json:"service,omitempty"`
-	Image        string    `json:"image"`
-	State        string    `json:"state"`
-	Health       string    `json:"health"`
-	CPUPercent   float64   `json:"cpu_percent"`
-	MemoryUsage  uint64    `json:"memory_usage"`
-	MemoryLimit  uint64    `json:"memory_limit"`
-	NetworkRx    uint64    `json:"network_rx"`
-	NetworkTx    uint64    `json:"network_tx"`
-	RestartCount int       `json:"restart_count"`
-	StartedAt    time.Time `json:"started_at"`
+	ObservedAt     time.Time             `json:"observed_at,omitempty"`
+	Details        *ufp.ContainerDetails `json:"details,omitempty"`
+	StatsAvailable bool                  `json:"stats_available,omitempty"`
+	PIDs           uint64                `json:"pids,omitempty"`
+	BlockRead      uint64                `json:"block_read,omitempty"`
+	BlockWrite     uint64                `json:"block_write,omitempty"`
+	ID             string                `json:"id"`
+	AgentID        string                `json:"agent_id"`
+	Name           string                `json:"name"`
+	Project        string                `json:"project"`
+	Service        string                `json:"service,omitempty"`
+	Image          string                `json:"image"`
+	State          string                `json:"state"`
+	Health         string                `json:"health"`
+	CPUPercent     float64               `json:"cpu_percent"`
+	MemoryUsage    uint64                `json:"memory_usage"`
+	MemoryLimit    uint64                `json:"memory_limit"`
+	NetworkRx      uint64                `json:"network_rx"`
+	NetworkTx      uint64                `json:"network_tx"`
+	RestartCount   int                   `json:"restart_count"`
+	StartedAt      time.Time             `json:"started_at"`
 }
 
 type Image struct {
@@ -252,6 +267,7 @@ type Secret struct {
 }
 
 type Alert struct {
+	Project    string     `json:"project,omitempty"`
 	ID         string     `json:"id"`
 	AgentID    string     `json:"agent_id"`
 	AgentName  string     `json:"agent_name"`

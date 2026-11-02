@@ -19,9 +19,36 @@
 package sqlite
 
 const schema = `
+CREATE TABLE IF NOT EXISTS console_sessions (
+	token_hash BLOB PRIMARY KEY,
+	username TEXT NOT NULL,
+	csrf TEXT NOT NULL,
+	expires_at INTEGER NOT NULL,
+	last_active INTEGER NOT NULL,
+	credentials BLOB NOT NULL,
+	FOREIGN KEY (username) REFERENCES console_users(username) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_console_sessions_user ON console_sessions(username);
+CREATE INDEX IF NOT EXISTS idx_console_sessions_expiry ON console_sessions(expires_at);
+CREATE TABLE IF NOT EXISTS observation_revisions (name TEXT PRIMARY KEY, revision INTEGER NOT NULL);
+INSERT OR IGNORE INTO observation_revisions(name,revision) VALUES('releases',0);
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS console_users (
+    username TEXT PRIMARY KEY,
+    role TEXT NOT NULL CHECK(role IN ('admin','operator','viewer')),
+    password_hash BLOB NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS audit_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS agents (
 	id             TEXT PRIMARY KEY,
 	name           TEXT NOT NULL UNIQUE,
@@ -153,6 +180,12 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project);
+CREATE TRIGGER IF NOT EXISTS release_observe_insert AFTER INSERT ON releases BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
+CREATE TRIGGER IF NOT EXISTS release_observe_update AFTER UPDATE ON releases BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
+CREATE TRIGGER IF NOT EXISTS release_observe_delete AFTER DELETE ON releases BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
+CREATE TRIGGER IF NOT EXISTS target_observe_insert AFTER INSERT ON release_targets BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
+CREATE TRIGGER IF NOT EXISTS target_observe_update AFTER UPDATE ON release_targets BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
+CREATE TRIGGER IF NOT EXISTS target_observe_delete AFTER DELETE ON release_targets BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_releases_one_active_project ON releases(project)
 	WHERE status IN ('pending', 'building', 'releasing');
 CREATE INDEX IF NOT EXISTS idx_releases_started ON releases(started_at DESC);

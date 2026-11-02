@@ -1,99 +1,109 @@
 # Contributing
 
-Thanks for looking at URUFLOW. This page covers what you need to build it, how to run the tests, and
-the conventions the codebase follows.
+Changes should preserve URUFLOW's ownership boundaries, keep its operator workflow clear, and include evidence for the behavior they change.
 
-## Building
+## Build and check
 
-Go 1.25 or later. No code generation is required.
+Use the Go version in [go.mod](go.mod), Node.js 24, npm and a C compiler for SQLite. Install Docker for the integration and live lanes.
 
-```bash
-go build -o uruflow ./cmd/uruflow-server
-go build -o uruflow-agent ./cmd/uruflow-agent
-```
-
-`cmd/uruflow-server` builds the `uruflow` command; `cmd/uruflow-agent` builds `uruflow-agent`.
-
-## Testing
-
-The deterministic suite runs anywhere and is required for every change:
-
-```bash
+```sh
+make frontend-deps
+make fmt
 make check
+make build
 ```
 
-Additional lanes are explicit so Docker-backed and visual checks never run by accident:
+Run these as one validation pass after implementation. If a check fails, fix the cause and repeat the affected pass. CI runs `make check` and `make build` on pushes and pull requests.
 
-```bash
-make test-integration
-make test-live
-make test-race
-make test-preview
+[Testing](docs/testing.md) defines test ownership, the deterministic suite, Docker lanes, race checks and browser review. Keep infrastructure-dependent tests explicit.
+
+## Building a release
+
+Install [Zig](https://ziglang.org/download/) alongside the normal build tools. Release builds use
+`zig cc` with musl to link SQLite into static Linux binaries. Zig 0.15.2 is the validated compiler.
+The Go and frontend versions must match in `internal/version/version.go` and `frontend/package.json`.
+Update the frontend lockfile and README version examples with them.
+
+From the repository root:
+
+```sh
+make check
+make release
 ```
 
-Run integration and live tests before changing the release path, Docker client, registry lifecycle,
-agent runtime, or composition root. Run the race suite for concurrency, streaming, protocol, link,
-pipeline, control, or workbench changes. Preview tests are manual visual checks rather than automated
-assertions. [Testing](docs/testing.md) defines ownership, execution boundaries, and when a new test is
-worth adding.
+`make release` builds the production frontend once, embeds it in the server, and writes these files to `dist/v3.0.0/`:
 
-## Where a Change Belongs
+| Asset                                    | Contents                                                  |
+| :--------------------------------------- | :-------------------------------------------------------- |
+| `uruflow-3.0.0-linux-amd64.tar.gz`       | Server for Linux x86-64, its service unit and MIT license |
+| `uruflow-3.0.0-linux-arm64.tar.gz`       | Server for Linux ARM64, its service unit and MIT license  |
+| `uruflow-agent-3.0.0-linux-amd64.tar.gz` | Agent for Linux x86-64, its service unit and MIT license  |
+| `uruflow-agent-3.0.0-linux-arm64.tar.gz` | Agent for Linux ARM64, its service unit and MIT license   |
+| `SHA256SUMS.txt`                         | SHA-256 checksums for the four archives                   |
 
-[Architecture](docs/architecture.md#12-where-a-change-belongs) maps each kind of change to the package
-that owns it. Two boundaries are worth knowing before you start:
+Verify each architecture on Linux: run both `version` commands, inspect the embedded workspace,
+and exercise SQLite and the affected deployment paths. The [testing lanes](docs/testing.md)
+define the additional checks for a change. Build from the same committed checkout that the release tag names.
 
-- **`internal/ufp` imports nothing else in the repository.** It is the contract both the server and
-  the agent implement. Adding an import there is a design change, not a refactor — raise it in an
-  issue first.
-- **`internal/workbench` holds no operational logic.** It sends commands through `internal/control`
-  and renders the resulting event stream.
+After committing and pushing the release changes, create and push the tag, then upload the files:
 
-Changing the wire protocol means changing [docs/protocol.md](docs/protocol.md) in the same pull
-request. Adding a method or topic is backward compatible; changing what an existing one means is not,
-and needs a version bump.
+```sh
+git tag -a v3.0.0 -m "URUFLOW 3.0.0"
+git push origin v3.0.0
+gh release create v3.0.0 dist/v3.0.0/* --verify-tag --title "URUFLOW 3.0.0" --generate-notes
+```
 
-## Code Style
+Alternatively, create release `v3.0.0` in GitHub and attach all five files from `dist/v3.0.0/`.
+Publishing the release makes the README's pinned download URLs available.
+[`--verify-tag`](https://cli.github.com/manual/gh_release_create) prevents GitHub CLI from creating
+a tag against an unintended commit. Building locally does not upload files or create a release.
 
-Use plain Go and match the surrounding package:
+## Frontend development
 
-- `gofmt` output, no exceptions
-- Go initialisms stay uppercase in names (`ID`, `URL`, `HTTP`, `YAML`)
-- use `any`, not `interface{}`, for unconstrained values
-- comments explain non-obvious intent or constraints; names carry routine meaning
-- named constants instead of inline literals, especially for anything that appears on the wire, in a
-  path, or in a policy decision
-- errors wrapped with context (`fmt.Errorf("read config: %w", err)`), never discarded silently
-- new files start with the same MIT header block as every existing file
+Run the backend with a development configuration on its loopback operator address. For frontend hot reload, start Vite in another terminal:
 
-Run `make fmt` after editing Go and `make check` before committing. CI runs the same check for every
-push and pull request.
+```sh
+URUFLOW_API_URL=http://127.0.0.1:9002 npm --prefix frontend run dev
+```
 
-Prefer the smallest change that does the job. A new package or abstraction should be able to justify
-itself.
+Open the address Vite prints. Its `/api` proxy uses the running backend, including authentication and live streams. Use a development installation with matching origin settings. Production uses `make build` and serves the embedded assets from the Go server.
+
+## Where a change belongs
+
+| Change                                         | Owner                                                      |
+| ---------------------------------------------- | ---------------------------------------------------------- |
+| Browser routes, providers and shell            | `frontend/src/app`                                         |
+| Project, agent, container or release workflow  | Its domain under `frontend/src/features`                   |
+| Reusable controls, API access, hooks and types | `frontend/src/shared`                                      |
+| Colors, motion and responsive behavior         | `frontend/src/styles`                                      |
+| HTTP access, sessions and browser streams      | `internal/web`                                             |
+| Application operations and document saves      | `internal/ops`                                             |
+| Observations and derived topology              | `internal/observe`                                         |
+| Deployment coordination                        | `internal/pipeline`                                        |
+| Agent builds, runtime and metrics              | `internal/agent`                                           |
+| Server-agent contract                          | `internal/ufp`                                             |
+| Configuration files and persistence            | `internal/projects`, `internal/config`, `internal/storage` |
+
+The [architecture](docs/architecture.md) explains the boundaries and the rules each change must preserve.
+
+## Code style
+
+Keep files focused on one responsibility and match the surrounding code. Use plain control flow and descriptive names before adding abstractions.
+
+Go uses `gofmt`, uppercase initialisms such as `ID` and `HTTP`, `any`, and errors wrapped with useful context. Preserve the original MIT copyright and license header in every Go file, including tests, and keep compiler directives intact. Avoid explanatory source comments unless requested.
+
+Frontend code uses the existing `app`, `features` and `shared` structure, TypeScript, single quotes, no semicolons, two-space indentation and Prettier. Keep source code free of explanatory comments. Use the shared color tokens and controls. UI text should describe the next action or the observed state in a few words.
+
+## Changes and evidence
+
+Add focused tests for security, persistence, protocol behavior, deployment state, concurrency, untrusted input and confirmed regressions. Keep tests with their owner and avoid duplicating another package's assertions. Visual changes need browser review at desktop and narrow widths, including keyboard use and the supported themes.
+
+Keep project authorization on the server, validate resolved documents before writes, and preserve release snapshots and persisted history. Update [UFP](docs/protocol.md) in the same change when a method, topic or payload changes.
+
+A pull request should explain the problem, resulting behavior, commands run, and any schema or protocol rollout steps. Use the repository's commit-subject form, for example `Fix | preserve sessions across server restarts`.
 
 ## Documentation
 
-Documentation lives in [docs/](docs/) and is expected to describe the code that exists. If a change
-alters behaviour, a command, a configuration field, a default or a failure mode, update the affected
-page in the same pull request. [README.md](README.md) links every document and is the front page —
-keep deep detail in `docs/` and link to it rather than expanding the README.
+The README is the product entry point. Detailed guidance belongs in `docs/`. Each topic has one home; link to it elsewhere. Describe the code that exists, use exact command and UI names, and update related examples and links together. Keep release notes focused on the current upgrade path.
 
-## Pull Requests
-
-- one concern per pull request
-- `make build` and `make check` clean before you open it
-- say what you changed and why; if it touches the protocol, the schema or the file format, say what
-  stays compatible and what does not
-- commit subjects in this repository follow `Verb | short description`, for example
-  `Fix | server releases url issue`
-
-## Reporting Problems
-
-For a bug, include the URUFLOW version (`uruflow version`), the platform, what you expected, what
-happened, and the relevant lines from `<data_dir>/uruflow.log` or the agent's log file.
-
-[Troubleshooting](docs/troubleshooting.md) lists the symptoms that already have known causes — worth a
-look first.
-
-Please do not open a public issue for a security problem. Report it privately to the maintainer
-instead, with enough detail to reproduce it.
+Report bugs with the server and agent versions, platform, expected result, actual result and relevant logs. Report security issues privately to the maintainer.

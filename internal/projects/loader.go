@@ -166,6 +166,40 @@ func (l *Loader) buildProject(dir, path, folder, envName string, defaults Defaul
 		return nil, err
 	}
 
+	return l.buildEnvironment(path, folder, envName, environment, environmentValues, defaults)
+}
+
+func (l *Loader) Preview(path, content string, variableContent *string) (*models.Project, error) {
+	var environment Environment
+	if err := decodeStrict([]byte(content), &environment); err != nil {
+		return nil, err
+	}
+	defaults, err := l.readDefaults()
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Dir(path)
+	folder := filepath.Base(dir)
+	envName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if err = validName(folder); err != nil {
+		return nil, err
+	}
+	if err = validName(envName); err != nil {
+		return nil, err
+	}
+	var values map[string]string
+	if variableContent != nil {
+		values, err = ParseDotEnv(*variableContent)
+	} else {
+		values, err = l.readEnvFile(dir, envName)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return l.buildEnvironment(path, folder, envName, environment, values, defaults)
+}
+func (l *Loader) buildEnvironment(path, folder, envName string, environment Environment, environmentValues map[string]string, defaults Defaults) (*models.Project, error) {
+	var err error
 	effectiveEnv := mergeEnv(defaults.Env, environment.Env, environmentValues)
 	effectiveEnv, err = resolveVariables(effectiveEnv)
 	if err != nil {

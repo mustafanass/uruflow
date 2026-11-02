@@ -1,0 +1,291 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent-fill) 38%, transparent);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: 0 18px 80px color-mix(in srgb, var(--shadow) 25%, transparent);
+  width: 500px;
+  max-width: 100%;
+  max-height: 92vh;
+  overflow: auto;
+  padding: 0 24px 22px;
+  overscroll-behavior: contain;
+}
+
+.modal.wide {
+  width: 740px;
+}
+
+.modal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 19px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 19px;
+}
+
+.modal-heading h2 {
+  font-size: 17px;
+}
+
+.modal-description {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--muted);
+  margin-bottom: 20px;
+  max-width: 75ch;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 20px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.modal > .facts {
+  padding: 0;
+}
+
+.modal .facts > div {
+  grid-template-columns: 125px minmax(0, 1fr);
+  gap: 15px;
+}
+
+.modal-section-title {
+  font-size: 12px;
+  margin: 25px 0 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-mode {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.form-mode button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 9px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.form-mode button.selected {
+  color: var(--text);
+  border-color: var(--gold-border);
+}
+
+.runner-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.runner-choices label {
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-weight: 500;
+}
+
+.runner-choices .badge {
+  margin-left: auto;
+}
+
+.runner-choices label input {
+  width: 15px;
+}
+
+.role-choice {
+  display: flex;
+  flex-direction: row;
+  align-items: start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.role-choice input {
+  width: 15px;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.role-choice strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.role-choice small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.role-select {
+  padding: 6px 9px;
+  font-size: 12px;
+  max-width: 150px;
+}
+
+.resource-choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 12px;
+  text-align: left;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.resource-choice > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.resource-choice small {
+  display: block;
+  margin-top: 4px;
+}
+
+.resource-choice:hover {
+  background: var(--surface-subtle);
+  text-decoration: none;
+}
+
+.enrollment-status {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 17px;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+
+.enrollment-status > div {
+  flex: 1;
+}
+
+.enrollment-status strong {
+  font-size: 12px;
+}
+
+.enrollment-status p {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.enrollment-steps {
+  padding-left: 20px;
+}
+
+.enrollment-steps li {
+  padding: 0 0 20px 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.enrollment-steps li:last-child {
+  border: 0;
+}
+
+.enrollment-steps h3 {
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.enrollment-steps p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin-bottom: 12px;
+}
+
+.secret-command {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.secret-command pre {
+  font-size: 12px;
+  line-height: 1.9;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-width: 0;
+}
+
+.help-content p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--muted);
+  margin-bottom: 15px;
+}
+
+.toast {
+  position: fixed;
+  right: 27px;
+  bottom: 24px;
+  max-width: 460px;
+  background: var(--surface);
+  border: 1px solid var(--good-border);
+  border-left: 3px solid var(--good-border);
+  border-radius: 7px;
+  padding: 15px 19px;
+  box-shadow: 0 7px 25px color-mix(in srgb, var(--shadow) 10%, transparent);
+  font-size: 12px;
+  z-index: 200;
+  color: var(--good);
+}

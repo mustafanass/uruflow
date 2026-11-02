@@ -57,3 +57,19 @@ func TestContainerBridgeAppliesBackpressureInsteadOfDroppingLogs(t *testing.T) {
 	}
 	close(done)
 }
+
+func TestContainerBridgeIsolatesAgentContainerAndViewer(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	bridge := &containerBridge{agentID: "a", container: "c", streamID: "viewer-one", entries: make(chan ufp.ContainerLog, 4), done: done}
+	for _, item := range []struct{ agent, container, stream string }{{"other", "c", "viewer-one"}, {"a", "other", "viewer-one"}, {"a", "c", "viewer-two"}, {"a", "c", ""}} {
+		bridge.ContainerLog(item.agent, ufp.ContainerLog{ContainerID: item.container, StreamID: item.stream, Line: "foreign"})
+	}
+	bridge.ContainerLog("a", ufp.ContainerLog{ContainerID: "c", StreamID: "viewer-one", Line: "mine"})
+	if len(bridge.entries) != 1 {
+		t.Fatalf("cross-viewer log delivery: %d", len(bridge.entries))
+	}
+	if line := <-bridge.entries; line.Line != "mine" {
+		t.Fatal(line)
+	}
+}

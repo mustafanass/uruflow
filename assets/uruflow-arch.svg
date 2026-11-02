@@ -1,0 +1,273 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1200"
+  height="1200"
+  viewBox="0 0 1200 1200"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">URUFLOW architecture and runner replacement flow</title>
+  <desc id="description">
+    The browser uses the server's protected web API and live event streams. The
+    Go control plane owns configuration, access and release history and manages
+    a private registry. Builder and runner agents initiate authenticated TLS UFP
+    connections to the server. Builders fetch source and push images; runners
+    pull recorded image digests and apply workloads. During replacement, a
+    runner pulls images, stops and renames the current container, starts its
+    replacement and checks readiness. It retains previous containers until all
+    services succeed and attempts recovery when a service or job fails.
+  </desc>
+  <defs>
+    <marker
+      id="control-arrow"
+      markerWidth="8"
+      markerHeight="8"
+      refX="7"
+      refY="4"
+      orient="auto-start-reverse"
+    >
+      <path d="M1 1L7 4L1 7" fill="none" stroke="#7194b7" stroke-width="1.5" />
+    </marker>
+    <marker
+      id="image-arrow"
+      markerWidth="8"
+      markerHeight="8"
+      refX="7"
+      refY="4"
+      orient="auto"
+    >
+      <path d="M1 1L7 4L1 7" fill="none" stroke="#8b6725" stroke-width="1.5" />
+    </marker>
+    <style>
+      text {
+        font-family: Arial, sans-serif;
+        fill: #162d46;
+      }
+      .title {
+        font-size: 32px;
+        font-weight: 700;
+      }
+      .subtitle {
+        font-size: 19px;
+        fill: #61758a;
+      }
+      .heading {
+        font-size: 23px;
+        font-weight: 700;
+      }
+      .detail {
+        font-size: 17px;
+        fill: #3e5873;
+      }
+      .note {
+        font-size: 16px;
+        fill: #61758a;
+      }
+      .label {
+        font-size: 16px;
+        fill: #275786;
+      }
+      .card {
+        fill: #ffffff;
+        stroke: #dbe4ed;
+        stroke-width: 1.5;
+      }
+      .control {
+        fill: none;
+        stroke: #7194b7;
+        stroke-width: 2.2;
+        marker-end: url(#control-arrow);
+      }
+      .session {
+        marker-start: url(#control-arrow);
+      }
+      .image {
+        fill: none;
+        stroke: #8b6725;
+        stroke-width: 2.5;
+        marker-end: url(#image-arrow);
+      }
+      .step {
+        font-size: 18px;
+        font-weight: 700;
+      }
+    </style>
+  </defs>
+  <rect width="1200" height="1200" rx="16" fill="#f6f8fb" />
+  <text class="title" x="44" y="49">System architecture</text>
+  <text class="subtitle" x="44" y="79">
+    One server coordinates. Agents build and run.
+  </text>
+
+  <rect class="card" x="44" y="104" width="260" height="112" rx="9" />
+  <text x="64" y="145" font-size="21" font-weight="700">Optional webhooks</text>
+  <text class="detail" x="64" y="181">GitHub / GitLab</text>
+  <path class="control" d="M174 216V302H374" />
+  <text class="label" x="62" y="255">Webhooks :9000</text>
+
+  <rect class="card" x="374" y="104" width="452" height="112" rx="9" />
+  <text class="heading" x="398" y="145">Browser workspace</text>
+  <text class="detail" x="398" y="181">
+    React · live topology, logs and metrics
+  </text>
+  <path class="control session" d="M600 216V268" />
+  <text class="label" x="619" y="247">HTTPS API + SSE :9002</text>
+
+  <rect x="374" y="268" width="452" height="190" rx="9" fill="#0b2444" />
+  <rect x="374" y="268" width="6" height="190" rx="3" fill="#edc35d" />
+  <text x="399" y="310" font-size="25" font-weight="700" style="fill: #f4f7fc">
+    URUFLOW server
+  </text>
+  <text x="800" y="309" text-anchor="end" font-size="16" style="fill: #b9c9dc">
+    Go · Gin
+  </text>
+  <text x="399" y="345" font-size="17" style="fill: #f4f7fc">
+    Coordinates releases and checks access
+  </text>
+  <text x="399" y="384" font-size="16" style="fill: #b9c9dc">
+    YAML + variables · SQLite state and history
+  </text>
+  <text x="399" y="417" font-size="16" style="fill: #b9c9dc">
+    Sessions + grants · CA + encrypted secrets
+  </text>
+
+  <path class="control session" d="M374 350H209V568" />
+  <text class="label" x="44" y="419">UFP · TLS 1.3 :9001</text>
+  <text class="note" x="44" y="446">HMAC authentication</text>
+  <path class="control session" d="M826 350H991V568" />
+  <text class="label" x="1011" y="419">UFP :9001</text>
+  <text class="note" x="1011" y="446">TLS 1.3 + HMAC</text>
+  <path class="control" d="M600 458V568" stroke-dasharray="6 5" />
+  <text class="note" x="619" y="517">Manages</text>
+
+  <rect class="card" x="44" y="568" width="330" height="170" rx="9" />
+  <rect x="44" y="568" width="4" height="170" rx="2" fill="#27775b" />
+  <text class="heading" x="66" y="607">Builder agent</text>
+  <text class="detail" x="66" y="645">Fetches source and builds images</text>
+  <text class="detail" x="66" y="674">Pushes artifacts; reports digests</text>
+  <text class="note" x="66" y="713">Git + Docker</text>
+
+  <rect
+    x="434"
+    y="568"
+    width="332"
+    height="170"
+    rx="9"
+    fill="#fbf5e7"
+    stroke="#e9d9b4"
+    stroke-width="1.5"
+  />
+  <text class="heading" x="456" y="607">Private registry</text>
+  <text class="detail" x="456" y="645">Stores the built images</text>
+  <text class="detail" x="456" y="674">Image references include a digest</text>
+  <text class="note" x="456" y="713">TLS + authentication · :5000</text>
+
+  <rect class="card" x="826" y="568" width="330" height="170" rx="9" />
+  <rect x="826" y="568" width="4" height="170" rx="2" fill="#27775b" />
+  <text class="heading" x="848" y="607">Runner agent</text>
+  <text class="detail" x="848" y="645">Pulls recorded image digests</text>
+  <text class="detail" x="848" y="674">Runs jobs and replaces services</text>
+  <text class="note" x="848" y="713">Docker workloads and resources</text>
+
+  <path class="image" d="M374 655H434" />
+  <text
+    x="404"
+    y="636"
+    text-anchor="middle"
+    font-size="15"
+    style="fill: #8b6725"
+  >
+    Push
+  </text>
+  <path class="image" d="M766 655H826" />
+  <text
+    x="796"
+    y="636"
+    text-anchor="middle"
+    font-size="15"
+    style="fill: #8b6725"
+  >
+    Pull
+  </text>
+
+  <text class="note" x="44" y="780">
+    Agents initiate UFP connections. One agent can hold both builder and runner
+    roles.
+  </text>
+  <text class="note" x="44" y="807">
+    Prebuilt images skip source builds and may come from another registry.
+  </text>
+  <path d="M44 837H1156" stroke="#dbe4ed" />
+
+  <text x="44" y="879" font-size="26" font-weight="700">
+    Replacement on each runner
+  </text>
+  <text class="note" x="44" y="908">
+    Pull every required image before replacing containers. Apply services and
+    jobs in dependency order.
+  </text>
+
+  <g transform="translate(44 931)">
+    <rect class="card" width="192" height="86" rx="7" />
+    <text x="16" y="28" font-size="16" style="fill: #8b6725">1</text>
+    <text class="step" x="16" y="61">Pull images</text>
+  </g>
+  <path class="control" d="M236 974H274" />
+  <g transform="translate(274 931)">
+    <rect class="card" width="192" height="86" rx="7" />
+    <text x="16" y="28" font-size="16" style="fill: #8b6725">2</text>
+    <text class="step" x="16" y="61">Stop current</text>
+  </g>
+  <path class="control" d="M466 974H504" />
+  <g transform="translate(504 931)">
+    <rect class="card" width="192" height="86" rx="7" />
+    <text x="16" y="28" font-size="16" style="fill: #8b6725">3</text>
+    <text class="step" x="16" y="61">Rename previous</text>
+  </g>
+  <path class="control" d="M696 974H734" />
+  <g transform="translate(734 931)">
+    <rect class="card" width="192" height="86" rx="7" />
+    <text x="16" y="28" font-size="16" style="fill: #8b6725">4</text>
+    <text class="step" x="16" y="61">Start replacement</text>
+  </g>
+  <path class="control" d="M926 974H964" />
+  <g transform="translate(964 931)">
+    <rect class="card" width="192" height="86" rx="7" />
+    <text x="16" y="28" font-size="16" style="fill: #8b6725">5</text>
+    <text class="step" x="16" y="61">Check readiness</text>
+  </g>
+
+  <path class="control" d="M1060 1017V1038H315V1058" />
+  <path class="control" d="M1060 1038H885V1058" />
+  <rect
+    x="44"
+    y="1058"
+    width="542"
+    height="81"
+    rx="7"
+    fill="#eef7f2"
+    stroke="#cce5d7"
+  />
+  <text x="66" y="1090" font-size="20" font-weight="700" style="fill: #27775b">
+    All services ready
+  </text>
+  <text class="detail" x="66" y="1120">Remove the retained containers.</text>
+  <rect
+    x="614"
+    y="1058"
+    width="542"
+    height="81"
+    rx="7"
+    fill="#fcf0f1"
+    stroke="#edcbd0"
+  />
+  <text x="636" y="1090" font-size="20" font-weight="700" style="fill: #af414c">
+    A service or job fails
+  </text>
+  <text class="detail" x="636" y="1120">
+    Attempt to restore previous service containers.
+  </text>
+  <text class="note" x="44" y="1174">
+    The release records each runner's outcome, including any recovery errors.
+  </text>
+</svg>

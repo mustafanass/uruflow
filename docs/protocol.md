@@ -1,224 +1,164 @@
-# UFP Protocol
+# UFP protocol
 
-UFP is the protocol the URUFLOW Server and its agents speak. You do not need this document to operate
-URUFLOW. It exists for contributors changing the wire contract and for engineers auditing the link.
+UFP is URUFLOW's persistent, bidirectional server-agent protocol. It carries instructions, acceptance responses, status, logs and observations over TLS. Browser traffic uses the operator HTTP API and SSE instead.
 
-## 1. Why It Exists
+This is the wire reference for contributors. URUFLOW 3.0.0 uses UFP frame version `0x04`.
 
-Agents need three things at once: an instruction channel, a live log stream, and immediate detection
-when a peer disappears. HTTP polling gives none of them well, and running a command over SSH per
-operation gives no streaming and no connection awareness.
+## Transport and framing
 
-UFP is a persistent, bidirectional, framed connection over TLS. It carries:
+Agents dial the server over TCP with TLS 1.3. They verify the URUFLOW CA and logical server name `uruflow-server`. Agent identity is established by the UFP handshake after TLS.
 
-- instructions that expect an acknowledgement — build this, release that
-- one-way streams — log lines, metrics, status changes
-- liveness
-
-The design goal is a contract small enough to read in one sitting. Adding a capability should add a
-method or topic name, not a frame type.
-
-## 2. Transport
-
-TCP with TLS 1.3. There is no plaintext mode.
-
-The agent verifies the server against the URUFLOW certificate authority and expects the fixed server
-name `uruflow-server`, which is always present in the server certificate. Pinning a logical name
-rather than a hostname means the link works on any address without reissuing certificates.
-
-The server does not authenticate the agent with a client certificate. Agent identity is established
-by the handshake described below.
-
-## 3. Framing
-
-Every message is an 8-byte header followed by a JSON payload.
+Every frame has an eight-byte header followed by JSON payload bytes:
 
 ```text
- 0        1        2        3        4                                7
- ┌────────┬────────┬────────┬────────┬────────────────────────────────┐
- │  0x55  │  0x46  │  0x04  │  type  │      payload length (u32 BE)   │
- │  'U'   │  'F'   │  ver   │        │                                │
- └────────┴────────┴────────┴────────┴────────────────────────────────┘
+byte      0     1     2      3          4 .. 7
+value    0x55  0x46  0x04   frame type  payload length, unsigned big-endian
+         U     F
 ```
 
-| Field | Size | Value |
-| :--- | :--- | :--- |
-| Magic | 2 bytes | `0x55 0x46` |
-| Version | 1 byte | `0x04` |
-| Frame type | 1 byte | See below |
-| Payload length | 4 bytes | Unsigned, big-endian |
+The decoder checks magic, frame version and the 16 MiB payload bound before reading the payload. A rejected header ends the connection.
 
-A frame is rejected if the magic does not match, the version is not `0x04`, or the declared length
-exceeds **16 MiB**. Payloads are JSON, so frames remain readable in a packet capture.
+| Group     | Frame types                                                                 |
+| --------- | --------------------------------------------------------------------------- |
+| Handshake | `HELLO 0x01`, `CHALLENGE 0x02`, `PROOF 0x03`, `WELCOME 0x04`, `REJECT 0x05` |
+| Messaging | `REQUEST 0x10`, `RESPONSE 0x11`, `EVENT 0x12`                               |
+| Liveness  | `PING 0x20`, `PONG 0x21`, `GOODBYE 0x22`                                    |
 
-## 4. Frame Types
-
-Frame types are grouped by nibble.
-
-| Range | Group | Frames |
-| :--- | :--- | :--- |
-| `0x01`–`0x05` | Handshake | `HELLO`, `CHALLENGE`, `PROOF`, `WELCOME`, `REJECT` |
-| `0x10`–`0x12` | Messaging | `REQUEST`, `RESPONSE`, `EVENT` |
-| `0x20`–`0x22` | Liveness | `PING`, `PONG`, `GOODBYE` |
-
-Grouping is for human readability when reading a dump; the protocol does not branch on the range.
-
-## 5. Envelopes
-
-Everything after the handshake travels in one of three envelopes.
-
-```json
-REQUEST   {"id": 7, "method": "build.run", "payload": { ... }}
-RESPONSE  {"id": 7, "ok": true,            "payload": { ... }}
-EVENT     {"topic": "job.log",             "payload": { ... }}
-```
-
-Adding a capability means adding a `method` or `topic` string. No new frame type is required, and old
-peers reject unknown names cleanly rather than mis-parsing them.
-
-### Request and Response
-
-A `REQUEST` carries a caller-assigned `id`. The peer replies with a `RESPONSE` carrying the same `id`
-and an `ok` flag. A failed response carries `{"message": "..."}` as its payload.
-
-Correlation is a map from `id` to a waiting caller. Responses that arrive for an unknown `id` are
-dropped. Closing the connection releases every waiter.
-
-Requests are answered with acceptance, not completion. `build.run` returns as soon as the builder has
-taken the job; the build itself reports through events. Long work therefore never holds a request open
-and never collides with a read deadline.
-
-### Events
-
-One-way, unacknowledged. Flows needing completion use a correlated status event rather than a reply.
-
-| Direction | Topic | Carries |
-| :--- | :--- | :--- |
-| Server → Agent | `registry.config` | Registry address, credentials, CA certificate |
-| Agent → Server | `registry.ready` | Registry trust and builder login completed successfully |
-| Agent → Server | `job.log` | One line of build or release output |
-| Agent → Server | `job.status` | Stage transition: running, success, failed |
-| Agent → Server | `metrics.push` | System metrics, snapshot validity, and managed container state |
-| Agent → Server | `container.log` | One line from a followed container |
-
-### Methods
-
-All are server to agent.
-
-| Method | Effect |
-| :--- | :--- |
-| `build.run` | Resolve one or more Git sources, build targets, push digests; report images and commits through `job.status` |
-| `release.run` | Ensure resources, pull immutable images, execute jobs, and replace services in dependency order |
-| `release.stop` | Stop every managed container for a project |
-| `release.remove` | Remove every managed container for a project; persistent resources remain |
-| `logs.follow` | Begin streaming a container's output as `container.log` |
-| `logs.stop` | Stop streaming |
-
-## 6. Handshake
+## Handshake
 
 ```mermaid
 sequenceDiagram
     participant A as Agent
     participant S as Server
-
-    A->>S: HELLO {agent_id, hostname, version, platform, roles}
-    Note over S: look up the agent's key<br/>generate a 32-byte nonce
-    S->>A: CHALLENGE {nonce}
-    Note over A: proof = HMAC-SHA256(key, context ‖ nonce)
-    A->>S: PROOF {proof}
-    Note over S: constant-time compare
-    S->>A: WELCOME {agent_id, name, server_version}
+    A->>S: HELLO identity, version, platform, roles
+    S->>A: CHALLENGE random nonce
+    A->>S: PROOF HMAC
+    S->>A: WELCOME identity and name
+    S->>A: registry.config
+    A->>S: registry.ready after applying trust and login
 ```
 
-Any step may be answered with `REJECT {reason}` instead, after which the connection closes.
-
-### Authentication Properties
-
-The shared key never crosses the wire. Four properties matter:
-
-- **Context binding.** The proof is `HMAC-SHA256(key, "uruflow-agent-auth-v1" ‖ nonce)`. The context
-  label is folded in before the nonce, so a proof produced for one purpose cannot be replayed as
-  another if further contexts are added later.
-- **Replay resistance.** The nonce is 32 bytes of `crypto/rand` per connection. A captured proof is
-  useless on the next connection.
-- **Constant-time comparison.** Verification uses `hmac.Equal`, so a wrong key does not leak how much
-  of the proof was correct.
-- **Uniform rejection timing.** An unknown agent id is verified against a fixed placeholder key rather
-  than short-circuiting, so timing does not reveal whether an id exists.
-
-### Role Declaration
-
-The agent declares its roles in `HELLO`. The declaration must exactly match the roles stored during
-enrollment; unknown, duplicate, missing or additional roles reject the connection. The server checks
-the enrolled role for job events and dispatch, and the agent independently rejects disallowed methods.
-
-## 7. Connection Lifecycle
+`HELLO` includes `agent_id`, `hostname`, `version`, `platform` and `roles`. The server looks up enrollment and sends a fresh 32-byte nonce. The proof is:
 
 ```text
-dial TLS → handshake → server pushes registry.config → serve loop → close
+HMAC-SHA256(agent_key, "uruflow-agent-auth-v1" || nonce)
 ```
 
-After `WELCOME` the server sends `registry.config` immediately, so an agent is able to reach the
-registry before it is asked to do anything.
+Verification uses constant-time comparison. Unknown identities follow a placeholder-key verification path. Roles must exactly match enrollment, with no unknown or duplicate entries. A failed step returns `REJECT` and closes the connection.
 
-The serve loop:
+The key is never sent during authentication. [Security](security.md#agent-identity-and-ufp) explains credential ownership.
 
-- `PING` is answered with `PONG` by the read loop itself
-- `GOODBYE` ends the loop cleanly
-- `RESPONSE` resolves a waiting request
-- `EVENT` is handled **inline, in order** — log lines must not reorder
-- `REQUEST` is handled **in a goroutine** — a handler may run for minutes
+## Envelopes
 
-Both sides tear down the connection when the loop exits. On the agent this cancels in-flight builds,
-releases, maintenance operations and log streams before reconnecting after `reconnect_sec`. A project
-accepts only one active agent job, and a repeated job id is acknowledged without starting it twice.
+After the handshake, messages use three envelopes:
 
-## 8. Liveness
+```json
+{
+  "id": 7,
+  "method": "logs.follow",
+  "payload": {
+    "container_id": "container-id",
+    "stream_id": "viewer-id",
+    "tail": 200
+  }
+}
+```
 
-| Timer | Value | Applies to |
-| :--- | :--- | :--- |
-| Handshake timeout | 10s | Each handshake read |
-| Write timeout | 15s | Every frame write |
-| Ping interval | 20s | Server only |
-| Idle timeout | 60s | Read deadline on both sides |
+```json
+{ "id": 7, "ok": true, "payload": { "stream_id": "viewer-id" } }
+```
 
-Liveness is the read deadline. Because the server pings every 20 seconds and the agent answers, a
-healthy connection always sees traffic well inside 60 seconds. No separate heartbeat state is kept.
+```json
+{
+  "topic": "container.log",
+  "payload": {
+    "container_id": "container-id",
+    "stream_id": "viewer-id",
+    "stream": "stdout",
+    "line": "ready",
+    "timestamp": 1793520000
+  }
+}
+```
 
-## 9. Error Behaviour
+A response correlates with the request's `id`. Failure responses use `ok: false` and an error message payload. Unknown response IDs are ignored; closing a connection releases outstanding waiters.
 
-| Condition | Result |
-| :--- | :--- |
-| Bad magic, version, or oversized length | Connection error; the link drops |
-| Malformed top-level envelope JSON | Frame skipped, connection continues |
-| Malformed payload for a known event | Connection error |
-| Unknown method | `RESPONSE` with `ok: false` and a message |
-| Unknown topic | Connection error |
-| Response for an unknown id | Dropped |
-| Unexpected frame type | Connection error |
+Requests acknowledge acceptance. Build and release completion arrives through `job.status`, not through a long-running request response. Events are processed in order. Request handlers can run concurrently, with agent job coordination protecting conflicting work.
 
-Malformed envelopes are tolerated while malformed *frames* are fatal, because a bad frame means the
-stream is no longer aligned.
+## Methods
 
-## 10. Versioning
+These methods travel from server to agent:
 
-The version byte is `0x04`. A peer speaking `0x01`, `0x02`, or `0x03` is rejected at the first frame,
-so an older agent cannot half-connect and silently ignore native resource, dependency, job, command,
-security, or multi-source fields.
+| Method           | Work                                                                       |
+| ---------------- | -------------------------------------------------------------------------- |
+| `build.run`      | Resolve Git sources, build targets and publish image digests               |
+| `release.run`    | Prepare resources, pull images, execute jobs and replace services          |
+| `release.stop`   | Stop a project's managed containers                                        |
+| `release.remove` | Remove a project's managed containers while retaining persistent resources |
+| `logs.follow`    | Follow a container's Docker output                                         |
+| `logs.stop`      | Stop a selected log viewer                                                 |
 
-Within UFP, compatibility is managed through names:
+Payloads include job and project identity where appropriate. Build requests carry source and target definitions. Release requests carry the remaining deadline, per-service image references, dependencies, jobs, mounts, networks, runtime controls and readiness policy.
 
-- adding a method or topic is backward compatible
-- adding an optional payload field is backward compatible
-- changing the meaning of an existing method, topic, or field is not, and requires a version bump
+The server checks enrolled roles before dispatch. Agents independently reject methods outside their roles and validate deployment payloads before execution.
 
-## 11. Invariants
+## Events
 
-Hold these when changing the protocol:
+| Direction      | Topic             | Content                                                       |
+| -------------- | ----------------- | ------------------------------------------------------------- |
+| Server → agent | `registry.config` | Registry address, credentials and CA                          |
+| Agent → server | `registry.ready`  | Registry trust and required login applied                     |
+| Agent → server | `job.log`         | Build or release output                                       |
+| Agent → server | `job.status`      | Job identity, stage, status, messages and resulting artifacts |
+| Agent → server | `metrics.push`    | Host samples and managed container inventory                  |
+| Agent → server | `container.log`   | Output or completion for a log viewer                         |
 
-1. `internal/ufp` imports nothing else from the repository.
-2. A request answers acceptance, never completion.
-3. Events are ordered; requests are not.
-4. The key is never transmitted, logged, or written to a response.
-5. Both sides validate roles independently.
-6. Payloads stay JSON — debuggability is a feature of this protocol.
+Job stages are `build` and `release`; status events use `running`, `success` and `failed`. The server correlates job identity and reporting agent with persisted work before applying outcomes.
+
+### Observations
+
+`metrics.push` separates collection time, host availability and container inventory validity. `system.available` lists valid collectors; `system.errors` explains unavailable samples. `cpu_cores` and `metrics_sec` describe capacity and cadence. `uptime` retains process-lifetime meaning; optional `host_uptime` reports host boot age.
+
+Container reports carry full identities, state and health, statistics availability, CPU and memory usage, traffic, PID and block-I/O counters. Optional `details` includes release and role labels, image identity, timestamps, exit and OOM state, networks, ports, mounts and health probes. Environment values are excluded from collected details.
+
+An unavailable sample is not a zero reading. The server and browser preserve this distinction when deriving health and graphs.
+
+### Container log viewers
+
+`logs.follow` includes a viewer `stream_id` and may include an `after` cursor. Container log events include an opaque `cursor` with independent timestamp and ordinal checkpoints for stdout and stderr. A resumed request reads from the earlier checkpoint and skips already delivered entries separately in each stream. This preserves repeated lines and handles stdout and stderr arriving with different timestamp order. Legacy timestamp cursors remain accepted. The server emits the cursor as an SSE event ID, and the browser returns it when reconnecting.
+
+The agent echoes the stream ID in acceptance and each `container.log`; `logs.stop` closes only that viewer. The server checks the echoed ID before accepting an independent browser stream. Requests without it use the container identity as the stream key.
+
+When Docker output ends, an entry with `complete: true` ends the viewer. An optional `error` describes collection failure. The server turns these into browser completion or failure events. The existing topic and frame version stay unchanged.
+
+## Connection lifecycle
+
+The server sends registry configuration after authentication. An agent applies Docker trust and builder login before acknowledging readiness. A healthy connection then serves requests and events until cancellation, an error or `GOODBYE`.
+
+| Timer                | Value      |
+| -------------------- | ---------- |
+| Handshake read       | 10 seconds |
+| Frame write          | 15 seconds |
+| Server ping interval | 20 seconds |
+| Read idle deadline   | 60 seconds |
+
+The read loop answers `PING` with `PONG`. On disconnect, the agent cancels in-flight work and log streams, then retries after its configured reconnect delay. Duplicate active job IDs are acknowledged without starting the same work twice.
+
+## Error handling and compatibility
+
+| Condition                                    | Result                      |
+| -------------------------------------------- | --------------------------- |
+| Bad magic, frame version or declared length  | Connection error            |
+| Malformed top-level envelope                 | Frame skipped               |
+| Invalid payload for a handled event          | Handler error ends the link |
+| Unknown method                               | Failed response             |
+| Unknown event topic or unexpected frame type | Connection error            |
+| Unknown response ID                          | Ignored                     |
+
+The product version and frame version serve different purposes. `3.0.0` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
+
+Keep `internal/ufp` independent of other repository packages. Preserve ordered events, correlated requests, role enforcement and the acceptance/completion distinction. Update this page and contract tests in the same change as the wire code.
+
+Implementation: `internal/ufp`, `internal/link`, `internal/agent/daemon`.
+
+Related: [Architecture](architecture.md), [Security](security.md), [Testing](testing.md).

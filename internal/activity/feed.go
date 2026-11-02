@@ -19,7 +19,6 @@
 package activity
 
 import (
-	"context"
 	"sync"
 	"time"
 )
@@ -34,13 +33,13 @@ const (
 )
 
 type Entry struct {
-	Sequence  uint64
-	Time      time.Time
-	Kind      Kind
-	Level     string
-	Operation string
-	Source    string
-	Message   string
+	Sequence  uint64    `json:"sequence"`
+	Time      time.Time `json:"time"`
+	Kind      Kind      `json:"kind"`
+	Level     string    `json:"level"`
+	Operation string    `json:"operation"`
+	Source    string    `json:"source"`
+	Message   string    `json:"message"`
 }
 
 type Feed struct {
@@ -49,20 +48,13 @@ type Feed struct {
 	start   int
 	count   int
 	next    uint64
-	changed chan struct{}
 }
 
 func New(capacity int) *Feed {
 	if capacity < 1 {
 		capacity = DefaultCapacity
 	}
-	return &Feed{entries: make([]Entry, capacity), changed: make(chan struct{})}
-}
-
-func (f *Feed) Latest() uint64 {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.next
+	return &Feed{entries: make([]Entry, capacity)}
 }
 
 func (f *Feed) Publish(entry Entry) Entry {
@@ -82,8 +74,6 @@ func (f *Feed) Publish(entry Entry) Entry {
 		f.entries[f.start] = entry
 		f.start = (f.start + 1) % len(f.entries)
 	}
-	close(f.changed)
-	f.changed = make(chan struct{})
 	return entry
 }
 
@@ -91,23 +81,6 @@ func (f *Feed) Read(after uint64) ([]Entry, uint64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.readLocked(after)
-}
-
-func (f *Feed) Wait(ctx context.Context, after uint64) ([]Entry, uint64, error) {
-	for {
-		f.mu.Lock()
-		entries, dropped := f.readLocked(after)
-		changed := f.changed
-		f.mu.Unlock()
-		if len(entries) > 0 || dropped > 0 {
-			return entries, dropped, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, 0, ctx.Err()
-		case <-changed:
-		}
-	}
 }
 
 func (f *Feed) readLocked(after uint64) ([]Entry, uint64) {

@@ -1,0 +1,231 @@
+.graph-workspace {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  height: var(--graph-height, calc(100dvh - 250px));
+  min-height: 0;
+}
+
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 15px;
+  min-height: 58px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.graph-toolbar .filter-input {
+  max-width: 250px;
+  min-width: 150px;
+}
+
+.graph-layout-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.button[aria-pressed='true'] {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.graph-layout-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.graph-count {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.graph-body {
+  display: flex;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--surface-subtle);
+}
+
+.graph-legend {
+  position: absolute;
+  left: 16px;
+  bottom: 17px;
+  display: flex;
+  gap: 14px;
+  background: color-mix(in srgb, var(--surface) 93%, transparent);
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.graph-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.graph-legend i {
+  width: 18px;
+  height: 1px;
+  background: var(--accent-fill);
+  display: inline-block;
+}
+
+.graph-legend i.dependency {
+  height: 0;
+  background: none;
+  border-top: 1px dashed var(--gold-border);
+}
+
+.graph-legend i.assignment {
+  height: 0;
+  background: none;
+  border-top: 1px dashed var(--graph-edge);
+}
+
+.graph-footnote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 15px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.graph-footnote > .status-dot {
+  color: var(--good);
+  width: 5px;
+  height: 5px;
+}
+
+.graph-footnote > span:last-child {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.graph-inspector {
+  width: 320px;
+  min-width: 320px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.inspector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 4;
+}
+
+.inspector-content {
+  padding: 21px;
+}
+
+.inspector-content h3 {
+  font-size: 17px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  margin-bottom: 12px;
+}
+
+.inspector-content > .facts {
+  padding: 0;
+  margin-top: 17px;
+}
+
+.inspector-content .facts > div {
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 0;
+  font-size: 12px;
+}
+
+.inspector-content .facts dd {
+  font-size: 12px;
+}
+
+.inspector-content .facts code {
+  font-size: 12px;
+}
+
+.inspector-note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.85;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+}
+
+.dependency-detail {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.dependency-detail > span {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.react-flow__handle {
+  width: 5px !important;
+  height: 5px !important;
+  min-width: 5px !important;
+  min-height: 5px !important;
+  background: var(--accent-fill) !important;
+  border: 1px solid var(--surface) !important;
+}
+
+.react-flow__minimap {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--shadow) 3%, transparent) !important;
+  overflow: hidden;
+  bottom: 23px !important;
+}
+
+.graph-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}

@@ -1,0 +1,53 @@
+.page-view {
+  animation: page-enter 160ms ease-out;
+}
+
+.modal {
+  animation: surface-enter 140ms ease-out both;
+}
+
+.graph-inspector {
+  animation: inspector-enter 140ms ease-out both;
+}
+
+.auth-form {
+  animation: page-enter 180ms ease-out both;
+}
+
+.tabs button,
+.segmented button {
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes inspector-enter {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

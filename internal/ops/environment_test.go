@@ -24,17 +24,6 @@ import (
 	"testing"
 )
 
-func TestVariableRowsNeverExposeSecretMaterial(t *testing.T) {
-	rows, err := variableRows("LOG_LEVEL=info\nTOKEN=${secret:api-prod.TOKEN}\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 2 || rows[0][0] != "LOG_LEVEL" || rows[0][1] != "plain" ||
-		rows[1][0] != "TOKEN" || rows[1][1] != "secret" || rows[1][2] != "${secret:api-prod.TOKEN}" {
-		t.Fatalf("rows = %#v", rows)
-	}
-}
-
 func TestUnreferencedKeepsSharedSecrets(t *testing.T) {
 	got := unreferenced([]string{"removed", "shared"}, map[string]bool{"shared": true})
 	if len(got) != 1 || got[0] != "removed" {

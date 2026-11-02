@@ -1,0 +1,87 @@
+@media (max-width: 510px) {
+  .main-content {
+    padding: 20px 12px;
+  }
+  .topbar {
+    gap: 7px;
+    padding: 0 12px;
+  }
+  .live-indicator {
+    font-size: 0;
+    min-width: 10px;
+  }
+  .live-indicator .status-dot {
+    width: 7px;
+    height: 7px;
+  }
+  .global-search input {
+    font-size: 12px;
+  }
+  .page-title h1 {
+    font-size: 22px;
+  }
+  .metric-strip > div > span {
+    font-size: 12px;
+  }
+  .metric-strip strong {
+    font-size: 21px;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+  .auth-surface {
+    flex-direction: column;
+  }
+  .auth-introduction {
+    width: 100%;
+    padding: 24px 25px;
+    gap: 0;
+  }
+  .auth-introduction > .brand {
+    font-size: 25px;
+  }
+  .auth-introduction > div:not(.brand),
+  .auth-signature {
+    display: none;
+  }
+  .auth-main {
+    padding: 40px 25px;
+    align-items: flex-start;
+  }
+  .auth-form h1 {
+    font-size: 24px;
+  }
+  .auth-form input {
+    font-size: 16px;
+  }
+  .toast {
+    left: 15px;
+  }
+  .log-output .log-source {
+    display: none;
+  }
+  .modal .facts > div {
+    grid-template-columns: 95px minmax(0, 1fr);
+  }
+  .resource-choice {
+    gap: 8px;
+  }
+  .connection-banner {
+    font-size: 12px;
+    padding: 9px 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}

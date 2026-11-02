@@ -95,7 +95,7 @@ func TestDeletingAFileReportsAnOrphanedProject(t *testing.T) {
 			orphan = problem.Error()
 		}
 	}
-	if !strings.Contains(orphan, "api-dev") || !strings.Contains(orphan, "press d to remove") {
+	if !strings.Contains(orphan, "api-dev") || !strings.Contains(orphan, "restore its environment file") {
 		t.Fatalf("orphan report is unhelpful: %s", orphan)
 	}
 	if _, err := server.Store().GetProject("api-dev"); err != nil {

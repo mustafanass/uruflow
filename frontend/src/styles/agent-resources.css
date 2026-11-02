@@ -1,0 +1,84 @@
+.overview-resource-track {
+  display: block;
+  height: 4px;
+  background: var(--surface-tint);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.overview-resource-track b {
+  display: block;
+  height: 100%;
+  background: var(--accent-fill);
+}
+.agent-resource-row {
+  display: block;
+  padding: 16px 20px;
+  color: inherit;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-resource-row:last-child {
+  border-bottom: 0;
+}
+
+.agent-resource-row:hover {
+  background: var(--surface-subtle);
+  text-decoration: none;
+}
+
+.agent-resource-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.agent-resource-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-resource-name .badge {
+  margin-left: auto;
+}
+
+.agent-resource-name > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.agent-resource-meters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.agent-resource-meters > div > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+.agent-resource-meters strong {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.overview-resource-track.pressure b {
+  background: var(--gold);
+}
+
+.overview-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding: 12px 20px;
+  font-size: 12px;
+}

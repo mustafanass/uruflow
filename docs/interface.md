@@ -1,189 +1,81 @@
-# Operations Workspace
+# Browser workspace
 
-URUFLOW is operated from one full-screen terminal workspace. The workspace owns the prompt, command
-history, live output, tables, confirmations, secret entry, and inline editors. Operational
-commands stay inside this workspace.
+The browser workspace is the operator interface for URUFLOW. Its pages share live observations, project scope and the current user's permissions.
 
-The persistent server still owns live agent sessions, the pipeline, SQLite, and the registry. The
-workspace reaches it through a root-only Unix control socket, so closing the interface never stops
-the server or a running release. YAML files remain authoritative for project configuration.
+## Navigation
 
-## Open the workspace
+| Page     | Work                                                                                  |
+| -------- | ------------------------------------------------------------------------------------- |
+| Overview | Check fleet status, open active alerts and explore the live infrastructure graph      |
+| Projects | Manage project environments and follow releases across the fleet                      |
+| Agents   | Enroll machines, inspect host resources and browse container inventory                |
+| Activity | Follow deployment, connectivity and alert events; inspect alert history               |
+| System   | Inspect the server and registry, manage access and review the administrator audit log |
 
-```bash
-sudo uruflow
-# explicit equivalent
-sudo uruflow console
-```
+Use **Ctrl/⌘ K** to find projects, agents, containers and releases directly. Resource detail URLs remain stable. Existing index links for Infrastructure, Releases, Containers, Alerts and Registry open their new locations.
 
-The layout has one header, one scrollable response transcript, and one prompt.
-It opens with a compact welcome card instead of immediately dumping fleet tables. Type a command and
-its complete response appears in the same transcript. Long-running commands append new lines in real
-time without replacing the rest of the view.
+Tab selection and table filters stay in the URL, including when you move between views. Your account menu is under the avatar in the sidebar. It provides password changes, theme selection, sign-out and sign-out everywhere. The top bar keeps resource search, connection status and help.
 
-```text
-status
-project deploy api-prod
-release logs <release-id> --follow
-events
-help
-```
+## Overview and graphs
 
-The command area filters suggestions as you type. Type `/` for the command palette or `help` for the
-same list in the transcript. Use `↑` and `↓` to select, `Tab` to complete, and `Esc` to close the
-list. `Enter continue` advances to the next argument; `Enter run` executes the command.
+Overview combines a fleet summary, the attention list and the live infrastructure workspace. Active alerts open on the same page. Container and release totals lead to their fleet views under Agents and Projects.
 
-Argument choices come from the server. A container choice fills its agent and container ID together;
-a registry choice fills its repository and tag. The stage line shows the current position, for
-example `DEPLOY › PROJECT › MODE`. Loading, empty, and failed requests are shown in the command area.
-When the prompt is empty, `↑` and `↓` browse saved non-sensitive history.
+Fleet graphs connect the server to its agents, then agents to their projects. Build links and assigned or observed runtime placements remain distinct. Projects without a host stay visible as unconnected cards. **Show containers** expands a host's observed workloads; search can find a container while its host is collapsed or show the hosts assigned to a project.
 
-Use `PgUp` and `PgDn` to inspect the transcript, `Ctrl+L` or `clear` to clear it, and `Ctrl+D` or
-`exit` to close the workspace. New stream lines do not pull the view away while you are reading older output.
-`Ctrl+C` detaches the visible live stream without cancelling a durable server-side release.
+Cards show state, service readiness, host and container CPU and memory, container uptime and restarts, or the project's latest release. Missing samples remain distinct from zero usage. Measurements update without moving the graph. The canvas uses the available screen height, and **Expand graph** provides more room. Small graphs omit the minimap.
 
-Set `NO_COLOR=1` or open with `uruflow --no-color` when ANSI color is not wanted.
-The palette uses the URUFLOW navy, gold, ivory, and steel-blue colors. Green and red are reserved for
-health and failures.
+Two-finger trackpad scrolling pans horizontally and vertically. Pinch, **Ctrl/⌘ + scroll** or the zoom buttons change the scale. Dragging the canvas also pans the view. Fit and reset share the same framing; tall project graphs retain a readable scale and can be panned.
 
-Table titles include their row count. On narrow terminals, identity and operational state columns
-stay visible while lower-priority columns collapse; `+N` in the title reports how many are hidden.
-Long messages and log lines wrap beneath their source instead of overflowing the workspace.
+Select a node to open its inspector without changing zoom or pan. Click the canvas or use its close control to dismiss it. Dragged positions save automatically for that account and graph in the browser. Existing saved positions migrate when card dimensions change. A storage failure leaves a visible **Retry save** control. Reset returns to automatic placement. Layout changes do not block deployment or navigation.
 
-## Status and live activity
+## Projects
 
-```text
-status
-events
-```
+The project directory also provides fleet release history. Each project has **Overview**, **Graph**, **Releases**, **Configuration** and **Activity**, according to permissions.
 
-`status` returns the fleet summary, agents, and projects. `events` follows releases, build output,
-state changes, agent connectivity, and alerts. A new stream starts at the current sequence. Detaching
-prints a cursor that can resume the stream:
+Overview groups observed instances under their services. Each instance shows its runner, CPU, memory and a direct log link. Published ports and dependencies sit with the service they belong to. Latest-release information and assigned-machine resources appear alongside them. **Resource trends** opens session charts without leaving the page.
 
-```text
-events --after 142
-```
+Graph retains runtime and delivery views. Runtime connects service intent, runner placement and observed containers. Delivery shows build and release relationships. The inspector includes service definitions, limits, dependencies, storage and observed instances.
 
-The server keeps the latest 8192 entries in memory. If the requested sequence is older, the workspace
-reports the gap and resumes from the oldest retained entry.
+**Deploy** starts a release of the saved configuration. **Rollback** selects an eligible successful release. **Stop** stops managed project containers. Actions are disabled when their required state is absent or another release owns the project.
 
-## Creation and guided input
+Configuration contains the authoritative YAML and variable overlay as separate editors. Each editor has its own revision, validation, save control and unsaved state. Saving one preserves unsaved edits in the other. Both contribute to the navigation guard. Editors remain read-only while their own save is in flight.
 
-Input depends on the value:
+If a save conflicts with another revision, use **Copy unsaved edits** if needed, then **Load latest**. Confirming loads the new file and revision so you can apply changes again. During a conflict, **Discard edits** uses the same recovery path.
 
-- Short values such as a new agent name stay in the command box with a labeled next-step prompt.
-- Existing resources such as projects, agents, and releases are selected from daemon-backed choices.
-- Plain and secret variables share one project-scoped multiline variable editor.
-- Project YAML uses the multiline editor because it benefits from paste, line numbers, and validation.
+Saving does not deploy. [Projects](projects.md) owns file layout and variable syntax.
 
-`project deploy` does not create configuration: it operates on an already loaded project. Use `project
-create PROJECT ENV` for a new project, or manage the same authoritative files with any external
-editor. Once loaded, `project deploy ` offers the project.
+## Releases
 
-## Projects and YAML
+A release has **Overview**, **Logs** and **Changes**. Active releases open on Logs. Selecting another tab keeps that selection while the release progresses.
 
-```text
-project list
-project create api prod
-project show api-prod
-project edit api-prod
-project reload
-```
+Overview brings together progress, the release record, runner outcomes and immutable artifacts. Changes compares the saved definition with the preceding release for the same project. A first release shows its initial definition. The saved definition remains available for inspection and copying; variable values are redacted.
 
-`project create api prod` and `project edit api-prod` use the same full-width internal editor. It
-supports paste, scrolling, line numbers, automatic YAML indentation, `Tab` and `Shift+Tab`. Press
-`Ctrl+S` to format, validate, atomically save, and reload the environment file, or `Esc` to cancel. A
-validation error returns to the editor without losing the text. No external editor configuration is
-used.
+## Agents and containers
 
-Environment definitions remain normal files at `projects/<name>/<env>.yaml`, so they work naturally
-with Git and configuration management. Run `project reload` after editing one outside URUFLOW. The
-interface never creates a competing definition in SQLite.
+The Agents directory provides machine inventory and a fleet Containers view. An agent has **Overview**, **Workloads** and **Metrics**. Workloads groups its assigned projects, observed containers and build work. Administrators remove an agent from the danger section in Overview after unassigning its projects.
 
-## Command reference
+A container has **Overview**, **Logs**, **Metrics** and **Inspect**. Overview brings together identity, state, ports, networks, storage and health probes. Direct project and host links keep related resources within reach.
 
-These commands are typed at the workspace prompt, without a leading `uruflow`:
+Enrollment displays its setup command once. Save it, then confirm **I saved the enrollment command** before closing an unconnected agent's setup. The dialog also closes after the agent connects. The CA download remains available on Agents.
 
-```text
-agent list
-agent show builder-01
-agent add builder-01 --roles builder,runner
-agent remove builder-01
+## Activity and System
 
-container list
-container logs web-01 <container-id> --tail 200
-container logs web-01 <container-id> --follow
+Activity combines the live event feed with release records and durable alert history. Filter the timeline by event type or resource. The Alerts view includes active and resolved conditions. Operators can resolve alerts within their project scope.
 
-project deploy api-prod
-project deploy api-prod --no-follow
-project rollback api-prod
-project stop api-prod
-project variables api-prod
+System groups **Server**, **Access** and **Audit log**. Server includes host resources and the registry catalogue. Fleet access is required for registry data. Access and Audit log are administrator-only; shared Activity does not expose administrative audit records.
 
-release list --limit 50
-release show <release-id>
-release logs <release-id>
-release logs <release-id> --follow
-release follow <release-id>
+The live event feed is a bounded server buffer. Release records, alert history and the administrative audit use persistent storage. [Security](security.md) explains roles, project grants and the local account recovery command.
 
-registry list
-registry remove <repository> <tag>
-alert list
-alert resolve <id>
-```
+## Live state and logs
 
-For guided enrollment, type `agent add NAME`. As soon as the name is present, the command area offers
-`runner`, `builder`, and `builder,runner`; selecting one completes the command. The result card prints
-the one-time agent initialization command and the server trust-root path.
+The workspace shows connection state and marks old observations visibly. A reconnect preserves the last observation while the browser restores the stream. Empty fleets identify that no agents are enrolled.
 
-For container output, type `container logs ` and select a row. The choice fills `AGENT CONTAINER`,
-then offers recent output, fixed tail sizes, or live follow. Registry rows are marked `system` and
-project workloads are marked `service`. A full local log buffer pauses the producer instead of
-silently dropping lines.
+Release logs are stored on the server. Container logs are collected from Docker through an agent. The viewer supports search, wrapping, follow controls, reconnect and download. Hidden browser tabs pause their log connection. Returning or reconnecting resumes from the last delivered cursor without appending the same tail again. Completed streams hide follow controls. `stderr` identifies an output stream; it does not classify every line as an error.
 
-Deploy and rollback follow their process by default. Reattach to durable work later with `release
-follow`. Container logs stream over the existing agent connection; no extra SSH session is opened.
+When a container leaves the inventory, its open detail view retains the last observation and loaded logs. Use **Download loaded logs** to keep that browser buffer before leaving the view.
 
-`project variables PROJECT` opens the project's optional variables as one full-width list. Ordinary
-dotenv lines are plain configuration; prefix a line with `secret ` to encrypt its value:
+Log output is buffered in batches and retains the latest 2,000 loaded lines. Reconnection resumes each Docker stream from its saved cursor. Removed containers, invalid cursors and stream limits show an actionable error with manual retry. Relative times update independently of workspace snapshots, and hidden tabs pause time updates and registry polling.
 
-```text
-LOG_LEVEL=info
-secret DATABASE_URL=postgres://user:password@db/app
-```
+The system, light and dark theme preference is saved in the browser and shared across tabs. Page transitions and loading indicators respect reduced-motion preferences. Arrow keys navigate tabs and the account menu; **Esc** closes dismissible surfaces. Narrow screens provide a navigation menu and scrollable page tabs.
 
-Press `Ctrl+S` to validate and save the complete list. Plain values are written to the authoritative
-`<environment>.env` file. Secret values are encrypted in SQLite and replaced in that file by a
-project-scoped `${secret:…}` reference. When reopened, references are shown but stored values are
-never recovered. Replace a reference with a new value to rotate it, remove a line to remove the
-variable, or add/remove the `secret ` prefix to change its type. Encrypted material is deleted only
-after its reference leaves this list and no loaded project still uses it.
-
-Text received from agents, containers, projects, and backend errors is sanitized before rendering.
-Only ANSI styling produced by URUFLOW reaches the terminal.
-
-## External lifecycle commands
-
-Only process lifecycle and setup stay outside the workspace:
-
-| Shell command | Purpose |
-| :--- | :--- |
-| `uruflow` | Open the operations workspace |
-| `uruflow console` | Open it explicitly |
-| `uruflow serve` | Run the persistent server for systemd |
-| `uruflow init --advertise <host>` | Create server YAML and credentials |
-| `uruflow version` | Print the installed version |
-
-## Configuration ownership
-
-| Data | Authority |
-| :--- | :--- |
-| Server and registry settings | `config.yaml` |
-| Project environments | `projects/<name>/<env>.yaml` |
-| Environment overlays | `.env` files |
-| Agent local settings | `agent.yaml` |
-| Enrollment, releases, logs, metrics, alerts, and secrets | SQLite/runtime state |
-
-Files describe desired state. The database records observed state and history. The workspace does not
-add another configuration source.
+Related: [Getting started](getting-started.md), [Configuration](configuration.md), [Troubleshooting](troubleshooting.md).

@@ -18,11 +18,7 @@
 
 package activity
 
-import (
-	"context"
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestFeedSequencesReplaysAndReportsExactGaps(t *testing.T) {
 	feed := New(3)
@@ -36,25 +32,5 @@ func TestFeedSequencesReplaysAndReportsExactGaps(t *testing.T) {
 	entries, dropped = feed.Read(4)
 	if dropped != 0 || len(entries) != 1 || entries[0].Sequence != 5 {
 		t.Fatalf("resume entries=%+v dropped=%d", entries, dropped)
-	}
-}
-
-func TestFeedWaitWakesWithoutPolling(t *testing.T) {
-	feed := New(4)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	done := make(chan []Entry, 1)
-	go func() {
-		entries, _, _ := feed.Wait(ctx, 0)
-		done <- entries
-	}()
-	feed.Publish(Entry{Message: "ready"})
-	select {
-	case entries := <-done:
-		if len(entries) != 1 || entries[0].Message != "ready" {
-			t.Fatalf("entries=%+v", entries)
-		}
-	case <-ctx.Done():
-		t.Fatal("waiter did not wake")
 	}
 }

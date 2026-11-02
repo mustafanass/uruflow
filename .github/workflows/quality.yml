@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   go:
-    name: Go quality
+    name: Application quality
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -21,8 +21,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Check style, vet, and tests
         run: make check
 
-      - name: Build commands
+      - name: Build frontend and server binaries
         run: make build

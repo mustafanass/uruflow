@@ -25,14 +25,14 @@ import (
 	"github.com/mustafanass/uruflow/internal/models"
 )
 
-const alertColumns = `id, agent_id, agent_name, type, message, severity, resolved, created_at, resolved_at`
+const alertColumns = `id, agent_id, agent_name, type, message, severity, resolved, created_at, resolved_at, project`
 
 func (s *Store) CreateAlert(alert *models.Alert) error {
 	_, err := s.db.Exec(`
-		INSERT INTO alerts (id, agent_id, agent_name, type, message, severity, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO alerts (id, agent_id, agent_name, type, message, severity, created_at, project)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		alert.ID, alert.AgentID, alert.AgentName, alert.Type,
-		alert.Message, alert.Severity, alert.CreatedAt)
+		alert.Message, alert.Severity, alert.CreatedAt, alert.Project)
 	return err
 }
 
@@ -65,7 +65,7 @@ func (s *Store) queryAlerts(query string, args ...any) ([]models.Alert, error) {
 		var resolvedAt sql.NullTime
 		if err := rows.Scan(&alert.ID, &alert.AgentID, &alert.AgentName, &alert.Type,
 			&alert.Message, &alert.Severity, &alert.Resolved,
-			&alert.CreatedAt, &resolvedAt); err != nil {
+			&alert.CreatedAt, &resolvedAt, &alert.Project); err != nil {
 			return nil, err
 		}
 		alert.ResolvedAt = timePointer(resolvedAt)

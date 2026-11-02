@@ -19,6 +19,7 @@
 package metrics
 
 import (
+	"errors"
 	"syscall"
 )
 
@@ -36,13 +37,15 @@ func (c *Collector) getDiskInfo(path string) (uint64, uint64, error) {
 }
 
 func (c *Collector) getCPUPercent() (float64, error) {
-	return 0.0, nil
+	return 0, errors.New("unsupported platform")
 }
 
 func (c *Collector) getMemoryInfo() (uint64, uint64, error) {
-	return 0, 0, nil
+	return 0, 0, errors.New("unsupported platform")
 }
 
 func (c *Collector) getLoadAvg() []float64 {
-	return []float64{0, 0, 0}
+	return nil
 }
+
+func (c *Collector) getHostUptime() int64 { return 0 }

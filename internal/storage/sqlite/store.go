@@ -22,6 +22,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -42,6 +43,10 @@ type column struct {
 }
 
 var addedColumns = []column{
+	{table: "console_users", name: "projects", spec: "TEXT NOT NULL DEFAULT '[]'"},
+	{table: "alerts", name: "project", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "agents", name: "metrics_detail", spec: "TEXT NOT NULL DEFAULT '{}'"},
+	{table: "containers", name: "observation", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "projects", name: "env", spec: "TEXT NOT NULL DEFAULT ''"},
 	{table: "projects", name: "source", spec: "TEXT NOT NULL DEFAULT ''"},
 	{table: "projects", name: "services", spec: "TEXT NOT NULL DEFAULT '[]'"},
@@ -55,6 +60,20 @@ var addedColumns = []column{
 }
 
 func New(path string) (*Store, error) {
+
+	if path != ":memory:" {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+		if err != nil {
+			return nil, fmt.Errorf("open private database: %w", err)
+		}
+		if err = file.Chmod(0600); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("secure database permissions: %w", err)
+		}
+		if err = file.Close(); err != nil {
+			return nil, err
+		}
+	}
 	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_foreign_keys=on", path)
 
 	db, err := sql.Open("sqlite3", dsn)

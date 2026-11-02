@@ -1,214 +1,68 @@
-# Getting Started
+# Getting started
 
-From nothing to a running deployment and a rollback. You do not need to read the architecture or
-protocol documents first.
+This guide takes a new installation from a source build to its first release. The server hosts the browser workspace and registry; agents build or run applications on their own machines.
 
-Commands are marked with where they run:
+## Prepare the machines
 
-- **[server]** — the machine running the URUFLOW Server
-- **[target]** — a machine that will build or run workloads
+For a source build, install the Go version in [go.mod](../go.mod), Node.js 24, npm and a C compiler for SQLite. The server needs Docker Engine and access to its socket. Builder agents also need Git, the Docker CLI and access to their source repositories. Runner agents need Docker Engine and socket access.
 
-For a single-machine setup, both are the same box.
+Choose a DNS name or address reachable by all agents, such as `uruflow.internal`. Use the same release of the server and agent binaries.
 
-## 1. Prerequisites
+## Build and initialize the server
 
-| Machine | Needs |
-| :--- | :--- |
-| Server | Docker, root, a reachable hostname or IP, free ports for the agent link, webhooks and the registry |
-| Builder | Docker, `git`, and root |
-| Runner | Docker |
+From the repository root:
 
-The server runs as root: it writes `/etc/uruflow` and `/var/lib/uruflow`, and drives the Docker socket
-to host the registry. A builder needs root as well, to install the registry certificate and run
-`docker login`. A runner needs only access to the Docker socket.
-
-The server defaults to `/etc/uruflow/config.yaml`. The agent's default path follows the user: root
-uses `/etc/uruflow/agent.yaml`, anyone else `~/.config/uruflow/agent.yaml`. This guide runs everything
-with `sudo` so the paths match what it shows.
-
-## 2. Install and Initialise the Server
-
-**[server]**
-
-```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-2.5.0-linux-amd64 -o uruflow
-chmod +x uruflow && sudo mv uruflow /usr/local/bin/
-
+```sh
+make build
+sudo install -m 0755 build/uruflow /usr/local/bin/uruflow
 sudo uruflow init --advertise uruflow.internal
+sudo uruflow serve
 ```
 
-`init` writes YAML using secure generated registry and webhook credentials:
+`init` writes `/etc/uruflow/config.yaml` and creates its project directory. `serve` opens the database, prepares PKI, starts the registry and listeners, and serves the embedded frontend. Keep it running while completing setup.
 
-| Flag | Meaning |
-| :--- | :--- |
-| `--advertise` | The name agents dial. It is required and enters the server certificate. |
-| `--registry-host` | The name agents pull from. Defaults to `--advertise`. |
-| `--data-dir` | Runtime state location. Defaults to `/var/lib/uruflow`. |
+For service installation, use [Operations](operations.md#services). Configuration paths and listener defaults are in [Configuration](configuration.md).
 
-Use a name every agent can reach. `localhost` works only if everything runs on one machine.
+## Create the first administrator
 
-## 3. Start URUFLOW
+On the server, open `http://127.0.0.1:9002`. For remote use, configure the operator HTTPS address first, following [Configuration](configuration.md#operator-listener).
 
-**[server]**
+Read the setup token on the server:
 
-```bash
-sudo install -m 0644 packaging/systemd/uruflow.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now uruflow
-sudo uruflow
+```sh
+sudo cat /var/lib/uruflow/web-setup-token
 ```
 
-On first start it generates a certificate authority, issues certificates for itself and the registry,
-and starts `registry:2` with TLS and authentication. Bare `uruflow` opens the operations workspace;
-type `status` there to query the running service. If you installed only the binary, copy the unit from
-[Operations](operations.md#systemd) first.
+Enter the token, choose an administrator username and password, and finish setup. Then sign in. The server consumes the token after creating the first administrator. Add other accounts and project grants in **System → Access**.
 
-Confirm the registry reports healthy before continuing.
+## Enroll an agent
 
-## 4. Enrol an Agent
+1. Open **Agents → Enroll agent** and choose a name and roles.
+2. Install `build/uruflow-agent` as `/usr/local/bin/uruflow-agent` on the target machine.
+3. Run the generated initialization command on that machine.
+4. Download the CA certificate and install it at the path shown by setup, normally `/etc/uruflow/ca.crt`.
+5. Start the agent:
 
-**[server]** — for a single machine, enrol both builder and runner roles.
-
-URUFLOW prints the exact command to run on the target. Type this in the workspace:
-
-```text
-agent add builder-01 --roles builder,runner
+```sh
+sudo uruflow-agent run
 ```
 
-```text
-enrolled builder-01
+Save the enrollment command before closing setup. The CA certificate also remains available from **Agents**. Wait for the agent to show **online** with a recent sample. Repeat for the builders and runners you need.
 
-run this on the target machine:
+## Create a project
 
-  uruflow-agent init \
-    --id a05fb0c7a59d9dee \
-    --key 4a73594bd77adb63c46d64248667da98… \
-    --server uruflow.internal:9001 \
-    --roles builder,runner
+Open **Projects → Create project**. Choose a project name, environment and service source.
 
-then copy the trust root:
+For source builds, select a builder and enter the repository, branch and Dockerfile. For prebuilt services, supply a full `repository@sha256:digest` reference. Select runner agents for deployment workflows.
 
-  scp /var/lib/uruflow/pki/ca.crt <host>:/etc/uruflow/ca.crt
-```
+The project opens on its **Overview** tab. Review services, ports, placement and variables. Use the YAML and variables editors in **Configuration** for the definition and plain or protected values. [Projects](projects.md) explains both files.
 
-The printed `scp` line assumes you can write `/etc/uruflow` on the target. If you cannot, use the
-two-step copy in the next section instead.
+## Deploy and inspect
 
-## 5. Install the Agent
+Choose **Deploy**. The release page shows progress, artifacts, runner outcomes and logs. Follow the result there; starting a release and completing it are separate events.
 
-**[target]**
+Open the project's **Graph** tab for its runtime or delivery graph. The fleet graph is on **Overview**. Open a container to inspect its resources, networking, storage, health and logs. A release continues when you close the browser.
 
-```bash
-curl -fsSL https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-agent-2.5.0-linux-amd64 -o uruflow-agent
-chmod +x uruflow-agent && sudo mv uruflow-agent /usr/local/bin/
+After a successful release, the project history provides artifacts for a later restore. See [Deployments](deployments.md) for readiness, replacement and rollback.
 
-sudo uruflow-agent init \
-  --id     <agent-id> \
-  --key    <agent-key> \
-  --server uruflow.internal:9001 \
-  --roles  builder,runner
-```
-
-`init` creates `/etc/uruflow`, owned by root. Copy the trust root into it in two steps, then install
-and start the agent service:
-
-```bash
-scp <server>:/var/lib/uruflow/pki/ca.crt /tmp/ca.crt
-sudo mv /tmp/ca.crt /etc/uruflow/ca.crt
-
-sudo install -m 0644 packaging/systemd/uruflow-agent.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now uruflow-agent
-```
-
-If the target has only the released agent binary, copy the agent unit from
-[Operations](operations.md#systemd). For a temporary foreground test, `sudo uruflow-agent run` still
-works and now prints the same lines it saves to `/var/log/uruflow-agent.log`.
-
-Within a few seconds, `agent list` in the workspace shows it **online** with its roles. If it does not, the
-agent log states why — see [Troubleshooting](troubleshooting.md#agent-will-not-connect).
-
-Run a builder as root. Without it the registry certificate cannot be installed and pushes fail with a
-certificate error.
-
-## 6. Create a Project
-
-**[server]** — run `project create demo prod` in the workspace, or create
-`/etc/uruflow/projects/demo/prod.yaml` using the example in [Projects](projects.md#3-file-layout).
-Use `builder-01` as both builder and runner for this single-machine example. Create or edit it in the
-workspace, then inspect the loaded result:
-
-```text
-project create demo prod
-project edit demo-prod
-project show demo-prod
-```
-
-The loader rejects unknown agents, role mismatches, invalid workflows and malformed service models.
-
-## 7. Deploy
-
-Start the deployment in the workspace. Its response follows live output until completion:
-
-```text
-project deploy demo-prod
-```
-
-The process updates as it moves:
-
-```text
-◉ build ── ○ push ── ○ release      cloning and building
-● build ── ● push ── ◉ release      pushed, rolling out
-● build ── ● push ── ● release      live
-```
-
-Use `release list` and `release follow <id>` to inspect or reattach later.
-
-## 8. Verify
-
-**[server]** — `container list` in the workspace should show the project container as `running`, and
-`healthy` if the image declares a `HEALTHCHECK`. Stream application output with `container logs
-builder-01 <container-id> --follow`.
-
-From a shell:
-
-```bash
-curl http://<runner>:8080/
-docker ps --filter label=uruflow.managed=true
-```
-
-## 9. Roll Back
-
-Deploy a second time so there is history, then run:
-
-```text
-project rollback demo-prod
-```
-
-Rollback re-releases the image from the last successful release. It does not rebuild, so what returns
-is byte-identical to what ran before.
-
-```text
-r2  succeeded  demo@sha256:8f2a…   ← current
-r1  succeeded  demo@sha256:1c9d…   ← rollback releases this
-```
-
-Rollback fails with `no successful release to roll back to` if the project has never had one.
-
-## 10. Deploy on Push
-
-Add a webhook at your git host pointing to `https://<server>:9000/webhook`, using the `webhook.secret`
-from `config.yaml`. Pushes to a project's branch then deploy it automatically.
-
-See [Configuration](configuration.md#8-webhooks) for GitHub and GitLab setup and how pushes are matched.
-
-## Where to Next
-
-| You want to | Read |
-| :--- | :--- |
-| Run several environments of one service | [Projects](projects.md) |
-| Understand what happens during a release | [Deployments](deployments.md) |
-| Run this as a service and back it up | [Operations](operations.md) |
-| Evaluate the trust model | [Security](security.md) |
-| Understand or change the code | [Architecture](architecture.md) |
-| Look up a key or symbol | [Terminal Interface](interface.md) |
+Related: [Browser workspace](interface.md), [Operations](operations.md), [Troubleshooting](troubleshooting.md).

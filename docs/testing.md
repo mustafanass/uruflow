@@ -1,63 +1,126 @@
 # Testing
 
-Tests live with the package that owns the behavior. Cross-package tests cover only the integration
-between those packages.
+URUFLOW keeps tests with the package that owns behavior. The browser migration preserves the existing approach: a deterministic default gate, explicit infrastructure lanes, race checks for concurrency, and a separate visual preview.
 
-## Default suite
+## Default validation pass
 
-```bash
+Install the Go version in [go.mod](../go.mod), a C compiler, Node.js 24 and npm. From the repository root:
+
+```sh
+make frontend-deps
+make fmt
 make check
+make build
 ```
 
-The default suite runs formatting verification, `go vet ./...`, and `go test ./...`. It cannot depend
-on Docker, the external network, root privileges, fixed ports, or operator input. Local temporary
-files, SQLite databases, and test-assigned listeners are allowed.
+Run the pass after implementation. Fix failures before repeating the affected checks. CI runs the same `make check` and `make build` commands.
+
+| Command      | Checks                                                                  |
+| ------------ | ----------------------------------------------------------------------- |
+| `make fmt`   | Format Go and frontend files                                            |
+| `make test`  | Deterministic Go and frontend behavior tests                            |
+| `make check` | Go formatting, vet and tests; TypeScript, frontend tests and formatting |
+| `make build` | Production frontend plus server and agent binaries                      |
+
+Dependency installation may fetch packages. The deterministic tests themselves must not require Docker, external network access, root, fixed ports or operator input. Temporary files, SQLite databases and test-assigned loopback listeners are allowed.
 
 ## Test ownership
 
-| Behavior | Owning test package |
-| :--- | :--- |
-| Command syntax, validation, usage and interaction metadata | `internal/grammar` |
-| Completion stages and resource projection | `internal/workbench` completion tests |
-| Inline YAML editing and recovery | `internal/workbench` editor tests |
-| Workspace rendering and terminal width | `internal/workbench` view tests |
-| Release lifecycle, concurrency, integrity, services and secrets | Focused `internal/pipeline` test files |
-| UFP framing, authentication and payload compatibility | `internal/ufp` |
-| Persistence, migrations and reconciliation | `internal/storage/sqlite` |
-| Docker-backed runtime behavior | `live` tests |
+| Behavior                                                         | Owner                                                    |
+| ---------------------------------------------------------------- | -------------------------------------------------------- |
+| Command usage and local administrator recovery                   | `internal/cli`                                           |
+| HTTP sessions, CSRF, roles, grants, audit and scoped streams     | `internal/web`                                           |
+| Document revisions and application coordination                  | `internal/ops`                                           |
+| Derived health, topology and redaction                           | `internal/observe`                                       |
+| YAML, variables, validation and atomic file editing              | `internal/projects`                                      |
+| Release lifecycle, reservations, timeout, integrity and rollback | Focused `internal/pipeline` tests                        |
+| Framing, handshake, role and payload contract                    | `internal/ufp`, with link composition in `internal/link` |
+| Persistence, migrations, revisions and reconciliation            | `internal/storage/sqlite`                                |
+| Agent job coordination and runtime policy                        | `internal/agent`                                         |
+| Browser layout persistence and presentation rules                | `frontend/tests`                                         |
+| Docker, registry and real replacement behavior                   | Explicit integration and live tests                      |
 
-Add tests for protocol, persistence, security, deployment state, concurrency, untrusted input, and
-confirmed regressions. Avoid tests for accessors, cosmetic text, or behavior already owned elsewhere.
+Add tests for protocol, persistence, security, deployment state, concurrency, untrusted input and confirmed regressions. Avoid trivial accessors, cosmetic text snapshots and duplicate ownership. Keep fixtures in the same package and split test files by behavior.
 
-## Integration suite
+## Integration lane
 
-```bash
+```sh
+docker info
 make test-integration
 ```
 
-Integration tests use the `integration` build tag and may compose several packages or start managed
-infrastructure. They require Docker.
+The `integration` build tag composes application packages and uses temporary configuration and databases. Docker is explicit through `URUFLOW_DOCKER_TESTS=1`. Run this lane for server composition, persisted document changes, registry lifecycle and agent integration.
 
-## Live Docker suite
+## Live Docker lane
 
-```bash
+```sh
 make test-live
 ```
 
-Live tests use the `live` build tag and exercise Docker, the registry, image pulls, readiness,
-replacement, and rollback. They use isolated resource names and register cleanup before mutation.
+The `live` tag exercises a real Docker daemon, registry, pulls, readiness, exited-container logs, multi-service replacement and restoration. It may pull test images. Tests use isolated resource names and register cleanup before mutation. Run this lane when Docker, registry, agent runtime or deployment behavior changes.
 
-## Race and preview suites
+Verify prerequisites and inspect skipped tests. A skipped infrastructure test is not evidence that the behavior passed.
 
-```bash
+## Race lane
+
+```sh
 make test-race
+```
+
+Run for sessions, streams, protocol, agent links, pipeline state and storage coordination. Keep race detection separate from the default suite so its cost and environment remain explicit.
+
+## Browser preview
+
+```sh
 make test-preview
 ```
 
-Run the race suite for concurrency, streaming, protocol, link, pipeline, control, and workbench
-changes. Preview tests print representative terminal output for manual inspection.
+This builds the frontend and starts the integration-tagged browser fixture at `http://127.0.0.1:19002`. It uses temporary state, prints test-only credentials and sample projects, and requires Docker discovery. It does not dispatch real workloads or start its own registry. The preview is a visual review environment, not an end-to-end deployment test.
 
-## File structure
+The fixture defaults to 30 minutes. Set `URUFLOW_BROWSER_QA_STOP` to a marker path before starting, then create that file to stop it. Set `URUFLOW_BROWSER_QA_LARGE=1` for the larger agent inventory.
 
-Keep shared fixtures in a named helper file in the same package. Split files by behavior, using names
-such as `concurrency_test.go`, `integrity_test.go`, `editor_test.go`, or `view_test.go`.
+For live reconnect review:
+
+```sh
+URUFLOW_BROWSER_QA_RESTART=/tmp/uruflow-browser-restart make test-preview
+```
+
+While signed in, create that marker file from another terminal. The fixture consumes it and restarts the web listener against the same database. The browser should reconnect without reloading or losing a valid session. Store-and-handler restart tests separately verify persistence after reopening SQLite.
+
+## Browser scenarios
+
+Review changed flows with a real browser at desktop and narrow widths. Check system, light and dark themes, keyboard navigation and reduced motion where affected.
+
+For this workspace, regression review includes:
+
+- Anonymous entry, first-admin setup, sign-in, password changes, scoped accounts and revocation.
+- Project summary, service definitions in the graph inspector, release details and compatibility with existing Services-tab links.
+- Fleet, runtime and delivery graph relationships, host expansion, search through collapsed hosts, focus and attachment controls.
+- Fleet server-to-agent and agent-to-project paths without redundant server-to-project edges; build links, stale placements and unassigned projects remain accurate.
+- Two-axis trackpad panning without changing zoom or scrolling the page, pinch and modified-scroll zoom, mouse dragging and inspector scrolling.
+- Non-overlapping card geometry, unavailable versus zero metrics, and live measurements without position or viewport changes.
+- Saved graph layouts across reloads and card-size migration, consistent fit/reset framing and expanded graphs at desktop and narrow widths.
+- Graph autosave after dragging and keyboard movement, persistence across reloads, retry after browser storage failure, and deployment and navigation remaining available.
+- Configuration validation, unsaved-edit navigation and recovery after a revision conflict.
+- One-time enrollment command protection and the permanent CA download.
+- Live reconnect after listener restart and responsive actions with multiple browser tabs.
+- Container disappearance while loaded logs remain visible, independent stdout/stderr cursor resume, batched replay after hidden tabs, dropped streams, terminal stream errors, completion and downloads.
+- Fleet and project overviews with empty, degraded, stale and large observations; service readiness agrees with the infrastructure graph, and completed jobs remain visible after container cleanup.
+- Graph pan and zoom retained while the inspector opens, accessible tabs, first-admin sign-in retry and cross-tab theme changes.
+- Independent filtering, sorting and pagination when a page contains several tables.
+- Five primary destinations, ownership of direct resource links and redirects from retired index pages.
+- Simultaneous configuration and variable edits: saving or discarding one must preserve the other’s navigation guard.
+- Combined release overview, first and subsequent release diffs, saved-definition access and stable tab selection during live progress.
+- Scoped active and resolved alert history, event filters, and administrator-only audit access under System.
+- Account-menu keyboard navigation, focus restoration, theme changes, password changes and sign-out confirmations.
+- Read-only editors during pending saves and idle workspace rendering without a one-second update loop.
+- Compressed asset negotiation, identity fallback, HEAD responses and matching decoded content.
+- Empty fleets, unavailable metrics and state-dependent actions.
+
+Use controlled responses to force browser error states when needed. Use real Docker and authenticated UFP agents for claims about deployment execution; browser fixtures verify presentation and interaction.
+
+## Evidence for a change
+
+Record the affected behavior, success and failure cases, commands, environment and relevant browser results in the change description. Keep generated assets, screenshots, credentials and temporary databases out of source control. Test counts belong to runner output, not a handwritten documentation total.
+
+Related: [Contributing](../CONTRIBUTING.md), [Architecture](architecture.md), [Upgrading](upgrading.md).

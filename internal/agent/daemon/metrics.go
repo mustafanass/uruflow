@@ -21,6 +21,7 @@ package daemon
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/agent/runner"
@@ -52,6 +53,7 @@ func (d *Daemon) reportMetrics(ctx context.Context) {
 }
 
 func (d *Daemon) publishMetrics(ctx context.Context) {
+	sampledAt := time.Now()
 	system, err := d.metrics.Collect()
 	if err != nil {
 		logger.Error("[AGENT] metrics collection failed: %v", err)
@@ -60,8 +62,10 @@ func (d *Daemon) publishMetrics(ctx context.Context) {
 
 	containers, available := d.collectContainers(ctx)
 	payload := ufp.Metrics{
-		Timestamp: time.Now().Unix(),
+		Timestamp: sampledAt.Unix(),
 		System: ufp.SystemMetrics{
+			MetricsSec: d.cfg.Server.MetricsSec,
+			Available:  system.Available, Errors: system.Errors, CPUCores: system.CPUCores, HostUptime: system.HostUptime,
 			CPUPercent:    system.CPUPercent,
 			MemoryPercent: system.MemoryPercent,
 			MemoryUsed:    system.MemoryUsed,
@@ -96,7 +100,8 @@ func (d *Daemon) collectContainers(ctx context.Context) ([]ufp.ContainerStatus, 
 		}
 
 		status := ufp.ContainerStatus{
-			ID:           shortID(container.ID),
+			ID:           container.ID,
+			Details:      container.Details,
 			Name:         container.Name,
 			Project:      container.Project,
 			Service:      container.Service,
@@ -107,20 +112,39 @@ func (d *Daemon) collectContainers(ctx context.Context) ([]ufp.ContainerStatus, 
 			StartedAt:    container.StartedAt,
 		}
 
-		if container.State == "running" {
-			statsCtx, stop := context.WithTimeout(ctx, statsTimeout)
-			if stats, err := d.docker.Stats(statsCtx, container.ID); err == nil {
-				status.CPUPercent = stats.CPUPercent
-				status.MemoryUsage = stats.MemoryUsage
-				status.MemoryLimit = stats.MemoryLimit
-				status.NetworkRx = stats.NetworkRx
-				status.NetworkTx = stats.NetworkTx
-			}
-			stop()
-		}
-
 		reported = append(reported, status)
 	}
+
+	statsCtx, stopAll := context.WithTimeout(ctx, statsTimeout)
+	defer stopAll()
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, 4)
+	for index := range reported {
+		if reported[index].State != "running" {
+			continue
+		}
+		select {
+		case slots <- struct{}{}:
+		case <-statsCtx.Done():
+			wg.Wait()
+			return reported, true
+		}
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			stats, err := d.docker.Stats(statsCtx, reported[index].ID)
+			if err != nil {
+				return
+			}
+			status := &reported[index]
+			status.StatsAvailable = true
+			status.CPUPercent, status.MemoryUsage, status.MemoryLimit = stats.CPUPercent, stats.MemoryUsage, stats.MemoryLimit
+			status.NetworkRx, status.NetworkTx = stats.NetworkRx, stats.NetworkTx
+			status.PIDs, status.BlockRead, status.BlockWrite = stats.PIDs, stats.BlockRead, stats.BlockWrite
+		}(index)
+	}
+	wg.Wait()
 
 	return reported, true
 }

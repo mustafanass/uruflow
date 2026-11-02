@@ -23,11 +23,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/gin-gonic/gin"
 	"github.com/mustafanass/uruflow/internal/activity"
 	"github.com/mustafanass/uruflow/internal/api/handlers"
 	"github.com/mustafanass/uruflow/internal/api/middleware"
@@ -293,7 +294,7 @@ func (s *Server) orphans(loaded []models.Project) []projects.Problem {
 		}
 		orphaned = append(orphaned, projects.Problem{
 			Path:   project.Source,
-			Reason: fmt.Errorf("%s came from this file, which is gone — press d to remove the project", project.Name),
+			Reason: fmt.Errorf("%s came from this file, which is gone; restore its environment file to manage this project", project.Name),
 		})
 	}
 	return orphaned
@@ -323,13 +324,18 @@ func (s *Server) Registry() *registry.Registry { return s.registry }
 func (s *Server) Pipeline() *pipeline.Pipeline { return s.pipeline }
 
 func (s *Server) routes() http.Handler {
-	router := mux.NewRouter()
+	router := gin.New()
+	router.HandleMethodNotAllowed = true
+	router.RedirectTrailingSlash = false
+	_ = router.SetTrustedProxies(nil)
+	router.Use(middleware.Logging(), middleware.Recovery())
 	webhook := handlers.NewWebhookHandler(s.webhook)
 
-	router.HandleFunc(s.cfg.Webhook.Path, webhook.Handle).Methods(http.MethodPost)
-	router.HandleFunc("/health", handlers.Health).Methods(http.MethodGet)
+	router.POST(s.cfg.Webhook.Path, webhook.Handle)
+	router.GET("/health", handlers.Health)
+	router.HEAD("/health", handlers.Health)
 
-	return middleware.Recovery(middleware.Logging(router))
+	return router
 }
 
 func preparePKI(cfg *config.Config) (string, error) {
@@ -341,6 +347,11 @@ func preparePKI(cfg *config.Config) (string, error) {
 	serverNames := []string{ufp.ServerName, "localhost", "127.0.0.1"}
 	if cfg.Server.Advertise != "" {
 		serverNames = append(serverNames, cfg.Server.Advertise)
+	}
+	if cfg.Web.PublicURL != "" {
+		if origin, err := url.Parse(cfg.Web.PublicURL); err == nil {
+			serverNames = append(serverNames, origin.Hostname())
+		}
 	}
 	if err := authority.EnsureLeaf(pki.Material{
 		CertPath: cfg.ServerCertPath(),

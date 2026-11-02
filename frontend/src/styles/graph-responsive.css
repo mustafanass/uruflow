@@ -1,0 +1,127 @@
+.graph-workspace.is-expanded {
+  position: fixed;
+  inset: 12px;
+  height: auto;
+  z-index: 100;
+  margin: 0;
+  box-shadow: 0 0 0 20px color-mix(in srgb, var(--navy) 30%, transparent);
+}
+@media (min-width: 761px) {
+  .graph-workspace:not(.is-expanded) {
+    min-height: 82dvh;
+  }
+}
+@media (max-width: 1250px) {
+  .graph-count {
+    display: none;
+  }
+  .graph-inspector {
+    width: 300px;
+    min-width: 300px;
+  }
+  .graph-legend {
+    font-size: 11px;
+    gap: 8px;
+  }
+  .graph-toolbar {
+    gap: 9px;
+  }
+}
+@media (max-width: 1020px) {
+  .graph-inspector {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 9;
+    width: min(340px, 100%);
+    min-width: 0;
+    box-shadow: -8px 0 25px color-mix(in srgb, var(--shadow) 6%, transparent);
+  }
+  .graph-toolbar .button {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+@media (max-width: 760px) {
+  .graph-toolbar {
+    gap: 7px;
+    padding: 10px;
+  }
+  .graph-toolbar .filter-input {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .graph-toolbar .toolbar-actions {
+    flex: 1;
+    gap: 5px;
+    margin-left: 0;
+  }
+  .graph-toolbar .toolbar-actions > .graph-zoom {
+    margin-left: auto;
+  }
+  .graph-layout-actions {
+    margin-left: 0;
+    gap: 4px;
+  }
+  .graph-footnote {
+    flex-wrap: wrap;
+    font-size: 11px;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .graph-footnote > span:last-child {
+    margin-left: auto;
+  }
+  .graph-layout-status {
+    font-size: 11px;
+  }
+  .graph-legend {
+    display: none;
+  }
+  .react-flow__minimap {
+    transform: scale(0.8);
+    transform-origin: bottom right;
+    bottom: 8px !important;
+    right: 8px !important;
+  }
+}
+@media (max-width: 510px) {
+  .graph-tool-label {
+    display: none;
+  }
+  .graph-inspector {
+    width: 100%;
+  }
+  .graph-toolbar .toolbar-actions {
+    gap: 4px;
+  }
+  .graph-layout-actions .button {
+    font-size: 11px;
+    padding: 6px 7px;
+  }
+  .graph-layout-actions .button > svg {
+    display: none;
+  }
+  .graph-workspace.is-expanded {
+    inset: 0;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+.graph-expand-label {
+  display: none;
+}
+@media (max-width: 600px) {
+  .graph-layout-actions > .icon-button:has(.graph-expand-label) {
+    width: auto;
+    gap: 5px;
+    padding-inline: 7px;
+  }
+  .graph-expand-label {
+    display: inline;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+}

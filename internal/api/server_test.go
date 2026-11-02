@@ -19,6 +19,7 @@
 package api
 
 import (
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,5 +56,18 @@ func TestMissingKeyMaterialFailsClosed(t *testing.T) {
 	}
 	if err := validateKeyMaterial(cfg, store); err == nil || !strings.Contains(err.Error(), "secret encryption key") {
 		t.Fatal("missing vault key was replaced while encrypted secrets existed")
+	}
+}
+
+func TestWebhookListenerDoesNotExposeOperatorRoutes(t *testing.T) {
+	server := &Server{cfg: config.Default()}
+	handler := server.routes()
+	for _, path := range []string{"/", "/api/session", "/api/snapshot", "/projects"} {
+		req := httptest.NewRequest("GET", path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != 404 {
+			t.Fatalf("operator path %s exposed on webhook listener: %d", path, response.Code)
+		}
 	}
 }

@@ -21,6 +21,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,12 +36,12 @@ const (
 	DefaultDataDir    = "/var/lib/uruflow"
 	DefaultUFPPort    = 9001
 	DefaultHTTPPort   = 9000
+	DefaultWebPort    = 9002
 	DefaultRegistry   = 5000
 	DefaultNamespace  = "uruflow"
 	RegistryImage     = "registry:2"
 	DatabaseFile      = "uruflow.db"
 	LogFile           = "uruflow.log"
-	ControlSocketFile = "control.sock"
 )
 
 type Config struct {
@@ -49,6 +50,16 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Registry RegistryConfig `yaml:"registry"`
 	Webhook  WebhookConfig  `yaml:"webhook"`
+	Web      WebConfig      `yaml:"web,omitempty"`
+}
+
+type WebConfig struct {
+	Host      string `yaml:"host"`
+	Port      int    `yaml:"port"`
+	TLS       bool   `yaml:"tls"`
+	Cert      string `yaml:"cert,omitempty"`
+	Key       string `yaml:"key,omitempty"`
+	PublicURL string `yaml:"public_url,omitempty"`
 }
 
 type ServerConfig struct {
@@ -87,6 +98,7 @@ func Default() *Config {
 
 func defaults() *Config {
 	return &Config{
+		Web: WebConfig{Host: "127.0.0.1", Port: DefaultWebPort},
 		Server: ServerConfig{
 			Host:     "0.0.0.0",
 			UFPPort:  DefaultUFPPort,
@@ -142,6 +154,25 @@ func (c *Config) Save(path string) error {
 }
 
 func (c *Config) Validate() error {
+	if c.Web.PublicURL != "" {
+		u, err := url.Parse(c.Web.PublicURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return fmt.Errorf("web.public_url must be an HTTP or HTTPS origin")
+		}
+		if u.Scheme == "http" {
+			host := u.Hostname()
+			ip := net.ParseIP(host)
+			if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+				return fmt.Errorf("web.public_url must use HTTPS outside localhost")
+			}
+		}
+	}
+	if !strings.HasPrefix(c.Webhook.Path, "/") || strings.ContainsAny(c.Webhook.Path, ":*{}?#\\\r\n") {
+		return fmt.Errorf("webhook.path must be a literal absolute URL path")
+	}
+	if c.Webhook.Path == "/api" || strings.HasPrefix(c.Webhook.Path, "/api/") {
+		return fmt.Errorf("webhook.path cannot use the operator API namespace")
+	}
 	if c.Registry.Host == "" {
 		return fmt.Errorf("registry.host is required: agents must be able to reach the registry by this name")
 	}
@@ -164,6 +195,7 @@ func (c *Config) Validate() error {
 		"server.ufp_port":  c.Server.UFPPort,
 		"server.http_port": c.Server.HTTPPort,
 		"registry.port":    c.Registry.Port,
+		"web.port":         c.Web.Port,
 	} {
 		if port < 1 || port > 65535 {
 			return fmt.Errorf("%s is outside the valid range", label)
@@ -177,6 +209,22 @@ func (c *Config) Validate() error {
 	}
 	if !strings.HasPrefix(c.Webhook.Path, "/") || strings.ContainsAny(c.Webhook.Path, " \t\r\n") {
 		return fmt.Errorf("webhook.path is invalid")
+	}
+	if c.Web.Port == c.Server.HTTPPort || c.Web.Port == c.Server.UFPPort || c.Web.Port == c.Registry.Port {
+		return fmt.Errorf("web.port must be separate from webhook, UFP and registry ports")
+	}
+	if (c.Web.Cert == "") != (c.Web.Key == "") {
+		return fmt.Errorf("web.cert and web.key must be set together")
+	}
+	if !c.Web.TLS && c.Web.Cert != "" {
+		return fmt.Errorf("web certificates require web.tls")
+	}
+	if !c.Web.TLS {
+		host := strings.Trim(c.Web.Host, "[]")
+		address := net.ParseIP(host)
+		if host != "localhost" && (address == nil || !address.IsLoopback()) {
+			return fmt.Errorf("web.tls may only be disabled on a loopback web.host")
+		}
 	}
 	if (c.Webhook.Cert == "") != (c.Webhook.Key == "") {
 		return fmt.Errorf("webhook.cert and webhook.key must be set together")
@@ -244,10 +292,6 @@ func (c *Config) LogPath() string {
 	return filepath.Join(c.Server.DataDir, LogFile)
 }
 
-func (c *Config) ControlSocketPath() string {
-	return filepath.Join(c.Server.DataDir, ControlSocketFile)
-}
-
 func (c *Config) PKIDir() string {
 	return filepath.Join(c.Server.DataDir, "pki")
 }
@@ -285,6 +329,12 @@ func (c *RegistryConfig) Repository(project string) string {
 
 func (c *Config) normalize() {
 	base := defaults()
+	if c.Web.Host == "" {
+		c.Web.Host = base.Web.Host
+	}
+	if c.Web.Port == 0 {
+		c.Web.Port = base.Web.Port
+	}
 	if c.Server.Host == "" {
 		c.Server.Host = base.Server.Host
 	}
@@ -312,4 +362,12 @@ func (c *Config) normalize() {
 	if c.Webhook.Path == "" {
 		c.Webhook.Path = base.Webhook.Path
 	}
+}
+
+func (c *Config) WebAddr() string { return net.JoinHostPort(c.Web.Host, fmt.Sprint(c.Web.Port)) }
+func (c *Config) WebCertificatePaths() (string, string) {
+	if c.Web.Cert != "" {
+		return c.Web.Cert, c.Web.Key
+	}
+	return c.ServerCertPath(), c.ServerKeyPath()
 }

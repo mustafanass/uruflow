@@ -50,3 +50,45 @@ func TestLoadDoesNotRegenerateMissingCredentials(t *testing.T) {
 		t.Fatalf("validation error = %v", err)
 	}
 }
+
+func TestWebInterfaceIsPrivateUnlessTLSExplicitlyEnabled(t *testing.T) {
+	cfg := Default()
+	cfg.Server.Advertise = "control.test"
+	cfg.Registry.Host = "control.test"
+	if cfg.WebAddr() != "127.0.0.1:9002" {
+		t.Fatalf("unsafe default: %s", cfg.WebAddr())
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Web.Host = "0.0.0.0"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("plaintext public listener accepted")
+	}
+	cfg.Web.TLS = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Web.Port = cfg.Server.HTTPPort
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("webhook and operator ports overlap")
+	}
+}
+
+func TestWebPublicOriginRequiresHTTPS(t *testing.T) {
+	cfg := Default()
+	cfg.Server.Advertise = "localhost"
+	cfg.Registry.Host = "localhost"
+	cfg.Web.PublicURL = "http://console.example.com"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("plaintext external public URL accepted")
+	}
+	cfg.Web.PublicURL = "https://console.example.com"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Web.PublicURL = "https://console.example.com/subpath"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("non-origin public URL accepted")
+	}
+}

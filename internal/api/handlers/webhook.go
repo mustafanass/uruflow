@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/mustafanass/uruflow/internal/services"
 	"github.com/mustafanass/uruflow/pkg/helper"
 	"github.com/mustafanass/uruflow/pkg/logger"
@@ -37,11 +38,13 @@ func NewWebhookHandler(service *services.WebhookService) *WebhookHandler {
 	return &WebhookHandler{service: service}
 }
 
-func Health(w http.ResponseWriter, r *http.Request) {
+func Health(c *gin.Context) {
+	w := c.Writer
 	helper.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookHandler) Handle(c *gin.Context) {
+	w, r := c.Writer, c.Request
 	payload, err := io.ReadAll(io.LimitReader(r.Body, maxPayloadSize+1))
 	if err != nil {
 		helper.WriteError(w, http.StatusBadRequest, "cannot read request body")
