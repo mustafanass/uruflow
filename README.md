@@ -3,369 +3,144 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mustafanass/uruflow/releases"><img src="https://img.shields.io/badge/release-v2.5.0-2DD4BF?style=flat-square" alt="release"></a>
+  <a href="internal/version/version.go"><img src="https://img.shields.io/badge/version-v3.0.0-2DD4BF?style=flat-square" alt="source version 3.0.0"></a>
+  <a href="https://github.com/mustafanass/uruflow/actions/workflows/quality.yml"><img src="https://img.shields.io/github/actions/workflow/status/mustafanass/uruflow/quality.yml?branch=main&style=flat-square&label=quality" alt="quality"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
   <a href="docs/protocol.md"><img src="https://img.shields.io/badge/protocol-ufp-F5A524?style=flat-square" alt="ufp protocol"></a>
 </p>
 
+<p align="center">
+  <a href="docs/getting-started.md">Getting started</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="docs/security.md">Security</a> ·
+  <a href="https://github.com/mustafanass/uruflow/releases">Releases</a>
+</p>
+
 <br>
 
-URUFLOW builds a commit once on a builder machine, stores the resulting image in a private registry it
-runs itself, and releases that exact image across one or more runner machines. Builders and runners are
-separate roles with different authority: builders see source code, runners receive only images.
+URUFLOW is a self-hosted deployment control plane for Docker hosts. One server serves the browser
+workspace, coordinates releases and manages a private image registry. Builder agents turn source
+into images. Runner agents deploy the recorded image digests on their own machines.
 
-Its control plane runs continuously as a service. Operators use one full-screen terminal workspace
-for commands, status, YAML input, and live process output; the workspace reaches the service through
-a root-only local control socket. Agents communicate over UFP, a small binary protocol carried on TLS.
+Project YAML and variable files define what to run. SQLite holds access, release history and
+observations. The React workspace is embedded in the server binary; agents report live state from
+their hosts.
+
+## What it does
+
+- **Release by digest.** Build each source-backed service once per release, or deploy a prebuilt image by digest.
+- **Check readiness.** Retain previous service containers until the runner's full release sequence succeeds.
+- **Restore without rebuilding.** Create a new release from a successful release's recorded images and specification.
+- **See where things run.** Live fleet and project graphs connect configuration with agent and container observations.
+- **Inspect the result.** Follow release progress, runner outcomes, resource use and reconnecting log streams.
+- **Control access.** Administrator, operator and viewer roles, project grants, audit records and encrypted secrets. Agents connect over TLS 1.3 UFP with HMAC authentication.
+
+## Architecture
 
 <p align="center">
   <a href="assets/uruflow-arch.png">
-    <img src="assets/uruflow-arch.png" alt="URUFLOW architecture: the server, builder and runner agents and the private registry; the UFP frame and envelopes; the deployment flow; and the components on each side">
+    <img src="assets/uruflow-arch.png" width="1100" alt="URUFLOW architecture: the browser uses the server's protected web API; builder and runner agents exchange control messages over UFP; images move through the managed registry. Each runner pulls images, stops and renames existing containers, starts replacements and checks readiness before cleanup or recovery.">
   </a>
 </p>
 
-<p align="center">
-  <sub>Click to enlarge. The release lifecycle is detailed in
-  <a href="docs/deployments.md">Deployments</a>, the wire format in
-  <a href="docs/protocol.md">UFP Protocol</a>.</sub>
-</p>
+<p align="center"><sub>Click to enlarge. <a href="assets/uruflow-arch.svg">Vector diagram</a> · <a href="docs/architecture.md">Ownership and system flows</a> · <a href="docs/deployments.md">Release and recovery behavior</a></sub></p>
 
-## Why URUFLOW
-
-Most small deployment tools build on every target machine. Each server then needs your source code, a
-build toolchain and spare capacity, and you cannot be certain two machines are running the same bytes.
-
-URUFLOW builds once and ships the artifact:
-
-| | Build on each target | URUFLOW |
-| :--- | :--- | :--- |
-| Source code | On every machine | On the builder only |
-| Build toolchain | On every machine | On the builder only |
-| Identical bytes everywhere | Not guaranteed | Guaranteed — one image, released by digest |
-| Rollback | Rebuild an old commit | Re-release a stored image |
-| Cost of adding a machine | Another full build | One pull |
-
-## How It Works
-
-A release runs in two stages.
-
-**Build.** The server sends `build.run` to the project's builder. The builder checks out each
-service-owned repository, builds every source-backed service, tags its image
-with the resolved commit and `latest`, pushes it, and records an immutable digest and source commit
-for each service. Build output streams back as it happens.
-
-**Release.** The server validates every registry digest and sends one `release.run` model to every
-runner. Each runner prepares declared resources, runs jobs and replaces long-running services in
-dependency order under the safety procedure below. A release completes when every runner has
-reported.
-
-Rollback skips the build stage entirely and re-releases the image recorded on an earlier successful
-release, so what returns is byte-identical to what ran before.
-
-For the complete lifecycle and every failure boundary, see [Deployments](docs/deployments.md). For
-the production project schema, see [Native Build Model](docs/native-build-model.md).
+| Listener            | Default          | Used by                                                        |
+| :------------------ | :--------------- | :------------------------------------------------------------- |
+| Web workspace       | `127.0.0.1:9002` | Browser API, sessions and live streams; HTTPS outside loopback |
+| UFP                 | `9001`           | Agents, over TLS 1.3                                           |
+| Webhooks and health | `9000`           | GitHub, GitLab and monitors                                    |
+| Registry            | `5000`           | Agents, with TLS and authentication                            |
 
 ## Installation
 
-Latest release: **v2.5.0** · Linux amd64 and arm64 · statically linked, no runtime dependencies.
+| Binary          | Install on                                                 |
+| :-------------- | :--------------------------------------------------------- |
+| `uruflow`       | One Linux server with Docker                               |
+| `uruflow-agent` | Each builder or runner host; one agent can hold both roles |
 
-There are **two different binaries and they are not interchangeable** — installing the wrong one on a
-machine is the most common setup mistake:
+The server and runners need Docker Engine and socket access. Builders also need Git, the Docker
+CLI and access to their source repositories.
 
-| Binary | Install on | Role |
-| :--- | :--- | :--- |
-| `uruflow` | the server, one machine | control plane, private registry, and operations workspace |
-| `uruflow-agent` | every builder and runner machine | runs builds, pulls images, releases containers |
+### Download v3.0.0
 
-Check the architecture of each machine before downloading:
+Choose `amd64` for x86-64 or `arm64` for ARM64. Each archive contains one binary, its service unit and the license.
 
-```bash
-uname -m      # x86_64 -> amd64      aarch64 / arm64 -> arm64
+```sh
+version=3.0.0
+arch=amd64
+binary=uruflow
+archive="$binary-$version-linux-$arch.tar.gz"
+base="https://github.com/mustafanass/uruflow/releases/download/v$version"
+curl -fSLO "$base/$archive"
+curl -fSLO "$base/SHA256SUMS.txt"
+sha256sum --check --ignore-missing SHA256SUMS.txt
+tar -xzf "$archive"
+sudo install -m 0755 "$binary" "/usr/local/bin/$binary"
 ```
 
-### Server — `uruflow`
+On builder and runner hosts, set `binary=uruflow-agent` to download and install the agent archive.
 
-**linux/amd64**
+### Build from source
 
-```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-2.5.0-linux-amd64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
-sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-2.5.0-linux-amd64 && sudo mv uruflow-2.5.0-linux-amd64 /usr/local/bin/uruflow
+Use the Go version in [go.mod](go.mod), Node.js 24, npm and a C compiler for SQLite:
+
+```sh
+git clone --branch v3.0.0 --depth 1 https://github.com/mustafanass/uruflow.git
+cd uruflow
+make build
+sudo install -m 0755 build/uruflow /usr/local/bin/uruflow
 ```
 
-**linux/arm64**
+The build writes `build/uruflow` and `build/uruflow-agent`, with the frontend embedded in the server.
+Install `build/uruflow-agent` on agent hosts. Keep the server and agents on the same release.
 
-```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-2.5.0-linux-arm64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
-sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-2.5.0-linux-arm64 && sudo mv uruflow-2.5.0-linux-arm64 /usr/local/bin/uruflow
-```
+## Quick start
 
-### Agent — `uruflow-agent`
+From the extracted archive or source checkout, initialize the Linux server. Replace `uruflow.internal`
+with a hostname or address reachable by your agents:
 
-**linux/amd64**
-
-```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-agent-2.5.0-linux-amd64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
-sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-agent-2.5.0-linux-amd64 && sudo mv uruflow-agent-2.5.0-linux-amd64 /usr/local/bin/uruflow-agent
-```
-
-**linux/arm64**
-
-```bash
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/uruflow-agent-2.5.0-linux-arm64
-curl -fsSL -O https://github.com/mustafanass/uruflow/releases/download/v2.5.0/SHA256SUMS.txt
-sha256sum -c SHA256SUMS.txt --ignore-missing
-chmod +x uruflow-agent-2.5.0-linux-arm64 && sudo mv uruflow-agent-2.5.0-linux-arm64 /usr/local/bin/uruflow-agent
-```
-
-### Checksums
-
-`SHA256SUMS.txt` on the v2.5.0 release page covers every asset, including the `.tar.gz` archives:
-
-```bash
-sha256sum -c SHA256SUMS.txt --ignore-missing
-```
-
-Server and agent must run the same version — they share a UFP wire format. There is no prebuilt macOS
-agent; build it from source, see [Development](#development).
-
-## Quick Start
-
-The server needs Docker and root — it writes `/etc/uruflow` and `/var/lib/uruflow` and drives the
-Docker socket to host the registry. A runner needs Docker; a builder needs Docker, `git` and root.
-
-Install the binaries first — see [Installation](#installation).
-
-On the server:
-
-```bash
+```sh
 sudo uruflow init --advertise uruflow.internal
 sudo install -m 0644 packaging/systemd/uruflow.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now uruflow
-sudo uruflow
+sudo cat /var/lib/uruflow/web-setup-token
 ```
 
-At the workspace prompt, run `status` to confirm the service and registry are healthy.
+1. Open `http://127.0.0.1:9002` locally or through an SSH tunnel. Use the setup token to create the first administrator.
+2. Install `uruflow-agent` on each target machine. In **Agents → Enroll agent**, choose its roles and follow the generated command, CA certificate and startup steps.
+3. In **Projects → Create project**, choose sources, agents and ports. Review **Configuration**, then select **Deploy** and follow the release logs.
 
-The unit files ship under `packaging/systemd/`; if you installed only a release binary, copy the unit
-contents from [Operations](docs/operations.md#systemd).
-
-Enrol an agent from the workspace:
-
-```text
-agent add builder-01 --roles builder,runner
-```
-
-URUFLOW prints the exact command to run on the target machine, then:
-
-```bash
-sudo uruflow-agent init --id <id> --key <key> --server uruflow.internal:9001 --roles builder,runner
-
-scp <server>:/var/lib/uruflow/pki/ca.crt /tmp/ca.crt
-sudo mv /tmp/ca.crt /etc/uruflow/ca.crt
-
-sudo install -m 0644 packaging/systemd/uruflow-agent.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now uruflow-agent
-```
-
-Create and edit project YAML in the workspace, then deploy it:
-
-```text
-project create api prod
-project edit api-prod
-project deploy api-prod
-```
-
-Use `project reload` only after changing an authoritative YAML file outside the workspace.
-
-The full walkthrough, including rollback, is in [Getting Started](docs/getting-started.md).
-
-## Core Concepts
-
-| Concept | Meaning |
-| :--- | :--- |
-| **Server** | The control plane. Holds state, the certificate authority and the registry. Runs no workloads. |
-| **Agent** | A process on a target machine. Connects outward to the server. |
-| **Builder** | An agent role permitted to clone source and build images. |
-| **Runner** | An agent role permitted to pull and run images. Never receives source. |
-| **Project** | One release unit deployed to one set of runners. It may contain services from several repositories. |
-| **Environment** | A name such as `dev` or `prod` that expands into a separate project. Not a type in the system. |
-| **Release** | One attempt to build a commit and roll the image out, with a per-runner outcome. |
-| **Registry** | A `registry:2` instance URUFLOW starts, secures and manages itself. |
-
-The server decides; agents execute. If the server stops, running containers keep running — you lose
-the ability to start new releases, not the workloads.
-
-See [Core Concepts](docs/concepts.md).
-
-## Release Safety
-
-A runner never destroys what is running until the replacement has proven itself:
-
-```text
-pull the new image                     ← fails here, nothing has changed
-stop the running container
-rename it to <project>-previous        ← set aside, not deleted
-start the replacement
-check readiness
-  ├─ ready      → remove the set-aside container
-  └─ not ready  → remove the replacement, rename the previous back, start it
-```
-
-A service may define native HTTP, TCP or stable-running readiness. That policy is authoritative when
-present. Without one, the existing Docker `HEALTHCHECK` or five-second running fallback is preserved.
-Any readiness failure restores the previous container; multi-service releases restore every service
-already replaced on that runner.
-
-**This is not zero-downtime deployment.** A project owns a host port, so the old and new containers
-cannot overlap — there is roughly a second of unavailability per release. What the procedure guarantees
-is that a failed release leaves the previous version running rather than nothing at all.
-
-See [Deployments](docs/deployments.md#3-release-safety).
-
-## Example Project
-
-Two environments of one service, each defined by one authoritative file:
-
-```yaml
-# projects/api/dev.yaml — becomes the project api-dev
-builder: builder-01
-runners: [dev-01]
-services:
-  api:
-    git: git@github.com:acme/api.git
-    branch: develop
-    dockerfile: Dockerfile
-    context: .
-    ports: ["8081:80"]
-```
-
-```yaml
-# projects/api/prod.yaml — becomes the project api-prod
-builder: builder-01
-runners: [web-01, web-02]
-services:
-  api:
-    git: git@github.com:acme/api.git
-    branch: main
-    dockerfile: Dockerfile
-    context: .
-    ports: ["80:80"]
-```
-
-```ini
-# projects/api/dev.env
-LOG_LEVEL=debug
-DATABASE_URL=postgres://dev-host/api
-```
-
-Both environments are released deliberately.
-
-The workspace validates and atomically saves these files through its internal project editor without
-introducing another source of truth. See [Projects](docs/projects.md).
-
-## Features
-
-- Build once on a builder, release the identical image to every runner
-- A private registry with TLS and authentication, managed by URUFLOW
-- One certificate authority for both the agent link and the registry
-- Agent authentication by HMAC challenge-response; the shared key never crosses the wire
-- Roles that constrain authority — a runner cannot be asked to build
-- Health-gated releases that restore the previous container on failure
-- Rollback by re-releasing a stored image, without rebuilding
-- Environments as separate projects, defined by authoritative YAML files
-- Environment variables merged from shared defaults down to a per-environment `.env`
-- One project-variable editor for plain and encrypted values, with `${secret:name}` references
-- Multi-service projects — an app, a worker and a prebuilt dependency in one project
-- Optional legacy primary repositories support webhook deployment matched on Git URL and branch
-- Live streaming of build output and container logs over a persistent connection
-- One release per project at a time, enforced across restarts
-- One colored command workspace with controlled input and live output over an ordinary SSH session
+The full walkthrough, including HTTPS access, is in [Getting started](docs/getting-started.md).
 
 ## Documentation
 
-| Document | For |
-| :--- | :--- |
-| [Getting Started](docs/getting-started.md) | Installing and reaching a first deployment |
-| [Core Concepts](docs/concepts.md) | The vocabulary and the two planes |
-| [Operations Workspace](docs/interface.md) | Commands, live streams, YAML input, and key bindings |
-| [Projects](docs/projects.md) | Defining projects, environments and variables |
-| [Native Build Model](docs/native-build-model.md) | Multi-source builds, resources, jobs and runtime policy |
-| [Configuration](docs/configuration.md) | Every file, field, command and webhook setting |
-| [Deployments](docs/deployments.md) | The release lifecycle, safety and failure boundaries |
-| [Operations](docs/operations.md) | Services, logs, state, backup and maintenance |
-| [Troubleshooting](docs/troubleshooting.md) | Symptoms, causes and fixes |
-| [Security](docs/security.md) | Trust model, authentication and assumptions |
-| [Architecture](docs/architecture.md) | System model, boundaries and invariants |
-| [UFP Protocol](docs/protocol.md) | Framing, envelopes and the handshake |
-| [Testing](docs/testing.md) | Test ownership, execution lanes and contribution policy |
-| [Upgrading](docs/upgrading.md) | Within 2.x, and migrating from 1.x |
-
-## Status
-
-Server and agent binaries must use the same UFP wire format.
-
-## Supported Platforms
-
-| Platform | Server | Agent | Status |
-| :--- | :---: | :---: | :--- |
-| Linux (amd64) | ✓ | ✓ | Stable |
-| Linux (arm64) | ✓ | ✓ | Beta |
-| macOS (Apple silicon) | — | ✓ | Beta |
-| macOS (Intel) | — | ✓ | Beta |
-
-The server hosts the registry through a Docker socket and targets Linux. Agents run anywhere Docker
-does; macOS agents are useful for development but are not a tested deployment target.
+| Topic        | Read                                                                                                                      |
+| :----------- | :------------------------------------------------------------------------------------------------------------------------ |
+| Concepts     | [Architecture](docs/architecture.md) · [Concepts](docs/concepts.md)                                                       |
+| Deploying    | [Projects](docs/projects.md) · [Build and runtime model](docs/native-build-model.md) · [Deployments](docs/deployments.md) |
+| Operating    | [Browser workspace](docs/interface.md) · [Configuration](docs/configuration.md) · [Operations](docs/operations.md)        |
+| Security     | [Security](docs/security.md) · [Troubleshooting](docs/troubleshooting.md) · [Upgrading](docs/upgrading.md)                |
+| Contributing | [Contributing](CONTRIBUTING.md) · [Testing](docs/testing.md) · [UFP protocol](docs/protocol.md)                           |
 
 ## Development
 
-```bash
-go build -o uruflow ./cmd/uruflow-server
-go build -o uruflow-agent ./cmd/uruflow-agent
-
-make check              # deterministic default suite
-make test-integration   # composed server behavior with managed infrastructure
-make test-live          # real Docker, registry and agent runtime behavior
-make test-race          # concurrency and streaming safety
-make test-preview       # manual terminal-output previews
+```sh
+make check
+make test-integration
+make test-live
+make test-race
 ```
 
-`cmd/uruflow-server` builds the `uruflow` command and `cmd/uruflow-agent` builds `uruflow-agent`.
-The execution lanes and test ownership rules are documented in [Testing](docs/testing.md).
+`make check` runs the deterministic Go and frontend checks. Integration and live lanes use explicit
+infrastructure; race checks cover concurrency. [Testing](docs/testing.md) defines the prerequisites,
+test ownership and local browser preview. [Contributing](CONTRIBUTING.md) covers code changes.
 
-| Package | Responsibility |
-| :--- | :--- |
-| `internal/ufp` | The wire contract: framing, envelopes, handshake, shared connection |
-| `internal/link` | Server side of the agent link: sessions, event fan-out, metrics |
-| `internal/pipeline` | Two-stage release orchestration |
-| `internal/projects` | Project file loading, writing and dotenv parsing |
-| `internal/registry` | Registry lifecycle and catalog |
-| `internal/pki` | Certificate authority and leaf certificates |
-| `internal/docker` | Docker Engine API client, shared by server and agent |
-| `internal/storage` | Persistence contract and SQLite implementation |
-| `internal/agent` | Agent daemon, builder, runner, metrics |
-| `internal/ops` | Operational commands and typed response events |
-| `internal/control` | Root-only local command transport |
-| `internal/workbench` | Single-page terminal workspace |
+To prepare GitHub release downloads, run `make release`. [Building a release](CONTRIBUTING.md#building-a-release)
+covers the toolchain, generated assets and upload commands.
 
-`internal/ufp` depends on nothing else in the repository. It defines the contract both sides
-implement, and adding an import there should be treated as a design change.
-
-Where a change belongs is mapped in [Architecture](docs/architecture.md#12-where-a-change-belongs).
-
-## Contributing
-
-Issues and pull requests are welcome. [Contributing](CONTRIBUTING.md) covers the test suites, the
-boundaries worth knowing before you start, and the conventions the codebase follows.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+Report security issues privately through GitHub security advisories.
+Licensed under [MIT](LICENSE).

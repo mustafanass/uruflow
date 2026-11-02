@@ -66,6 +66,6 @@ func runInit(*cobra.Command, []string) error {
 	}
 	fmt.Printf("created %s\n", configPath())
 	fmt.Printf("projects: %s\n", cfg.ProjectsDir())
-	fmt.Println("next: start uruflow serve, then enrol a builder and runner")
+	fmt.Println("next: start uruflow serve, open the browser interface, and complete administrator setup")
 	return nil
 }

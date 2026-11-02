@@ -25,7 +25,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -35,8 +38,57 @@ const (
 )
 
 func (c *Client) StreamLogs(ctx context.Context, id string, tail int, follow bool, onLine func(stream, line string)) error {
-	path := fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true&timestamps=false&tail=%d&follow=%t",
-		id, tail, follow)
+	query := url.Values{"stdout": {"true"}, "stderr": {"true"}, "tail": {strconv.Itoa(tail)}, "follow": {strconv.FormatBool(follow)}}
+	return c.streamLogFrames(ctx, id, query, func(stream, content string) error {
+		for _, line := range strings.Split(strings.TrimRight(content, "\n"), "\n") {
+			if line != "" && onLine != nil {
+				onLine(stream, line)
+			}
+		}
+		return nil
+	})
+}
+
+func (c *Client) StreamLogsSince(ctx context.Context, id string, tail int, since time.Time, follow bool, onLine func(string, string, time.Time)) error {
+	query := url.Values{"stdout": {"true"}, "stderr": {"true"}, "timestamps": {"true"}, "tail": {strconv.Itoa(tail)}, "follow": {strconv.FormatBool(follow)}}
+	if !since.IsZero() {
+		query.Set("since", fmt.Sprintf("%d.%09d", since.Unix(), since.Nanosecond()))
+		query.Set("tail", "all")
+	}
+	return c.streamLogFrames(ctx, id, query, func(stream, content string) error {
+		var at time.Time
+		for _, line := range strings.Split(strings.TrimSuffix(content, "\n"), "\n") {
+			timestamp, text, found := strings.Cut(line, " ")
+			parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+			if found && err == nil {
+				at = parsed
+				line = text
+			} else if at.IsZero() {
+				return fmt.Errorf("docker: log entry is missing its timestamp")
+			}
+			if onLine != nil {
+				onLine(stream, line, at)
+			}
+		}
+		return nil
+	})
+}
+
+func (c *Client) LogStart(ctx context.Context, id string, tail int) (time.Time, error) {
+	var start time.Time
+	err := c.StreamLogsSince(ctx, id, tail, time.Time{}, false, func(_, _ string, at time.Time) {
+		if start.IsZero() || at.Before(start) {
+			start = at
+		}
+	})
+	if start.IsZero() {
+		start = time.Unix(1, 0)
+	}
+	return start, err
+}
+
+func (c *Client) streamLogFrames(ctx context.Context, id string, query url.Values, emit func(string, string) error) error {
+	path := "/containers/" + url.PathEscape(id) + "/logs?" + query.Encode()
 
 	response, err := c.do(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {
@@ -77,10 +129,8 @@ func (c *Client) StreamLogs(ctx context.Context, id string, tail int, follow boo
 			stream = "stderr"
 		}
 
-		for _, line := range strings.Split(strings.TrimRight(string(content), "\n"), "\n") {
-			if line != "" && onLine != nil {
-				onLine(stream, line)
-			}
+		if err := emit(stream, string(content)); err != nil {
+			return err
 		}
 	}
 }

@@ -1,0 +1,184 @@
+.infra-node {
+  width: 100%;
+  height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--shadow) 3%, transparent);
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+  position: relative;
+}
+.infra-node.tone-good {
+  border-left-color: var(--good);
+  background: color-mix(in srgb, var(--good-surface) 48%, var(--surface));
+}
+.infra-node.tone-warn {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn-surface) 48%, var(--surface));
+}
+.infra-node.tone-bad {
+  border-left-color: var(--bad);
+  background: color-mix(in srgb, var(--bad-surface) 48%, var(--surface));
+}
+.infra-node.tone-active {
+  border-left-color: var(--blue);
+  background: var(--surface-subtle);
+}
+.infra-node.is-selected {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 15%, transparent);
+}
+.infra-node-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 5px;
+  height: 22px;
+}
+.infra-node-top > .resource-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+.infra-node-top > .badge {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 5px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.infra-node-top > .badge .status-dot {
+  width: 4px;
+  height: 4px;
+}
+.infra-node > strong {
+  font-size: 15px;
+  font-weight: 620;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+}
+.infra-node-summary {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+}
+.infra-node-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: 13px;
+}
+.infra-node-details > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.infra-node-details .infra-node-summary {
+  margin: 0;
+}
+.node-gauges {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.node-gauge {
+  min-width: 0;
+}
+.node-gauge > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.node-gauge strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.node-gauge > i {
+  display: block;
+  height: 3px;
+  background: var(--surface-tint);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.node-gauge > i > b {
+  display: block;
+  height: 100%;
+  background: var(--accent-fill);
+}
+.node-runtime-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.node-restarts {
+  color: var(--warn);
+}
+.node-expand {
+  position: absolute;
+  right: 12px;
+  bottom: 7px;
+  display: block;
+  font-size: 10px;
+  color: var(--blue);
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  line-height: 1.4;
+}
+.node-expand:hover {
+  text-decoration: underline;
+}
+.node-expand:disabled {
+  color: var(--muted);
+}
+.infra-node:has(.node-expand) .node-runtime-line {
+  padding-right: 90px;
+}
+.inspector-instance {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.inspector-instance > div {
+  flex: 1;
+  min-width: 0;
+}
+.inspector-instance strong,
+.inspector-instance span {
+  display: block;
+}
+.inspector-instance > div > span {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}

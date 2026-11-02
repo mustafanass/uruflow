@@ -46,6 +46,9 @@ type Store interface {
 	UpdateRelease(release *models.Release) error
 	GetRelease(id string) (*models.Release, error)
 	ListReleases(limit int) ([]models.Release, error)
+	SnapshotReleases() ([]models.Release, error)
+	ProjectReleaseSummaries(string) ([]models.Release, error)
+	ReleaseRevision() (int64, error)
 	ListActiveReleases() ([]models.Release, error)
 	ListReleasesByProject(project string, limit int) ([]models.Release, error)
 	ProjectHasActiveRelease(project string) (bool, error)

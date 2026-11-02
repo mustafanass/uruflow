@@ -135,3 +135,80 @@ func TestLiveRenameRoundTrip(t *testing.T) {
 		t.Fatalf("state after the round trip = %+v err = %v", state, err)
 	}
 }
+
+func TestLiveExitedContainerLogsRemainReadableAndFinish(t *testing.T) {
+	client := liveClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if !client.HasImage(ctx, liveImage) {
+		if err := client.Pull(ctx, liveImage, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec := Spec{Name: "uruflow-livetest-exited-logs", Image: liveImage, Command: []string{"sh", "-c", "echo startup-output; echo diagnostic-output >&2; exit 7"}, Restart: "no", Labels: ManagedLabels("livetest", "", "logs")}
+	t.Cleanup(func() { client.Remove(context.Background(), spec.Name, true) })
+	id, err := client.Run(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		state, err := client.State(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.Status == StateExited {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	lines := map[string]string{}
+	if err = client.StreamLogs(ctx, id, 200, true, func(stream, line string) { lines[stream] = line }); err != nil {
+		t.Fatal(err)
+	}
+	if ctx.Err() != nil || lines["stdout"] != "startup-output" || lines["stderr"] != "diagnostic-output" {
+		t.Fatal("exited container lost output or failed to complete", lines, ctx.Err())
+	}
+}
+
+func TestLiveContainerLogResumeKeepsTheNanosecondBoundary(t *testing.T) {
+	client := liveClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if !client.HasImage(ctx, liveImage) {
+		if err := client.Pull(ctx, liveImage, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec := Spec{Name: "uruflow-livetest-resume-logs", Image: liveImage, Restart: "no", Command: []string{"sh", "-c", "echo repeated; echo repeated; echo diagnostic >&2"}, Labels: ManagedLabels("livetest", "", "resume")}
+	t.Cleanup(func() { client.Remove(context.Background(), spec.Name, true) })
+	id, err := client.Run(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type entry struct {
+		line string
+		at   time.Time
+	}
+	var initial []entry
+	start, err := client.LogStart(ctx, id, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.StreamLogsSince(ctx, id, 200, start, true, func(_, line string, at time.Time) { initial = append(initial, entry{line, at}) })
+	counts := map[string]int{}
+	for _, line := range initial {
+		counts[line.line]++
+	}
+	if err != nil || len(initial) != 3 || counts["repeated"] != 2 || counts["diagnostic"] != 1 {
+		t.Fatal(initial, err)
+	}
+	var resumed []entry
+	err = client.StreamLogsSince(ctx, id, 200, initial[1].at, false, func(_, line string, at time.Time) { resumed = append(resumed, entry{line, at}) })
+	if err != nil || len(resumed) != 2 || !resumed[0].at.Equal(initial[1].at) || resumed[0].line != initial[1].line || !resumed[1].at.Equal(initial[2].at) || resumed[1].line != initial[2].line {
+		t.Fatal("resume lost precision or replayed older records", initial, resumed, err)
+	}
+}

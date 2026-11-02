@@ -1,0 +1,176 @@
+.metric-strip > div {
+  padding: 0 24px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.metric-strip > div:last-child {
+  border: 0;
+}
+
+.metric-strip > div > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.metric-strip strong {
+  font-size: 23px;
+  line-height: 1.3;
+  letter-spacing: -0.6px;
+  font-weight: 620;
+}
+
+.metric-strip strong small {
+  font-size: 13px;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.metric-strip > div > small {
+  font-size: 12px;
+}
+
+.host-resources {
+  padding: 21px;
+}
+
+.resource-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 21px;
+}
+
+.resource-heading h3 {
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.resource-heading > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.resource-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.meter-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+  font-size: 12px;
+}
+
+.meter-label span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+
+.meter-label strong {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.meter-track {
+  height: 5px;
+  border-radius: 4px;
+  background: var(--surface-tint);
+  overflow: hidden;
+}
+
+.meter-track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent-fill);
+  border-radius: 4px;
+}
+
+.meter-track > span.pressure,
+.table-meter .pressure {
+  background: var(--gold);
+}
+
+.host-resources.compact {
+  padding: 0;
+  margin-top: 20px;
+}
+
+.host-resources.compact .resource-heading {
+  margin-bottom: 16px;
+}
+
+.onboarding {
+  display: flex;
+  gap: 25px;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  border-radius: 8px;
+  padding: 28px;
+  margin-bottom: 25px;
+}
+
+.onboarding p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 9px 0 19px;
+  max-width: 80ch;
+  line-height: 1.8;
+}
+
+.table-meter {
+  min-width: 75px;
+}
+
+.table-meter > span {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.table-meter > i {
+  height: 3px;
+  background: var(--surface-tint);
+  border-radius: 3px;
+  display: block;
+  max-width: 84px;
+  overflow: hidden;
+}
+
+.table-meter b {
+  background: var(--accent-fill);
+  height: 100%;
+  display: block;
+}
+
+.assignment-summary {
+  display: flex;
+  gap: 35px;
+  padding: 22px;
+}
+
+.assignment-summary span {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.assignment-summary strong {
+  font-size: 25px;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}

@@ -20,55 +20,88 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/mustafanass/uruflow/internal/docker"
 	"github.com/mustafanass/uruflow/internal/ufp"
 	"github.com/mustafanass/uruflow/pkg/logger"
 )
 
+type logStream struct{ cancel context.CancelFunc }
+
 func (d *Daemon) followContainer(request ufp.LogsFollow) {
-	d.stopFollow(request.ContainerID)
-
+	key := request.StreamID
+	if key == "" {
+		key = request.ContainerID
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	stream := &logStream{cancel}
 	d.streamMu.Lock()
-	d.streams[request.ContainerID] = cancel
+	if previous := d.streams[key]; previous != nil {
+		previous.cancel()
+	}
+	d.streams[key] = stream
 	d.streamMu.Unlock()
-
 	go func() {
-		defer d.stopFollow(request.ContainerID)
-
-		logger.Debug("[AGENT] following logs for %s", shortID(request.ContainerID))
-		err := d.docker.StreamLogs(ctx, request.ContainerID, request.Tail, true,
-			func(stream, line string) {
-				d.send(ufp.TopicContainerLog, ufp.ContainerLog{
-					ContainerID: request.ContainerID,
-					Stream:      stream,
-					Line:        line,
-					Timestamp:   time.Now().Unix(),
-				})
+		defer func() {
+			cancel()
+			d.streamMu.Lock()
+			if d.streams[key] == stream {
+				delete(d.streams, key)
+			}
+			d.streamMu.Unlock()
+		}()
+		after, _ := ufp.ParseLogPosition(request.After)
+		start := after.Since()
+		var err error
+		if start.IsZero() {
+			readCtx, stop := context.WithTimeout(ctx, 15*time.Second)
+			start, err = d.docker.LogStart(readCtx, request.ContainerID, request.Tail)
+			stop()
+		}
+		position := ufp.LogPosition{Start: start}
+		checkpoint := after
+		if checkpoint.Start.IsZero() {
+			checkpoint.Start = start
+		}
+		if err == nil {
+			err = d.docker.StreamLogsSince(ctx, request.ContainerID, request.Tail, start, true, func(kind, line string, at time.Time) {
+				position.Advance(kind, at)
+				if after.Includes(kind, at, position.Offset(kind)) {
+					return
+				}
+				d.send(ufp.TopicContainerLog, ufp.ContainerLog{Cursor: checkpoint.Merge(position), StreamID: request.StreamID, ContainerID: request.ContainerID, Stream: kind, Line: line, Timestamp: at.Unix()})
 			})
+		}
 		if err != nil && ctx.Err() == nil {
 			logger.Debug("[AGENT] log stream for %s ended: %v", shortID(request.ContainerID), err)
 		}
+		if ctx.Err() == nil {
+			ended := ufp.ContainerLog{StreamID: request.StreamID, ContainerID: request.ContainerID, Complete: true, Timestamp: time.Now().Unix()}
+			if err != nil {
+				ended.Error = err.Error()
+				if errors.Is(err, docker.ErrNotFound) {
+					ended.ErrorCode = 404
+				}
+			}
+			d.send(ufp.TopicContainerLog, ended)
+		}
 	}()
 }
-
-func (d *Daemon) stopFollow(containerID string) {
+func (d *Daemon) stopFollow(key string) {
 	d.streamMu.Lock()
 	defer d.streamMu.Unlock()
-
-	if cancel, found := d.streams[containerID]; found {
-		cancel()
-		delete(d.streams, containerID)
+	if stream := d.streams[key]; stream != nil {
+		stream.cancel()
+		delete(d.streams, key)
 	}
 }
-
 func (d *Daemon) cancelStreams() {
 	d.streamMu.Lock()
 	defer d.streamMu.Unlock()
-
-	for id, cancel := range d.streams {
-		cancel()
-		delete(d.streams, id)
+	for key, stream := range d.streams {
+		stream.cancel()
+		delete(d.streams, key)
 	}
 }

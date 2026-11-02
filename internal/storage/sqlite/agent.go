@@ -29,7 +29,7 @@ import (
 
 const agentColumns = `id, name, auth_key, roles, host, hostname, version, platform, status,
 	cpu_percent, memory_percent, memory_used, memory_total,
-	disk_percent, disk_used, disk_total, uptime, last_seen, registered_at`
+	disk_percent, disk_used, disk_total, uptime, last_seen, registered_at, metrics_detail`
 
 func (s *Store) CreateAgent(agent *models.Agent) error {
 	_, err := s.db.Exec(`
@@ -61,11 +61,11 @@ func (s *Store) SetAgentMetrics(id string, metrics *models.Metrics) error {
 	_, err := s.db.Exec(`
 		UPDATE agents
 		SET cpu_percent = ?, memory_percent = ?, memory_used = ?, memory_total = ?,
-		    disk_percent = ?, disk_used = ?, disk_total = ?, uptime = ?, last_seen = ?
+		    disk_percent = ?, disk_used = ?, disk_total = ?, uptime = ?, last_seen = ?, metrics_detail = ?
 		WHERE id = ?`,
 		metrics.CPUPercent, metrics.MemoryPercent, metrics.MemoryUsed, metrics.MemoryTotal,
 		metrics.DiskPercent, metrics.DiskUsed, metrics.DiskTotal, metrics.Uptime,
-		time.Now(), id)
+		time.Now(), encodeJSON(metrics), id)
 	return err
 }
 
@@ -112,7 +112,7 @@ type scanner interface {
 
 func (s *Store) scanAgent(row scanner) (*models.Agent, error) {
 	var agent models.Agent
-	var roles string
+	var roles, detail string
 	var metrics models.Metrics
 	var lastSeen sql.NullTime
 
@@ -121,7 +121,7 @@ func (s *Store) scanAgent(row scanner) (*models.Agent, error) {
 		&agent.Version, &agent.Platform, &agent.Status,
 		&metrics.CPUPercent, &metrics.MemoryPercent, &metrics.MemoryUsed, &metrics.MemoryTotal,
 		&metrics.DiskPercent, &metrics.DiskUsed, &metrics.DiskTotal, &metrics.Uptime,
-		&lastSeen, &agent.RegisteredAt,
+		&lastSeen, &agent.RegisteredAt, &detail,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, storage.ErrNotFound
@@ -132,6 +132,9 @@ func (s *Store) scanAgent(row scanner) (*models.Agent, error) {
 
 	decodeJSON(roles, &agent.Roles)
 	agent.LastSeen = timeValue(lastSeen)
+	if detail != "{}" {
+		decodeJSON(detail, &metrics)
+	}
 	agent.Metrics = &metrics
 	return &agent, nil
 }

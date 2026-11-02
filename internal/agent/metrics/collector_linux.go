@@ -145,3 +145,16 @@ func (c *Collector) getLoadAvg() []float64 {
 	}
 	return load
 }
+
+func (c *Collector) getHostUptime() int64 {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return 0
+	}
+	seconds, _ := strconv.ParseFloat(fields[0], 64)
+	return int64(seconds)
+}

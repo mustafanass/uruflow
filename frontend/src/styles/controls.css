@@ -1,0 +1,264 @@
+.breadcrumbs a {
+  color: var(--muted);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  white-space: nowrap;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
+}
+
+.button:hover {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+  text-decoration: none;
+}
+
+.button.primary {
+  background: var(--gold);
+  border-color: var(--gold-border);
+  color: var(--on-accent);
+}
+
+.button.primary:hover {
+  background: var(--gold-hover);
+}
+
+.button.danger {
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
+  color: var(--on-danger);
+}
+
+.button.danger:hover {
+  background: var(--danger-hover);
+}
+
+.button.danger-subtle {
+  color: var(--bad);
+  border-color: var(--bad-border);
+  background: var(--surface);
+}
+
+.button.small {
+  min-height: 31px;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.button.full {
+  width: 100%;
+  margin-top: 15px;
+}
+
+.button.pressed {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  min-width: 30px;
+  height: 30px;
+  color: var(--muted);
+  border-radius: 5px;
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.icon-button:hover {
+  background: var(--surface-tint);
+  color: var(--text);
+}
+
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.text-button:hover {
+  text-decoration: underline;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  min-width: 0;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 17px 20px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  min-height: 58px;
+}
+
+.panel-heading p {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.panel-heading > .button + .button {
+  margin-left: 0;
+}
+
+.panel-heading:has(> .button) {
+  flex-wrap: wrap;
+}
+
+.panel-heading > div:first-child {
+  margin-right: auto;
+}
+
+.panel-note {
+  padding: 0 20px 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.panel .panel-note {
+  margin-top: 8px;
+}
+
+.two-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.stack > .panel {
+  margin: 0;
+}
+
+.stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tabs {
+  display: flex;
+  gap: 23px;
+  border-bottom: 1px solid var(--border);
+  margin: -2px 0 24px;
+  overflow-x: auto;
+}
+
+.tabs button {
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 12px 0 13px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tabs button.selected {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.tabs button.selected:after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  height: 3px;
+  left: 0;
+  right: 0;
+  background: var(--gold);
+  border-radius: 2px 2px 0 0;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin: 0 0 15px;
+}
+
+.section-heading h2 {
+  font-size: 15px;
+}
+
+.section-heading p {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.segmented {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.password-field input {
+  width: 100%;
+  padding-right: 44px;
+}
+.password-field > .icon-button {
+  position: absolute;
+  right: 7px;
+}
+.keyboard-gap {
+  display: inline-block;
+  width: 14px;
+}
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

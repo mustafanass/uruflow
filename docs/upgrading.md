@@ -1,118 +1,52 @@
-# Upgrading
+# Upgrading to URUFLOW 3
 
-How to move between URUFLOW versions. Protocol-changing releases require coordinated server and agent
-replacement. Moving from 1.x remains a rebuild.
+URUFLOW 3.0.0 uses the browser for operator work and keeps TLS UFP for server-agent communication. Build and install the server, agents and embedded frontend from the same release.
 
-## From 2.4.2 to 2.5.0
+## Prepare
 
-Version 2.5.0 retains UFP protocol byte `0x04`. Wait for active releases to finish, replace the server,
-then replace every agent. Existing containers continue running while the control plane is stopped.
-Complete the rollout promptly so server and agent behavior stays aligned.
+1. Wait for active releases to finish.
+2. Record the current configuration paths and versions.
+3. Take a coordinated [backup](operations.md#backup-and-restore) of configuration, project files, database, PKI and registry data.
+4. Build and validate the new release:
 
-## From 2.4.1 to 2.4.2
+```sh
+make check
+make build
+build/uruflow version
+build/uruflow-agent version
+```
 
-Version 2.4.2 retains UFP protocol byte `0x04`. Wait for active releases to finish, replace the server,
-then replace every agent. Existing containers continue running while the control plane is stopped.
-Complete the rollout promptly so server and agent behavior stays aligned.
+Both commands should report `3.0.0`. The frontend package uses the same release version; the running workspace displays the server's reported version.
 
-The updated agent preserves command health checks during release validation and honors the project's
-single end-to-end deployment timeout. Replacing runner and builder binaries is therefore required;
-updating only the server does not activate those fixes.
+## Replace a current UFP installation
 
-## From 2.4.0 to 2.4.1
+1. Stop the server service.
+2. Install the new `build/uruflow` binary and start the server with `uruflow serve` and the existing configuration.
+3. Replace and restart each builder and runner agent with the matching `build/uruflow-agent` binary.
+4. Confirm recent agent samples and registry readiness before deploying.
 
-Version 2.4.1 retains UFP protocol byte `0x04`. Wait for active releases to finish, replace the server,
-then replace every agent. Existing containers continue running while the control plane is stopped.
-Complete the rollout promptly so server and agent behavior stays aligned.
+SQLite creates the current tables and adds missing columns when opened. Preserve the existing project definitions, CA and encryption key. Server startup closes interrupted releases as failed and refreshes observations as agents reconnect.
 
-## From 2.3.1 to 2.4.0
+URUFLOW 3 keeps UFP frame version `0x04`. Update agents for independent browser log streams and completion messages. The product major version does not renumber the protocol byte.
 
-Version 2.4.0 retains UFP protocol byte `0x04`. Wait for active releases to finish, replace the server,
-then replace every agent. Existing containers continue running while the control plane is stopped.
-Complete the rollout promptly so server and agent behavior stays aligned.
+## Move operator work to the browser
 
-## From 2.2.2 to 2.3.1
+Configure the separate `web` listener, default `127.0.0.1:9002`. Use [Configuration](configuration.md#operator-listener) for HTTPS or a local reverse proxy.
 
-The native multi-service build model uses UFP protocol byte `0x04`. It carries resource definitions,
-dependency and job semantics, exact commands, security and resource controls, and per-service source
-commits. These fields change deployment meaning, so a protocol `0x03` agent is deliberately rejected
-instead of being allowed to ignore them.
+For an installation without browser users, use the private setup token to create its first administrator. For an existing browser installation, keep the account database and sign in normally. Review user roles and project grants under **System → Access**.
 
-To upgrade to `2.3.1`, wait for active releases to finish, replace the server and every agent,
-then start the server followed by the agents. Existing containers continue running while the control
-plane is stopped. Do not mix 2.3.1 and 2.2.2 server or agent binaries.
+Project editing, deployment, restoration, agent enrollment, observations and logs now use the [browser workspace](interface.md). The `uruflow` command without arguments prints help. Services must invoke `uruflow serve`; agent services invoke `uruflow-agent run`.
 
-## From 2.0 or 2.1 to 2.2
+## Validate the installation
 
-1. wait for every release to finish
-2. stop the server and all agents
-3. replace `/usr/local/bin/uruflow` and every `/usr/local/bin/uruflow-agent`
-4. replace mutable prebuilt image tags in project files with `repository@sha256:digest` references
-5. start the server
-6. start every agent
-7. change git-host webhook URLs from `http://` to `https://`, unless a local reverse proxy terminates TLS
+Check sign-in, account scope, agent connectivity, registry access, project definitions, historical release details and container observations. Verify a safe deployment and restore in staging before routine production changes.
 
-Database schema changes are applied automatically when the database is opened — missing columns are
-added in place, so no migration step is needed and existing data is preserved.
+Valid persisted browser sessions survive later server restarts, and streams reconnect. Fresh server and agent reports should show `3.0.0`.
 
-Version 2.2 uses protocol byte `0x03` and TLS 1.3. A 2.0 or 2.1 agent cannot connect to a 2.2 server, and a
-2.2 agent cannot connect to an older server. Running containers are unaffected during the coordinated
-upgrade.
+## Earlier protocol generations
 
-Version 2.2 also binds roles to enrollment, deploys images by digest, snapshots project configuration
-per release, rejects webhook replays, and serves webhooks over HTTPS by default.
+Installations using a UFP frame version before `0x04` need coordinated server and agent replacement. Review their project definitions against the current [model](native-build-model.md), including service-owned sources and pinned images, before starting releases.
 
-## Within One Protocol Generation
+A 1.x installation uses a different deployment and storage model. Prepare a fresh configuration and enrollment, recreate the desired project files, and perform a first release to populate its new history. Keep the original installation backup during migration.
 
-Patch upgrades that retain the UFP wire format can use the normal server-first order: stop and replace the server,
-then replace and restart each agent. A running process keeps the code it started with, and workloads
-continue under Docker while the control plane is unavailable.
-
-## From 1.x to 2.0
-
-**2.0 is a clean break. There is no in-place migration.**
-
-The two versions do not describe the same system. 1.x built from source on every target machine; 2.0
-builds once and releases an image. Nothing about the wire protocol, the configuration layout or the
-database schema carries across.
-
-### What Changed
-
-| | 1.x | 2.0 |
-| :--- | :--- | :--- |
-| Deployment unit | Source built per machine | One image, released everywhere |
-| Protocol | UFP version `0x01`, 17 message types | UFP version `0x02`, three envelopes |
-| Agent auth | Token sent on the wire | HMAC challenge-response; the key never travels |
-| Transport | Optional TLS | TLS always |
-| Registry | None | Bundled and managed |
-| Agent roles | None | `builder` and `runner`, enforced |
-| Configuration | Agents and repositories in `config.yaml` | Agents in the database, projects in authoritative YAML files |
-| Rollback | Rebuild from a commit | Re-release a stored image |
-
-A 1.x agent is rejected at the first frame because the version byte differs. There is no partial
-compatibility to manage.
-
-### Migration Steps
-
-1. record your existing repositories, branches and target machines
-2. stop the 1.x server and all 1.x agents
-3. install the 2.0 binaries
-4. `uruflow init` — write a fresh `config.yaml`; the old one is not read
-5. start the server and let it generate its PKI and registry
-6. open the workspace with `uruflow` and re-enrol each agent with `agent add`, assigning roles deliberately: machines that only run
-   workloads should get `runner` alone
-7. install the 2.0 agent binary and configuration on each machine, copying the new CA certificate
-8. re-create each project as authoritative YAML files
-9. deploy each project once to populate the registry — there is no history to roll back to until you
-   have a successful release
-
-Keep the old data directory until you are satisfied. Nothing in 2.0 reads it.
-
-### After Migrating
-
-Two behaviours differ in ways worth knowing:
-
-- **Runners no longer need source access.** Remove deploy keys and build tooling from machines that
-  now hold only the `runner` role.
-- **Rollback no longer rebuilds.** It re-releases a stored image, so it is fast and byte-identical —
-  but only for commits that have been built and pushed since migrating.
+Related: [Getting started](getting-started.md), [Operations](operations.md), [UFP](protocol.md), [Testing](testing.md).

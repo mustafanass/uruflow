@@ -25,14 +25,14 @@ import (
 )
 
 const containerColumns = `id, agent_id, name, project, service, image, state, health,
-	cpu_percent, memory_usage, memory_limit, network_rx, network_tx, restart_count, started_at`
+	cpu_percent, memory_usage, memory_limit, network_rx, network_tx, restart_count, started_at, observation`
 
 func (s *Store) UpsertContainer(container *models.Container) error {
 	_, err := s.db.Exec(`
 		INSERT INTO containers (id, agent_id, name, project, service, image, state, health,
 		                        cpu_percent, memory_usage, memory_limit,
-		                        network_rx, network_tx, restart_count, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                        network_rx, network_tx, restart_count, started_at, observation)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id, id) DO UPDATE SET
 			name = excluded.name,
 			project = excluded.project,
@@ -46,11 +46,11 @@ func (s *Store) UpsertContainer(container *models.Container) error {
 			network_rx = excluded.network_rx,
 			network_tx = excluded.network_tx,
 			restart_count = excluded.restart_count,
-			started_at = excluded.started_at`,
+			started_at = excluded.started_at, observation = excluded.observation`,
 		container.ID, container.AgentID, container.Name, container.Project, container.Service,
 		container.Image, container.State, container.Health, container.CPUPercent, container.MemoryUsage,
 		container.MemoryLimit, container.NetworkRx, container.NetworkTx,
-		container.RestartCount, container.StartedAt)
+		container.RestartCount, container.StartedAt, encodeJSON(container))
 	return err
 }
 
@@ -67,7 +67,7 @@ func (s *Store) ReplaceContainers(agentID string, containers []models.Container)
 
 	statement, err := tx.Prepare(`
 		INSERT INTO containers (` + containerColumns + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (s *Store) ReplaceContainers(agentID string, containers []models.Container)
 		if _, err := statement.Exec(container.ID, agentID, container.Name, container.Project,
 			container.Service, container.Image, container.State, container.Health, container.CPUPercent,
 			container.MemoryUsage, container.MemoryLimit, container.NetworkRx,
-			container.NetworkTx, container.RestartCount, container.StartedAt); err != nil {
+			container.NetworkTx, container.RestartCount, container.StartedAt, encodeJSON(container)); err != nil {
 			return err
 		}
 	}
@@ -105,14 +105,18 @@ func (s *Store) queryContainers(query string, args ...any) ([]models.Container, 
 	for rows.Next() {
 		var container models.Container
 		var startedAt sql.NullTime
+		var observation string
 		if err := rows.Scan(&container.ID, &container.AgentID, &container.Name,
 			&container.Project, &container.Service, &container.Image, &container.State, &container.Health,
 			&container.CPUPercent, &container.MemoryUsage, &container.MemoryLimit,
 			&container.NetworkRx, &container.NetworkTx, &container.RestartCount,
-			&startedAt); err != nil {
+			&startedAt, &observation); err != nil {
 			return nil, err
 		}
 		container.StartedAt = timeValue(startedAt)
+		if observation != "{}" {
+			decodeJSON(observation, &container)
+		}
 		containers = append(containers, container)
 	}
 	return containers, rows.Err()

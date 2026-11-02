@@ -1,157 +1,65 @@
-# Core Concepts
+# Concepts
 
-This page defines the vocabulary used throughout the URUFLOW documentation. Read it before the
-configuration reference — most confusion about URUFLOW comes from the difference between a *project*
-and an *environment*, or between the *control plane* and the *execution plane*.
+These terms describe the same objects in the browser, project files and server code.
 
-## The Two Planes
+## Control and execution
 
-URUFLOW separates the machine that decides what should happen from the machines that do it.
+The **server** owns desired configuration, access, release history and fleet coordination. It serves the browser workspace, receives agent connections, and manages the private registry.
 
-| Plane | Component | Holds |
-| :--- | :--- | :--- |
-| Control plane | URUFLOW Server | Project definitions, release history, agent identities, the registry, the certificate authority |
-| Execution plane | Agents | Source checkouts (builders only), images, running containers |
+An **agent** connects outward to the server over TLS UFP. Its enrolled roles determine the work it may accept:
 
-The control plane never runs your workloads. The execution plane never decides what to run.
+| Role    | Work                                                                 | Host requirements                                |
+| ------- | -------------------------------------------------------------------- | ------------------------------------------------ |
+| Builder | Fetch source, build images, publish artifacts                        | Docker Engine, Docker CLI, Git and source access |
+| Runner  | Pull image digests, prepare resources, execute jobs and run services | Docker Engine and socket access                  |
 
-This split has a consequence worth stating early: **if the server stops, running containers keep
-running.** Agents reconnect when it returns. What you lose while it is down is the ability to start
-new releases, not the workloads themselves.
+One agent can hold both roles. Agents apply work locally and report observations to the server.
 
-## Server
+## Project and environment
 
-A single process that owns:
-
-- the SQLite database — agents, projects, releases, logs, containers, alerts
-- the certificate authority and all issued certificates
-- the private registry container
-- the UFP listener that agents connect to
-- the HTTPS listener that receives webhooks
-- the root-only local command transport used by the single-page operations workspace
-
-There is exactly one server. It is a single point of failure for *starting* work, not for *running* it.
-
-## Agent
-
-A process running on a target machine, connecting outward to the server over UFP. Agents are never
-dialled by the server, so they can sit behind NAT.
-
-An agent declares its roles when it connects. They must exactly match its enrollment, and both peers
-refuse operations outside those roles.
-
-### Builder
-
-A builder may see source code. It clones the repository, runs `docker build`, tags the image, and
-pushes it to the registry. A builder needs `git` and the `docker` CLI.
-
-### Runner
-
-A runner never sees source code, a Dockerfile, or a build toolchain. It pulls one digest-pinned image and
-runs it. A runner needs only a Docker socket.
-
-One agent may hold both roles. One builder can serve every project.
-
-## Project
-
-A project is one release unit deployed to one set of runners. It owns:
-
-- one source and build definition for each built service
-- immutable image digests for prebuilt services
-- which agent builds it, and which agents run it
-- the runtime shape — ports, volumes, network, environment variables, restart policy
-- whether webhook pushes deploy it automatically
-
-A project produces one image and one container per runner. A project that declares a `services` block
-produces one of each per service. See [Projects](projects.md).
-
-## Environment
-
-An environment is a name such as `dev`, `stg` or `prod`. **URUFLOW has no environment type.** A file
-called `projects/api/dev.yaml` produces an ordinary project named `api-dev`.
-
-The directory and filename are expanded into a flat project name before anything else sees them. The
-pipeline, runner, registry and release history never learn the word.
-
-The practical effects:
-
-- `api-dev` and `api-prod` are separate projects with separate release histories
-- they run as separate containers, `uruflow-api-dev` and `uruflow-api-prod`
-- they push to separate image repositories, so `api-dev:latest` and `api-prod:latest` are unrelated
-- deploying one does not touch the other
-
-See [Projects](projects.md) for the file format.
-
-## Release
-
-A release is one attempt to build a commit and roll the resulting image out. It records the image
-reference, the resolved commit, the trigger, a status, and a per-runner outcome.
-
-A release moves through two stages:
-
-1. **Build** — one builder clones, builds, tags and pushes
-2. **Release** — every runner pulls that exact image and runs it
-
-A release that fails during the build never reaches any runner.
-
-See [Deployments](deployments.md) for the full lifecycle.
-
-## Image
-
-The registry catalog exposes two convenient tags for each build:
+A **project** is a release unit containing services and their build or runtime definitions. An **environment** is the filename that identifies one independently deployed instance.
 
 ```text
-<registry>/<namespace>/<project>:<commit>     12-character commit SHA, immutable
-<registry>/<namespace>/<project>:latest       moving pointer to the most recent build
+projects/shop/production.yaml → shop-production
+projects/shop/staging.yaml    → shop-staging
 ```
 
-The deployment unit is the `repository@sha256:digest` reference, not either tag. Releases record the
-immutable digest. Rollback re-releases a recorded digest rather than rebuilding a
-commit, so what returns is byte-identical to what ran before.
+Each expanded project has its own placement, configuration and release history. The server resolves enrolled agent names from files into agent identities.
 
-## Registry
+## Service and job
 
-A `registry:2` container that URUFLOW starts and manages itself, with TLS and password
-authentication. You do not supply one. Agents receive its address, credentials and CA certificate
-over the authenticated agent link.
+A **service** describes one application component. It either builds from its own Git source and Dockerfile or uses a prebuilt image digest. A long-running service becomes a container on each runner.
 
-See [Operations](operations.md#5-registry) for its storage and garbage collection behaviour.
+A **job** is a service with `mode: job`. It runs to completion, such as a database migration. Dependencies select when another component may start. The [build and runtime model](native-build-model.md) defines those conditions.
 
-## Container
+## Workflow and release
 
-URUFLOW only manages containers carrying its ownership labels:
+A **workflow** selects the stages a project needs:
 
-```text
-uruflow.managed = "true"
-uruflow.project = "api-prod"
-uruflow.release = "9f3c2a1b"
-uruflow.role    = "service"    (or "registry")
-```
+| Workflow       | Result                                        |
+| -------------- | --------------------------------------------- |
+| `build_only`   | Build and publish artifacts                   |
+| `deploy_only`  | Run prebuilt image digests                    |
+| `build_deploy` | Build artifacts, then release them to runners |
 
-Agents report only labelled containers, and only labelled containers are ever stopped or removed.
-Anything else on the machine is invisible to URUFLOW.
+A **release** records one attempt: its saved specification, commits, image digests, timestamps, status and runner outcomes. A **rollback** creates a new release from a successful release's recorded artifacts and specification.
 
-## UFP
+A saved file describes intent. A succeeded release describes the result of that attempt. Current container observations describe what is running now.
 
-The binary protocol agents and the server speak over TLS. It carries build and release instructions,
-streaming logs, and metrics. See [UFP Protocol](protocol.md).
+## Image, container and resource
 
-## Terminology
+An **image** is a build artifact or prebuilt artifact addressed as `repository@sha256:digest`. Tags such as `latest` are convenient registry pointers; the pipeline records digests for deployment.
 
-These terms are used consistently and mean one thing each.
+A **container** is a runtime instance on a runner. URUFLOW uses ownership labels and full Docker identities to associate it with a project, service and release.
 
-| Term | Meaning |
-| :--- | :--- |
-| URUFLOW Server | The control-plane process |
-| Agent | A process on a target machine |
-| Builder | An agent role permitted to build |
-| Runner | An agent role permitted to run |
-| Project | One repository deployed to one set of runners |
-| Environment | A name that expands into a separate project |
-| Release | One build-and-rollout attempt |
-| Image | A digest-addressed artifact in the registry |
-| Container | A running instance of an image |
-| Registry | The private `registry:2` instance URUFLOW manages |
-| UFP | The server/agent wire protocol |
+A **resource** is a declared Docker network or volume. Resource definitions and attachments form part of a project's runtime model. Their data can outlive container replacement.
 
-"Deployment" is used informally for the act of releasing. The recorded object is always a *release*.
+The **registry** is the TLS-protected image store managed by the server. Builders publish there, and runners receive the address, credentials and trust root through UFP.
+
+## People and observations
+
+A **role** describes a user's permitted actions. A **project grant** describes which projects they can access. User roles and agent roles are separate controls; see [Security](security.md).
+
+An **observation** is a reported sample with collection time and availability. Infrastructure graphs combine observations with project definitions and release records. They expose expected placement, current instances and relationships without a separate graph configuration.
+
+Related: [Architecture](architecture.md), [Projects](projects.md), [Browser workspace](interface.md).

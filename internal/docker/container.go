@@ -22,9 +22,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mustafanass/uruflow/internal/ufp"
 	"net"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -48,6 +50,10 @@ type State struct {
 }
 
 type Container struct {
+	Details      *ufp.ContainerDetails
+	PIDs         uint64
+	BlockRead    uint64
+	BlockWrite   uint64
 	ID           string
 	Name         string
 	Project      string
@@ -141,12 +147,28 @@ type listEntry struct {
 }
 
 type inspectResult struct {
+	Image   string `json:"Image"`
+	Created string `json:"Created"`
+	Mounts  []struct {
+		Type        string
+		Source      string
+		Destination string
+		RW          bool
+	} `json:"Mounts"`
 	State struct {
-		Status    string `json:"Status"`
-		ExitCode  int    `json:"ExitCode"`
-		StartedAt string `json:"StartedAt"`
-		Health    *struct {
+		Status     string `json:"Status"`
+		ExitCode   int    `json:"ExitCode"`
+		OOMKilled  bool   `json:"OOMKilled"`
+		Error      string `json:"Error"`
+		FinishedAt string `json:"FinishedAt"`
+		StartedAt  string `json:"StartedAt"`
+		Health     *struct {
 			Status string `json:"Status"`
+			Log    []struct {
+				End      string
+				ExitCode int
+				Output   string
+			} `json:"Log"`
 		} `json:"Health"`
 	} `json:"State"`
 	RestartCount int `json:"RestartCount"`
@@ -160,7 +182,9 @@ type inspectResult struct {
 			HostPort string `json:"HostPort"`
 		} `json:"Ports"`
 		Networks map[string]struct {
-			IPAddress string `json:"IPAddress"`
+			IPAddress string   `json:"IPAddress"`
+			Gateway   string   `json:"Gateway"`
+			Aliases   []string `json:"Aliases"`
 		} `json:"Networks"`
 	} `json:"NetworkSettings"`
 }
@@ -190,7 +214,27 @@ func (c *Client) ListContainers(ctx context.Context, managedOnly bool) ([]Contai
 			Managed: managed,
 		}
 
-		if details, err := c.Inspect(ctx, entry.ID); err == nil {
+		containers = append(containers, container)
+	}
+
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, 4)
+	for index := range containers {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			wg.Wait()
+			return containers, nil
+		}
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			details, err := c.Inspect(ctx, containers[index].ID)
+			if err != nil {
+				return
+			}
+			container := &containers[index]
 			container.RestartCount = details.RestartCount
 			if details.State.Health != nil && details.State.Health.Status != "" {
 				container.Health = details.State.Health.Status
@@ -198,10 +242,10 @@ func (c *Client) ListContainers(ctx context.Context, managedOnly bool) ([]Contai
 			if started, err := time.Parse(time.RFC3339Nano, details.State.StartedAt); err == nil {
 				container.StartedAt = started.Unix()
 			}
-		}
-
-		containers = append(containers, container)
+			container.Details = runtimeDetails(details)
+		}(index)
 	}
+	wg.Wait()
 
 	sort.Slice(containers, func(i, j int) bool { return containers[i].Name < containers[j].Name })
 	return containers, nil
@@ -296,6 +340,15 @@ func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
 			Usage uint64 `json:"usage"`
 			Limit uint64 `json:"limit"`
 		} `json:"memory_stats"`
+		PIDsStats struct {
+			Current uint64 `json:"current"`
+		} `json:"pids_stats"`
+		BlockStats struct {
+			Entries []struct {
+				Op    string
+				Value uint64
+			} `json:"io_service_bytes_recursive"`
+		} `json:"blkio_stats"`
 		Networks map[string]struct {
 			RxBytes uint64 `json:"rx_bytes"`
 			TxBytes uint64 `json:"tx_bytes"`
@@ -308,6 +361,7 @@ func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
 
 	container := &Container{
 		MemoryUsage: stats.MemoryStats.Usage,
+		PIDs:        stats.PIDsStats.Current,
 		MemoryLimit: stats.MemoryStats.Limit,
 	}
 
@@ -326,5 +380,52 @@ func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
 		container.NetworkTx += network.TxBytes
 	}
 
+	for _, entry := range stats.BlockStats.Entries {
+		switch entry.Op {
+		case "Read", "read":
+			container.BlockRead += entry.Value
+		case "Write", "write":
+			container.BlockWrite += entry.Value
+		}
+	}
 	return container, nil
+}
+
+func runtimeDetails(details *inspectResult) *ufp.ContainerDetails {
+	result := &ufp.ContainerDetails{ImageID: details.Image, Created: details.Created,
+		Release: details.Config.Labels[LabelRelease], Role: details.Config.Labels[LabelRole],
+		ExitCode: details.State.ExitCode, OOMKilled: details.State.OOMKilled,
+		Error: details.State.Error, FinishedAt: details.State.FinishedAt}
+	names := make([]string, 0, len(details.NetworkSettings.Networks))
+	for name := range details.NetworkSettings.Networks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		network := details.NetworkSettings.Networks[name]
+		result.Networks = append(result.Networks,
+			ufp.ContainerNetwork{Name: name, Address: network.IPAddress, Gateway: network.Gateway, Aliases: network.Aliases})
+	}
+	for port, bindings := range details.NetworkSettings.Ports {
+		for _, binding := range bindings {
+			result.Ports = append(result.Ports, net.JoinHostPort(binding.HostIP, binding.HostPort)+" → "+port)
+		}
+		if len(bindings) == 0 {
+			result.Ports = append(result.Ports, port+" (internal)")
+		}
+	}
+	sort.Strings(result.Ports)
+	for _, mount := range details.Mounts {
+		result.Mounts = append(result.Mounts, ufp.ContainerMount{Type: mount.Type, Source: mount.Source, Target: mount.Destination, ReadOnly: !mount.RW})
+	}
+	if details.State.Health != nil {
+		for _, probe := range details.State.Health.Log {
+			output := probe.Output
+			if len(output) > 1024 {
+				output = output[:1024] + "…"
+			}
+			result.Probes = append(result.Probes, ufp.HealthProbe{End: probe.End, ExitCode: probe.ExitCode, Output: output})
+		}
+	}
+	return result
 }

@@ -25,13 +25,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/mustafanass/uruflow/internal/projects"
 	"github.com/mustafanass/uruflow/internal/secrets"
 )
 
-func (e *Engine) projectVariables(projectName, input string, source bool, emit Emit) error {
+func (e *Engine) projectVariables(projectName, input string) error {
 	project, err := e.server.Store().GetProject(projectName)
 	if err != nil {
 		return fmt.Errorf("project %s: %w", projectName, err)
@@ -43,13 +42,6 @@ func (e *Engine) projectVariables(projectName, input string, source bool, emit E
 	previous, hadPrevious, err := readOptionalFile(variablesPath)
 	if err != nil {
 		return err
-	}
-	if source {
-		content, err := projects.FormatVariableEditor(previous)
-		if err != nil {
-			return fmt.Errorf("open variable editor: %w", err)
-		}
-		return emit(Event{Type: EventResult, Time: time.Now(), Title: "project variables editor", Message: content})
 	}
 
 	edit, err := projects.ParseVariableEditor(input, project.Name)
@@ -88,7 +80,7 @@ func (e *Engine) projectVariables(projectName, input string, source bool, emit E
 		return cause
 	}
 
-	loaded := e.server.ReloadProjects()
+	e.server.ReloadProjects()
 	for _, problem := range e.server.ProjectProblems() {
 		if problem.Path == environmentPath {
 			return rollback(fmt.Errorf("environment was not saved: %w", problem.Reason))
@@ -102,14 +94,7 @@ func (e *Engine) projectVariables(projectName, input string, source bool, emit E
 	if err := e.server.Store().UpdateSecrets(sealed, remove); err != nil {
 		return rollback(fmt.Errorf("store encrypted variables: %w", err))
 	}
-	rows, err := variableRows(edit.DotEnv)
-	if err != nil {
-		return err
-	}
-	if err := emit(Message("success", fmt.Sprintf("saved %s and loaded %d project environments", variablesPath, loaded))); err != nil {
-		return err
-	}
-	return emit(Table(project.Name+" environment", []string{"NAME", "TYPE", "VALUE OR REFERENCE"}, rows))
+	return nil
 }
 
 func (e *Engine) referencedSecrets() (map[string]bool, error) {
@@ -129,28 +114,6 @@ func (e *Engine) referencedSecrets() (map[string]bool, error) {
 		}
 	}
 	return referenced, nil
-}
-
-func variableRows(raw string) ([][]string, error) {
-	values, err := projects.ParseDotEnv(raw)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(values))
-	for name := range values {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	rows := make([][]string, 0, len(names))
-	for _, name := range names {
-		value := values[name]
-		kind := "plain"
-		if len(secrets.References(value)) > 0 {
-			kind = "secret"
-		}
-		rows = append(rows, []string{name, kind, value})
-	}
-	return rows, nil
 }
 
 func unreferenced(candidates []string, referenced map[string]bool) []string {

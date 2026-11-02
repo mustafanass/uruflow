@@ -19,45 +19,36 @@
 package middleware
 
 import (
-	"github.com/mustafanass/uruflow/pkg/logger"
 	"net/http"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/mustafanass/uruflow/pkg/logger"
 )
 
-func Logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func Logging() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		start := time.Now()
-
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-
-		logger.Info("[HTTP] %s %s %d %v",
-			r.Method,
-			r.URL.Path,
-			wrapped.statusCode,
-			time.Since(start),
-		)
-	})
+		c.Next()
+		logger.Info("[HTTP] %s %s %d %v", c.Request.Method, c.Request.URL.Path, c.Writer.Status(), time.Since(start))
+	}
 }
 
-func Recovery(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func Recovery() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
+				if err == http.ErrAbortHandler {
+					panic(err)
+				}
 				logger.Error("[HTTP] panic: %v", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				if c.Writer.Written() {
+					c.Abort()
+					panic(http.ErrAbortHandler)
+				}
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 			}
 		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
+		c.Next()
+	}
 }

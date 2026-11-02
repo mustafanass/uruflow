@@ -1,0 +1,188 @@
+.log-toolbar .filter-input {
+  max-width: 300px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  margin: 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.log-output {
+  height: 560px;
+  overflow: auto;
+  background: var(--log-background);
+  padding: 16px 0;
+  color: var(--log-text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  scrollbar-color: var(--log-muted) var(--log-background);
+}
+
+.log-line {
+  display: flex;
+  gap: 15px;
+  align-items: start;
+  line-height: 1.9;
+  padding: 2px 18px;
+  min-width: fit-content;
+}
+
+.log-line:hover {
+  background: var(--log-hover);
+}
+
+.log-line time {
+  font-size: 12px;
+  color: var(--log-muted);
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.log-source {
+  font-size: 12px;
+  color: var(--log-text);
+  white-space: nowrap;
+  min-width: 55px;
+}
+
+.log-line pre {
+  font: inherit;
+  margin: 0;
+  white-space: pre;
+  min-width: 0;
+}
+
+.log-output.wrap .log-line {
+  min-width: 0;
+}
+
+.log-output.wrap pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-output .empty {
+  color: var(--log-text);
+  min-height: 450px;
+}
+
+.log-output .empty-mark {
+  background: var(--log-hover);
+  border-color: var(--log-border);
+  color: var(--log-muted);
+}
+
+.log-output .empty p {
+  color: var(--log-muted);
+}
+
+.log-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 17px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.log-buffer-note {
+  padding: 8px 16px;
+  font-size: 12px;
+  background: var(--warn-surface);
+  color: var(--warn);
+}
+
+.cm-editor {
+  font-size: 12px;
+}
+
+.editor-panel .panel-heading > div:first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.editor-panel .panel-heading p {
+  overflow-wrap: anywhere;
+}
+
+.cm-editor .cm-scroller {
+  font-family: 'IBM Plex Mono', monospace;
+  line-height: 1.9;
+}
+
+.cm-editor .cm-gutters {
+  background: var(--surface-subtle);
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.cm-editor .cm-content {
+  padding: 14px 0;
+}
+
+.cm-editor .cm-line {
+  padding: 0 16px;
+}
+
+.cm-focused {
+  outline: 1px solid var(--focus) !important;
+}
+
+.editor-guidance {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.9;
+  background: var(--surface);
+}
+
+.editor-guidance code {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.editor-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 20px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  gap: 12px;
+}
+
+.diff-view {
+  font-size: 12px;
+  line-height: 1.9;
+  margin: 0;
+  min-height: 300px;
+  max-height: 500px;
+  overflow: auto;
+  white-space: pre-wrap;
+  padding: 15px 0;
+  color: var(--muted);
+}
+
+.diff-view > span {
+  display: block;
+  padding: 0 20px;
+}
+
+.diff-view > span.added {
+  background: var(--good-surface);
+  color: var(--good);
+}
+
+.diff-view > span.removed {
+  background: var(--bad-surface);
+  color: var(--bad);
+}

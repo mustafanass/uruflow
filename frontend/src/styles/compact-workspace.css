@@ -1,0 +1,160 @@
+.account-menu {
+  position: relative;
+  border-top: 1px solid var(--nav-border);
+  padding-top: 15px;
+}
+.account-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--nav-text);
+  text-align: left;
+}
+.account-trigger .account-name {
+  flex: 1;
+}
+.account-trigger .account-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-dropdown {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  min-width: 210px;
+  width: 100%;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--shadow) 15%, transparent);
+  z-index: 80;
+}
+.account-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 0;
+  padding: 12px 9px;
+  text-align: left;
+  background: transparent;
+  font-size: 12px;
+  border-radius: 4px;
+}
+.account-dropdown button:hover,
+.account-dropdown button:focus-visible {
+  background: var(--surface-subtle);
+}
+.account-dropdown button > span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+.context-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.context-filters label {
+  min-width: 160px;
+  margin: 0;
+  font-size: 12px;
+}
+.context-filters select {
+  margin-top: 7px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.details-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.details-panel > summary {
+  padding: 17px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.details-panel[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.details-panel > .panel {
+  margin: 0;
+  border: 0;
+}
+.details-content,
+.details-panel > .two-columns {
+  padding: 20px;
+}
+.danger-section {
+  border-color: var(--bad-border);
+  margin-top: 24px;
+}
+.danger-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+}
+.danger-action p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 70ch;
+}
+#registry {
+  scroll-margin-top: 85px;
+}
+@media (max-width: 600px) {
+  .context-filters {
+    gap: 10px;
+    padding: 14px;
+  }
+  .context-filters label {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+  .danger-action {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .details-panel > summary {
+    padding: 15px;
+  }
+}
+.home-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 14px;
+}
+.home-heading > .page-title {
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+.home-heading > .fleet-summary {
+  margin: 0;
+}
+@media (max-width: 960px) {
+  .home-heading {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}

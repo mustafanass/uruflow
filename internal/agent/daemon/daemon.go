@@ -62,7 +62,7 @@ type Daemon struct {
 	registry   ufp.RegistryConfig
 	registryMu sync.RWMutex
 
-	streams  map[string]context.CancelFunc
+	streams  map[string]*logStream
 	streamMu sync.Mutex
 
 	stop chan struct{}
@@ -91,7 +91,7 @@ func New(cfg *config.Config) (*Daemon, error) {
 		cfg:     cfg,
 		docker:  engine,
 		metrics: metrics.NewCollector(),
-		streams: make(map[string]context.CancelFunc),
+		streams: make(map[string]*logStream),
 		jobs:    make(map[string]*activeJob),
 		stop:    make(chan struct{}),
 	}

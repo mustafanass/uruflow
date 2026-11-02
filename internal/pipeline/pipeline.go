@@ -200,6 +200,21 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 }
 
 func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, error) {
+	return p.rollback(projectName, imageRef, nil)
+}
+
+func (p *Pipeline) RollbackRelease(projectName, releaseID string) (*models.Release, error) {
+	source, err := p.store.GetRelease(releaseID)
+	if err != nil {
+		return nil, err
+	}
+	if source.Project != projectName || source.Status != models.StatusSucceeded || source.Image == "" {
+		return nil, fmt.Errorf("rollback source must be a successful release of this project")
+	}
+	return p.rollback(projectName, source.Image, source)
+}
+
+func (p *Pipeline) rollback(projectName, imageRef string, source *models.Release) (*models.Release, error) {
 	project, err := p.store.GetProject(projectName)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", projectName, ErrProjectNotFound)
@@ -208,8 +223,7 @@ func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, erro
 		return nil, err
 	}
 
-	var source *models.Release
-	if imageRef == "" {
+	if source == nil && imageRef == "" {
 		previous, err := p.store.LastSuccessfulRelease(projectName)
 		if err != nil || previous.Image == "" {
 			return nil, ErrNothingToRun

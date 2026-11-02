@@ -22,10 +22,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gin-gonic/gin"
 	"github.com/mustafanass/uruflow/internal/cli"
 )
 
 func main() {
+	gin.SetMode(gin.ReleaseMode)
 	if err := cli.ExecuteServer(); err != nil {
 		fmt.Fprintf(os.Stderr, "uruflow: %v\n", err)
 		os.Exit(1)

@@ -23,16 +23,16 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/api"
 	"github.com/mustafanass/uruflow/internal/config"
-	"github.com/mustafanass/uruflow/internal/control"
 	"github.com/mustafanass/uruflow/internal/ops"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 	"github.com/mustafanass/uruflow/internal/version"
-	"github.com/mustafanass/uruflow/internal/workbench"
+	"github.com/mustafanass/uruflow/internal/web"
 	"github.com/mustafanass/uruflow/pkg/helper"
 	"github.com/mustafanass/uruflow/pkg/logger"
 	"github.com/spf13/cobra"
@@ -45,35 +45,33 @@ const (
 
 var (
 	serverConfigPath string
-	headless         bool
-	noColor          bool
 )
 
 func ExecuteServer() error {
+	return newServerCommand().Execute()
+}
+
+func newServerCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "uruflow",
-		Short:         "Open the URUFLOW operations workspace",
-		Long:          "URUFLOW opens one operations workspace for fleet status, commands, live process output, logs, secrets, and project YAML. The persistent control plane runs with `uruflow serve`.",
+		Short:         "Run the URUFLOW deployment control plane and Web UI",
+		Long:          "URUFLOW serves its browser operator interface and deployment API. Agents connect over the TLS UFP link.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE:          runDefault,
+		Args:          cobra.NoArgs,
+		RunE:          func(command *cobra.Command, _ []string) error { return command.Help() },
 	}
 
 	root.PersistentFlags().StringVarP(&serverConfigPath, "config", "c", "", "config file path")
-	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable ANSI colors")
-	root.Flags().BoolVar(&headless, "headless", false, "run the server in the foreground (deprecated: use serve)")
 	root.AddCommand(
 		&cobra.Command{
 			Use:   "serve",
 			Short: "Run the persistent server (for systemd)",
+			Args:  cobra.NoArgs,
 			RunE:  runServer,
 		},
-		&cobra.Command{
-			Use:   "console",
-			Short: "Open the single-page operations workspace",
-			RunE:  runConsole,
-		},
 		initCommand(),
+		adminCommand(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the uruflow version",
@@ -83,7 +81,7 @@ func ExecuteServer() error {
 		},
 	)
 
-	return root.Execute()
+	return root
 }
 
 func configPath() string {
@@ -94,25 +92,6 @@ func configPath() string {
 		return fromEnv
 	}
 	return config.DefaultConfigPath
-}
-
-func runDefault(cmd *cobra.Command, args []string) error {
-	if headless {
-		return runServer(cmd, args)
-	}
-	return runConsole(cmd, args)
-}
-
-func runConsole(*cobra.Command, []string) error {
-	path := configPath()
-	if !helper.Exists(path) {
-		return fmt.Errorf("server config not found at %s; run uruflow init first", path)
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		return err
-	}
-	return workbench.Run(cfg.ControlSocketPath(), noColor)
 }
 
 func runServer(*cobra.Command, []string) error {
@@ -150,18 +129,23 @@ func runServer(*cobra.Command, []string) error {
 		return err
 	}
 
+	if !web.AssetsReady() {
+		return fmt.Errorf("frontend assets are missing; build URUFLOW with make build")
+	}
+	operations := ops.New(server)
+	console, err := web.New(operations, store, cfg.Server.DataDir, cfg.Web.TLS || strings.HasPrefix(cfg.Web.PublicURL, "https://"))
+	if err != nil {
+		return fmt.Errorf("operator interface: %w", err)
+	}
+	defer console.Close()
 	if err := server.Start(); err != nil {
 		return err
 	}
-
-	operations := ops.New(server)
-	controlServer, err := control.Listen(cfg.ControlSocketPath(), operations.Execute)
-	if err != nil {
+	if err := console.Listen(cfg); err != nil {
 		shutdown(server)
-		return err
+		return fmt.Errorf("operator listener: %w", err)
 	}
-	defer controlServer.Close()
-	logger.Info("[CONTROL] accepting local commands on %s", cfg.ControlSocketPath())
+	logger.Info("[WEB] browser operator interface on %s; first administrator setup token: %s", cfg.WebAddr(), console.SetupTokenPath())
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -169,7 +153,7 @@ func runServer(*cobra.Command, []string) error {
 
 	logger.Info("[SERVER] running")
 	<-signals
-	controlServer.Close()
+	console.Close()
 	shutdown(server)
 	return nil
 }

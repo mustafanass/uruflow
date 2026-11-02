@@ -1,0 +1,75 @@
+@media (min-width: 1700px) {
+  .main-content {
+    padding-left: 45px;
+    padding-right: 45px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .sidebar {
+    width: 200px;
+  }
+  .workspace {
+    margin-left: 200px;
+    width: calc(100% - 200px);
+  }
+  .main-content {
+    padding: 25px 24px;
+  }
+  .topbar {
+    padding: 0 24px;
+    gap: 13px;
+  }
+  .global-search {
+    max-width: 38%;
+  }
+  .page-actions {
+    gap: 6px;
+  }
+  .page-title {
+    gap: 14px;
+  }
+  .page-title h1 {
+    font-size: 24px;
+  }
+  .facts > div {
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .data-table th,
+  .data-table td {
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+}
+
+@media (max-width: 1020px) {
+  .release-timeline {
+    gap: 16px;
+    padding: 22px 17px;
+  }
+  .release-stage {
+    gap: 8px;
+  }
+  .release-stage p {
+    font-size: 12px;
+  }
+  .global-search {
+    max-width: unset;
+    width: 370px;
+    margin-left: 0;
+    margin-right: auto;
+  }
+  .topbar {
+    height: 60px;
+  }
+  .metric-strip > div {
+    padding: 0 17px;
+  }
+  .metric-strip strong {
+    font-size: 21px;
+  }
+  .modal.wide {
+    width: 680px;
+  }
+}

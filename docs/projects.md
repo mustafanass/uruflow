@@ -1,263 +1,62 @@
 # Projects
 
-For the complete production schema—multi-repository services, managed Docker resources, dependency
-graphs, jobs, structured commands, security/resource controls and command probes—see
-[Native Build Model](native-build-model.md).
+A project groups services, their sources and runtime settings into one release unit. Its authoritative definition is a YAML file, and its environment variables live beside it. This page covers files, creation, variables and safe editing. The complete schema lives in [Build and runtime model](native-build-model.md).
 
-A project is one release unit deployed to one set of runners. Every built service owns its repository
-and branch; prebuilt services use immutable image digests. This page covers how to define one, how
-environments work, and how environment variables resolve.
-
-## 1. One Authoritative Definition
-
-Every project is defined by version-controlled YAML under `projects/<name>/`. The database holds the
-loaded effective model and runtime history, but it is never a competing configuration source.
-
-Create or edit files with the internal project editor. Configuration management may also write the
-same files; run `project reload` afterward.
-
-## 2. Creating and Operating a Project
-
-The stage is explicit and derived from build targets and release targets:
-
-| Workflow | Builder | Runners | Result |
-| :--- | :---: | :---: | :--- |
-| `build_only` | Required | Not used | Build and publish immutable artifacts |
-| `deploy_only` | Not used | Required | Release already-pinned images |
-| `build_deploy` | Required | Required | Build, publish, then release together |
-
-```text
-project create api prod
-project edit api-prod
-project show api-prod
-project deploy api-prod
-```
-
-The loader resolves builder and runner names against enrolled agents and verifies their roles.
-Branch, workflow, services, variables and runtime policy always come from the files.
-
-## 3. File Layout
+## Files are the source of truth
 
 ```text
 /etc/uruflow/
-  config.yaml              Server, registry and webhook settings
-  defaults.yaml            Environment variables shared by every project
+  config.yaml
+  defaults.yaml
   projects/
-    api/
-      dev.yaml             → project api-dev
-      dev.env              Variables for api-dev
-      prod.yaml            → project api-prod
-      prod.env             Variables for api-prod
+    shop/
+      staging.yaml
+      staging.env
+      production.yaml
+      production.env
 ```
 
-The directory supplies the project name. Each `<env>.yaml` is complete and produces a project named
-`<project>-<env>`. For example, `projects/api/prod.yaml` becomes `api-prod`.
+The folder and YAML filename become `<project>-<environment>`, such as `shop-production`. Each YAML file is complete. The database holds its validated model and release history; saved releases keep the specification used for that attempt.
 
-### `<env>.yaml`
+Project, environment and service names use lowercase letters, digits, `.`, `_` and `-`, start with a letter or digit, and fit the resource-name validation. The combined project name must also fit its 63-character bound.
 
-The complete project environment.
+## Create a project
+
+Choose **Projects → Create project**. Guided setup collects the name, environment, service source and placement. **Environment YAML** accepts a complete definition.
+
+For a source build:
 
 ```yaml
-builder: builder-01                  # required; agent name, must hold the builder role
-runners: [web-01, web-02]            # required; agent names, must hold the runner role
-workflow: build_deploy                # build_deploy, build_only, or deploy_only
-timeout: 2h                           # whole release: build, push, and deployment
-env:                                 # optional; variables for this environment
-  MODE: production
+workflow: build_deploy
+builder: build-01
+runners: [runner-01]
+timeout: 2h
 services:
   api:
-    git: git@github.com:acme/api.git
-    branch: develop
-    dockerfile: Dockerfile
-    context: .
-    ports: ["8081:80"]
-    restart: unless-stopped
-```
-
-Unknown keys are rejected by name, so a typo such as `brnach:` is reported as a typo rather than
-surfacing later as a missing branch.
-
-### `<env>.env`
-
-An ordinary dotenv file. Comments, `export` prefixes, single and double quotes, and escaped newlines
-are all supported. Malformed lines are rejected with a line number.
-
-```ini
-# api dev
-LOG_LEVEL=debug
-DATABASE_URL=postgres://dev-host/api
-GREETING="hello world"
-```
-
-## 4. Multiple Services
-
-A project can run several containers as one release — for example, an application and worker built
-from source plus a prebuilt dependency:
-
-```yaml
-# projects/shop/prod.yaml
-builder: builder-01
-runners: [web-01]
-
-services:
-  app:
-    git: git@github.com:acme/shop.git
+    git: git@github.com:your-org/shop.git
     branch: main
     dockerfile: Dockerfile
     context: .
-    ports: ["8080:80"]
-    env:
-      ROLE: web
+    ports: ["8080:8080"]
     healthcheck:
       type: http
       path: /health
-      port: 80
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    labels:
-      traefik.enable: "true"
-  worker:
-    git: git@github.com:acme/shop.git
-    branch: main
-    dockerfile: Dockerfile.worker
-    command: ./worker
-  cache:
-    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-    volumes: ["/srv/shop/redis:/data"]
+      port: 8080
 ```
 
-Each service becomes its own container:
+Replace the repository, agent names and application port with your own. Agent names must resolve to enrolled machines with the required roles. For a prebuilt service, use an immutable image reference in `image` instead of build fields. Workflow rules and field definitions are in the [model reference](native-build-model.md#project-fields).
+
+After creation, inspect the **Overview**, configure variables, then choose **Deploy**. Saving configuration does not start a release.
+
+## Variables
+
+Project variables merge in this order; later entries replace earlier ones:
 
 ```text
-uruflow-shop-prod-app
-uruflow-shop-prod-worker
-uruflow-shop-prod-cache
+defaults.yaml env → environment YAML env → environment .env → service env
 ```
 
-A service is **built** when it declares `dockerfile`, and **prebuilt** when it declares `image`.
-Declaring both is rejected. Prebuilt images must use an immutable `repository@sha256:digest`
-reference; mutable tags are rejected. Built services get their own image repository,
-`<registry>/<namespace>/<project>-<service>`, so each is versioned independently by commit.
-
-Services support independent sources, dependency conditions, jobs, exact commands, typed mounts, multiple
-networks, resource/security/logging controls, native readiness, and generic Docker labels. See the
-[Native Build Model](native-build-model.md) for the full schema.
-
-### Service Healthchecks
-
-Four readiness policies are supported:
-
-```yaml
-services:
-  api:
-    healthcheck:
-      type: http
-      scheme: http       # optional; defaults to http
-      path: /health      # required
-      port: 8080         # required; container port
-      interval: 5s       # optional; defaults to 5s
-      timeout: 3s        # optional; defaults to 3s per attempt
-      retries: 10        # optional; defaults to 10 attempts
-  cache:
-    healthcheck:
-      type: tcp
-      port: 6379
-  worker:
-    healthcheck:
-      type: running
-      stable_for: 10s
-  database:
-    healthcheck:
-      type: command
-      command: [pg_isready]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-```
-
-HTTP accepts only `2xx`. HTTP and TCP require a valid port and use finite attempts. `command` becomes
-a Docker `CMD` or `CMD-SHELL` healthcheck. `running` requires the container to remain running without
-a restart for `stable_for`. Probe checks accept `start_period`; durations must be positive. Unknown
-types, fields and malformed paths are rejected with the service field path.
-
-See [Deployments](deployments.md#readiness) for runtime precedence and failure behavior.
-
-### Docker Labels
-
-Labels are a string map and are copied unchanged to both built and prebuilt service containers:
-
-```yaml
-services:
-  api:
-    dockerfile: Dockerfile
-    labels:
-      traefik.enable: "true"
-      traefik.http.routers.api.rule: "Host(`api.example.com`)"
-      traefik.http.services.api.loadbalancer.server.port: "8080"
-```
-
-Traefik is only an example consumer; it is not built into or required by URUFLOW. Caddy, monitoring
-agents and other Docker-integrated tools can consume the same generic labels. Keys beginning with
-`uruflow.` are reserved for ownership and release identity and are rejected in project configuration.
-
-### Service Variables
-
-Service `env` merges on top of the project's:
-
-```text
-defaults.yaml → <env>.yaml env → <env>.env → service env
-```
-
-A variable set on one service is invisible to the others.
-
-### All or Nothing
-
-Services are replaced in dependency order, and **if any service fails to become ready, every
-long-running service already replaced in that release is restored**. Completed job side effects
-cannot be reversed, so migrations must be backward-compatible. See
-[Deployments](deployments.md#3-release-safety).
-
-### One-Service Projects
-
-One-service projects use the same explicit service shape. This keeps the source next to the runtime
-configuration and avoids a second project file.
-
-Project, environment and service names use lowercase letters, digits, `.`, `_` and `-`, start with a
-letter or digit, and are at most 63 characters. Dockerfile and build-context paths must stay inside
-the checked-out source directory.
-
-## 5. Environments
-
-`projects/api/dev.yaml` and `projects/api/prod.yaml` expand into two ordinary projects:
-
-| | `api-dev` | `api-prod` |
-| :--- | :--- | :--- |
-| Service branch | `develop` | `main` |
-| Runners | `dev-01` | `web-01`, `web-02` |
-| Container | `uruflow-api-dev` | `uruflow-api-prod` |
-| Image repository | `…/uruflow/api-dev` | `…/uruflow/api-prod` |
-| Release history | Separate | Separate |
-
-**URUFLOW has no environment type.** The directory and filename provide names; each environment file
-loads into one ordinary project before the pipeline, runner, registry or storage layer sees it.
-
-Two consequences worth knowing:
-
-- Because each project has its own image repository, `api-dev:latest` and `api-prod:latest` are
-  unrelated tags.
-- Promoting the exact image from `api-dev` to `api-prod` is therefore not possible today; `api-prod`
-  builds from its own branch.
-
-## 6. Environment Variables
-
-Variables merge in one direction. Later wins.
-
-```text
-defaults.yaml  →  <env>.yaml env  →  <env>.env
-```
-
-`defaults.yaml` is the shared file for every project:
+`defaults.yaml` is optional and sits beside `config.yaml`:
 
 ```yaml
 env:
@@ -265,125 +64,51 @@ env:
   LOG_LEVEL: info
 ```
 
-With the `dev.env` above, `api-dev` receives:
+A project's `production.env` can override those values:
 
-| Variable | Value | From |
-| :--- | :--- | :--- |
-| `TZ` | `Asia/Baghdad` | `defaults.yaml` |
-| `MODE` | `production` | `<env>.yaml` — only where set |
-| `LOG_LEVEL` | `debug` | `dev.env`, overriding `defaults.yaml` |
-| `DATABASE_URL` | `postgres://dev-host/api` | `dev.env` |
+```dotenv
+LOG_LEVEL=warn
+APP_HOST=shop.example.com
+```
 
-`defaults.yaml` is not created by `uruflow init`. Create it yourself next to `config.yaml` when you
-want shared variables.
+The dotenv parser accepts comments, `export`, quoted values and escaped newlines. Invalid assignments identify their line. Service variables apply only to that service.
 
-Use `project show <name>` in the workspace to inspect the loaded effective project.
+Runtime fields support `${NAME}`, `${NAME:-default}`, `${NAME:?message}` and `$$` for a literal dollar sign. Required interpolation values must be supplied before a document can load. `${secret:name}` remains a reference until release dispatch.
 
-### Environment Variables and Secrets
+## Protected values
 
-Values that must not remain readable in project files or workspace output are stored separately and
-referenced:
-
-Open the unified list with `project variables api-prod`. Use ordinary dotenv syntax for plain
-configuration and prefix sensitive entries with `secret `:
+Open the variables editor in **Configuration**. Plain values use `NAME=value`. Prefix a value with `secret ` to store it encrypted:
 
 ```text
 LOG_LEVEL=info
-secret DATABASE_URL=postgres://user:password@db/app
+secret DATABASE_URL=postgres://user:password@database/shop
 ```
 
-```ini
-# projects/api/prod.env after saving — safe to commit
-DATABASE_URL=${secret:api-prod.DATABASE_URL}
+For `shop-production`, saving writes this reference to `production.env`:
+
+```dotenv
 LOG_LEVEL=info
+DATABASE_URL=${secret:shop-production.DATABASE_URL}
 ```
 
-URUFLOW resolves the reference when a release is dispatched. The value is encrypted at rest, never
-written to a project file, and never appears in a release log. Stored values reopen only as
-references. Deleting a secret line removes its encrypted material when it is no longer shared;
-replacing the reference rotates it. A missing reference fails the deploy **before** any build starts.
+The editor reopens it as `secret DATABASE_URL=${secret:shop-production.DATABASE_URL}`. Replace the reference with a new value to rotate it. Ordinary variables remain readable configuration. [Security](security.md#secrets) explains storage and resolution.
 
-> Variables that are not secret references are stored in plaintext in `.env` files and in the
-> database, and are visible in the interface. See [Security](security.md#7-secrets).
+## Edit safely
 
-## 7. Editing Safely
+**Configuration** contains separate editors for the authoritative YAML and variable overlay. **Review changes** shows the diff, and **Save changes** validates the resolved document and its revision before writing.
 
-`project edit <name>` opens the authoritative environment YAML in the workspace's internal editor.
-Press `Ctrl+S` to format, validate, atomically save, and reload it. Failed validation keeps the editor
-open with its content intact; a failed full reload restores the previous file atomically. Validation
-resolves `defaults.yaml`, the YAML `env` block, and the adjacent `<env>.env` with the same precedence
-used by reload.
+A validation or permission error preserves your text. If another operator has saved first, copy your edits and choose **Load latest** to obtain the current document and revision. Apply your changes to that version and save again.
 
-## 8. Reloading
+Unsaved document changes block navigation. Graph positions save automatically in the browser and do not affect configuration state. Saving one document preserves the other editor’s unsaved state.
 
-Run `project reload` in the workspace to re-read `projects/` from disk. Files edited outside URUFLOW are not
-noticed until you do.
+## Load external changes
 
-Loading never deletes. If a file disappears, the project keeps running and is reported as orphaned:
+Files are loaded on server startup and by **Projects → Reload definitions**. Use reload after a configuration-management system changes YAML, variable overlays or shared defaults.
 
-```text
-╭ FILE PROBLEMS ────────────────────────────────────────────────╮
-│ ✘ projects/api/dev.yaml   api-dev came from this file, which  │
-│                           is gone — press d to remove it      │
-╰───────────────────────────────────────────────────────────────╯
-```
+Loading reports invalid files and missing definitions. A removed definition does not implicitly remove workloads: restore its file and reload to reconcile the desired configuration.
 
-A file that fails to load never takes the others down. Each problem names the file and the reason.
+## Implementation
 
-## 9. Complete Example
+`internal/projects` owns parsing, interpolation, schema validation and file writes. `internal/ops/documents.go` owns revision checks and save coordination. `internal/web` checks access before operations, including resolved agent placement and secret references.
 
-Two environments of one service, each fully described by one YAML file.
-
-```yaml
-# /etc/uruflow/defaults.yaml
-env:
-  TZ: Asia/Baghdad
-  LOG_LEVEL: info
-```
-
-```yaml
-# /etc/uruflow/projects/api/dev.yaml
-builder: builder-01
-runners: [dev-01]
-services:
-  api:
-    git: git@github.com:acme/api.git
-    branch: develop
-    dockerfile: Dockerfile
-    context: .
-    build_args:
-      VERSION: "2"
-    ports: ["8081:80"]
-```
-
-```ini
-# /etc/uruflow/projects/api/dev.env
-LOG_LEVEL=debug
-DATABASE_URL=postgres://dev-host/api
-```
-
-```yaml
-# /etc/uruflow/projects/api/prod.yaml
-builder: builder-01
-runners: [web-01, web-02]
-env:
-  MODE: production
-services:
-  api:
-    git: git@github.com:acme/api.git
-    branch: main
-    dockerfile: Dockerfile
-    context: .
-    build_args:
-      VERSION: "2"
-    ports: ["80:80"]
-    volumes: ["/srv/api:/data:ro"]
-    restart: unless-stopped
-```
-
-```ini
-# /etc/uruflow/projects/api/prod.env
-DATABASE_URL=postgres://prod-host/api
-```
-
-Both environments are released deliberately from the interface.
+Related: [Deployments](deployments.md), [Browser workspace](interface.md), [Configuration](configuration.md).

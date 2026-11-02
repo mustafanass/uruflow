@@ -98,7 +98,7 @@ func agentPath() string {
 
 func runAgentInit(*cobra.Command, []string) error {
 	if enrol.id == "" || enrol.key == "" || enrol.server == "" {
-		return fmt.Errorf("--id, --key and --server are required; `agent add` in the URUFLOW workspace prints all three")
+		return fmt.Errorf("--id, --key and --server are required; enroll the agent from Agents in the web interface to get the setup command")
 	}
 
 	parsedRoles, err := roles.Parse(enrol.roles)

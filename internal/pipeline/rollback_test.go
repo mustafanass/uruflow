@@ -67,3 +67,42 @@ func TestMultiServiceRollbackReusesEveryDigest(t *testing.T) {
 	}
 	harness.await(t, rollback.ID, models.StatusSucceeded)
 }
+
+func TestRollbackReleaseRestoresSelectedHistoryAndRejectsOtherProjects(t *testing.T) {
+	harness := newHarness(t)
+	project, _ := harness.store.GetProject("api")
+	project.Services = []models.Service{{Name: "app", GitURL: "git@host:api.git", Branch: "main", Dockerfile: "Dockerfile", Labels: map[string]string{"revision": "original"}}}
+	if err := harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-harness.agent.builds
+	<-harness.agent.releases
+	harness.await(t, first.ID, models.StatusSucceeded)
+	project.Services[0].Labels = map[string]string{"revision": "newer"}
+	if err = harness.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	second, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-harness.agent.builds
+	<-harness.agent.releases
+	harness.await(t, second.ID, models.StatusSucceeded)
+	restored, err := harness.pipeline.RollbackRelease("api", first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := <-harness.agent.releases
+	if len(payload.Services) != 1 || payload.Services[0].Labels["revision"] != "original" {
+		t.Fatalf("selected release was ignored: %+v", payload.Services)
+	}
+	harness.await(t, restored.ID, models.StatusSucceeded)
+	if _, err = harness.pipeline.RollbackRelease("different-project", first.ID); err == nil {
+		t.Fatal("cross-project rollback accepted")
+	}
+}

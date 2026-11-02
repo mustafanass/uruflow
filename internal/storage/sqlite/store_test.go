@@ -19,6 +19,7 @@
 package sqlite
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -320,5 +321,25 @@ func TestWebhookDeliveriesAreClaimedOnce(t *testing.T) {
 	claimed, err = store.ClaimWebhookDelivery("gitlab", "delivery-1")
 	if err != nil || !claimed {
 		t.Fatalf("provider-specific claim = %v, %v", claimed, err)
+	}
+}
+
+func TestDatabaseCredentialsArePrivateOnNewAndExistingInstallations(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "private.db")
+	for _, existing := range []bool{false, true} {
+		if existing {
+			if err := os.Chmod(path, 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		store, err := New(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		store.Close()
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0600 {
+			t.Fatalf("database permissions: %v %v", info, err)
+		}
 	}
 }

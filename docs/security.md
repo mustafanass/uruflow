@@ -1,196 +1,87 @@
-# Security Model
+# Security
 
-This document states what URUFLOW protects, how, and — as importantly — what it assumes. It is
-written to let you decide whether the model fits your environment, not to reassure you.
+URUFLOW authenticates people at the operator API and agents at the UFP link. This page explains access decisions, credentials, protected state and administrator recovery.
 
-## 1. Trust Model in One Picture
+## Trust boundaries
 
-```mermaid
-flowchart TB
-    CA[URUFLOW Certificate Authority<br/>data_dir/pki/ca.key]
-    CA -->|signs| SC[Server certificate<br/>uruflow-server + advertise]
-    CA -->|signs| RC[Registry certificate<br/>registry host]
-    CA -->|copied to| AG[Agent<br/>ca.crt]
+| Boundary                         | Verification                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| Browser to operator API          | Local account, session cookie, role, project grant and CSRF token for mutations |
+| Agent to server                  | TLS server verification, enrolled identity, HMAC challenge and exact role match |
+| Builder or runner to registry    | TLS trust root and registry credentials                                         |
+| Git provider to webhook listener | Provider signature or secret, push-event headers and delivery ID                |
+| Server storage                   | Private database and key files; encrypted secret values                         |
 
-    AG -->|verifies with ca.crt| SC
-    AG -->|verifies with ca.crt| RC
-    AG -->|proves identity with<br/>HMAC challenge-response| SRV[URUFLOW Server]
-    SRV -->|delivers registry credentials<br/>over the authenticated link| AG
+Restrict host access to the server and agent machines. The server controls fleet deployment, while agent Docker access controls local workloads. Assign source access to builders and project operations to people trusted to run code on the selected hosts.
+
+## Browser accounts and permissions
+
+The first administrator is created with the private `<data_dir>/web-setup-token` file. Bootstrap works only before any account exists, and its token is removed after setup. Administrators manage accounts in **System → Access**.
+
+| Role          | Actions                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| Viewer        | Read granted projects, runtime observations, releases and logs                                     |
+| Operator      | Viewer actions plus editing, deployment, restoration, stopping and alert resolution within scope   |
+| Administrator | Fleet access, agent enrollment and removal, account management, audit access and registry deletion |
+
+Non-admin accounts receive explicit project names; `*` grants fleet access. Creating projects and reloading definitions require fleet access as well as an operator role. Registry inspection requires fleet access. Changing a browser URL or resource ID does not bypass server checks.
+
+The server filters snapshots, graphs, agents, workload logs and release history before transport. Document saves validate the resolved model before writing, including agent placement and secret references. An account change revokes affected sessions, and the last administrator is protected from removal or demotion.
+
+## Passwords and sessions
+
+Passwords are stored using bcrypt. New passwords require at least 15 characters and fit bcrypt's 72-byte bound. Sign-in uses generic errors and bounded attempts.
+
+Sessions use random identifiers in HttpOnly, SameSite cookies. HTTPS uses Secure cookies. State-changing requests also require the session's CSRF token and pass origin protection. The operator listener defaults to loopback; [Configuration](configuration.md#operator-listener) explains HTTPS exposure.
+
+Only hashes of session identifiers are stored in the private database. Valid sessions survive a server restart. Sessions expire after 30 idle minutes or eight hours total. Password or permission changes invalidate their credential fingerprint. Live streams recheck authentication and close revoked access.
+
+Every user can change their password using the current password, or choose **Sign out everywhere** in **System**. Administrators can reset another account's password through **System → Access**.
+
+## Administrator recovery
+
+On the server host, use the existing installation configuration:
+
+```sh
+sudo uruflow --config /etc/uruflow/config.yaml admin reset-password admin
 ```
 
-One authority signs both the agent link and the registry. An agent therefore installs exactly one
-trust root, and registry access becomes a consequence of enrolment rather than a separate credential
-distribution problem.
+The command opens the existing database, generates a replacement password, prints it locally, revokes the administrator's sessions and records the recovery in the audit log. It does not start another server. Recovery is restricted to administrator accounts.
 
-## 2. Trust Root
+Use `--password-stdin` to provide a replacement through private standard input. Passwords are not accepted as command-line arguments. Protect shell output and any password-manager input used for recovery.
 
-The authority is generated on first start and lives at `<data_dir>/pki/ca.key`, mode `0600`. It is
-valid for ten years; issued certificates for five.
+## Agent identity and UFP
 
-**This key is the root of all trust in the deployment.** Anyone holding it can impersonate the server
-to every agent and the registry to every puller. It is also unrecoverable: losing it means reissuing
-and redistributing a new CA to every machine.
+Enrollment creates an identity, shared key and roles. The one-time browser setup command carries those values into the local private agent configuration. Save it before dismissing setup. The CA certificate remains downloadable from **Agents**.
 
-The server certificate always carries the logical name `uruflow-server` alongside `localhost`,
-`127.0.0.1` and the configured `advertise` value. Agents pin the CA and expect the logical name, which
-means the link keeps working when the server's address changes without reissuing anything.
+Agents verify the server certificate against the URUFLOW CA and logical name `uruflow-server`. The server sends a fresh random nonce, and the agent answers with `HMAC-SHA256(key, context || nonce)`. Verification uses constant-time comparison. The shared key is not transmitted during this handshake.
 
-## 3. Agent Link
+Enrolled roles must match the handshake declaration. The server checks roles before dispatch, and the agent checks them before execution. [UFP](protocol.md) owns exact frame, message and timing definitions.
 
-TLS 1.3, always. There is no plaintext mode and no skip-verify option.
+## Registry and image identity
 
-The server does not use client certificates. Agent identity is established by challenge-response:
+The managed registry uses a URUFLOW-signed certificate and bcrypt-backed `htpasswd` authentication. Registry configuration reaches agents over authenticated UFP. Agents install the Docker trust root; builders log in using standard input for the password.
 
-```text
-agent  ──HELLO {agent_id, roles}────────────────▶  server
-agent  ◀─CHALLENGE {32-byte nonce}──────────────   server
-agent  ──PROOF {HMAC-SHA256(key, ctx ‖ nonce)}─▶  server
-agent  ◀─WELCOME───────────────────────────────    server
-```
+Registry credentials are attached only to images belonging to that registry. Prebuilt images and built artifacts are dispatched by digest. Builder results must match the expected repositories and services before the pipeline accepts them.
 
-Properties, each verifiable in `internal/ufp`:
+## Secrets
 
-| Property | How |
-| :--- | :--- |
-| The key never crosses the wire | Only the HMAC of a server-chosen nonce is sent |
-| Replay resistance | A fresh 32-byte `crypto/rand` nonce per connection |
-| Context binding | The label `uruflow-agent-auth-v1` is folded in ahead of the nonce |
-| No partial-match leak | Comparison uses `hmac.Equal`, which is constant time |
-| No id enumeration by timing | An unknown agent id is verified against a fixed placeholder key rather than returning early |
+The variables editor in project **Configuration** accepts `secret NAME=value`. Saving stores encrypted material and writes a `${secret:project-environment.NAME}` reference to the variable file. Saved values reopen as references. [Projects](projects.md#protected-values) owns entry and rotation syntax.
 
-The agent key is a shared secret. It sits in `agent.yaml` on the target machine and in the database on
-the server. Anyone who can read either can impersonate that agent.
+Secret values use AES-256-GCM with a fresh nonce. The key is `<data_dir>/pki/secrets.key`, mode `0600`. References are resolved at release dispatch; missing values fail before a build starts.
 
-## 4. Role Enforcement
+Resolved runtime values travel through TLS to Docker on the runner. They are available to the application and host administrators, including through Docker inspection. Keep application output free of credentials. Plain YAML and dotenv values remain ordinary readable configuration.
 
-An agent declares its roles in the handshake. The declaration must exactly match the roles stored
-when the agent was enrolled. Enforcement then happens twice, independently:
+Back up the encrypted database and its matching encryption key together. The certificate authority also belongs to that backup set; see [Operations](operations.md#backup-and-restore).
 
-- the **server** refuses to dispatch `build.run` to an agent not enrolled as `builder`
-- the **agent** refuses a `build.run` it was not configured for
+## Webhooks and audit
 
-Neither side relies on the other being correct. The practical effect is a boundary on source-code
-exposure: a runner-only agent cannot be instructed to clone a repository, so machines that only run
-workloads never receive source or build tooling.
+GitHub requests use HMAC-SHA256 over the raw body. GitLab requests use a constant-time token comparison. The webhook listener verifies event headers and claims delivery IDs before handling a push. [Configuration](configuration.md#webhook-listener) owns setup and routing behavior.
 
-## 5. Registry
+Operator mutations require an audit intent record before execution and then record their outcome. Authentication attempts, access changes and local administrator recovery also leave audit records. Administrators inspect them in **System → Audit log**.
 
-The registry runs with TLS using a URUFLOW-signed certificate and `htpasswd` authentication with a
-generated password stored using bcrypt.
+## Implementation
 
-Credentials and the CA certificate are delivered to agents over the already-authenticated link. They
-are not written into project files or passed on command lines.
+`internal/web` owns browser authentication and authorization. `internal/storage/sqlite` stores users, sessions and audit entries. `internal/ufp` and `internal/link` own agent authentication. `internal/pki`, `internal/secrets` and `internal/registry` own trust and protected material.
 
-A builder installs the CA into `/etc/docker/certs.d/<registry>/ca.crt` and runs `docker login` itself.
-Both require root; see [Operations](operations.md#agent-permissions).
-
-Registry credentials are attached **only** to pulls whose image belongs to the URUFLOW registry, so
-the registry password is never presented to Docker Hub or another host. Every released image,
-including a public prebuilt image, must be pinned as `repository@sha256:digest`. Builder results are
-checked against the expected repository and digest format before a runner receives them.
-
-Anonymous requests are refused with `401`, and a client that does not trust the URUFLOW CA cannot
-complete the TLS handshake.
-
-## 6. Webhooks
-
-| Host | Header | Verification |
-| :--- | :--- | :--- |
-| GitHub | `X-Hub-Signature-256` | HMAC-SHA256 over the raw body, compared in constant time |
-| GitLab | `X-Gitlab-Token` | Constant-time comparison against the secret |
-
-An invalid signature is refused with `401`, and an empty `webhook.secret` prevents startup. The HTTP
-listener uses TLS by default; plaintext is accepted only on a loopback webhook bind for a local
-TLS-terminating proxy. A public certificate can be configured separately from URUFLOW's private agent
-certificate. GitHub delivery ids and GitLab event UUIDs are retained for 30 days to reject replayed pushes.
-
-The webhook endpoint can start a build of an auto-deploy project only when both repository identity
-and branch match. Treat the secret as a deployment credential.
-
-## 7. Secrets
-
-URUFLOW provides a secret store for values that must not remain in project files or ordinary
-workspace output. `project variables <project>` manages plain and secret variables together. A plain
-line uses `NAME=value`; a protected line uses `secret NAME=value`. Secret values never enter command
-arguments, history, or the response transcript.
-
-A project references it as `${secret:api_db_url}` in an ordinary variable. The reference is resolved
-when a release is dispatched.
-
-### What Is Protected
-
-| Property | How |
-| :--- | :--- |
-| Encrypted at rest | AES-256-GCM; ciphertext in the database |
-| Key storage | `<data_dir>/pki/secrets.key`, mode `0600`, generated on first use |
-| Not deterministic | A fresh nonce per value, so identical secrets have different ciphertext |
-| Tamper detection | GCM authentication rejects modified ciphertext |
-| Not displayed after storage | Lists and responses show only references; bulk values are visible only while the editor is open |
-| Never in files | Project files carry the reference, so they are safe to commit |
-| Not in logs | Resolution happens at dispatch; values never enter a release log |
-| Fails closed | A missing secret fails the deploy before any build starts |
-
-### What Is Not Protected
-
-**Resolved values reach the runner in plaintext.** They must — Docker needs the value to start a
-container. Consequently:
-
-- the value is visible in `docker inspect` on that runner, as with any container variable
-- anyone with a shell on a runner can read the variables of workloads on that machine
-- protection is at rest on the server and in transit over TLS, not on the execution plane
-
-**Ordinary variables are still plaintext.** Only values you deliberately move into the secret store
-are encrypted. Anything written directly in a `.env` file or a project remains readable.
-
-**Secret entry is visible in the terminal editor until saved.** Take care with shoulder-surfing,
-terminal recording, and scrollback capture. Editor content is cleared after a successful save or
-cancellation and is not added to the transcript or command history.
-
-**Losing the key file loses every secret.** `pki/secrets.key` cannot be reconstructed. It joins
-`ca.key` as material that must be backed up — see [Operations](operations.md#backup-and-restore).
-
-## 8. Docker Socket
-
-Both the server and every agent hold a Docker socket.
-
-**Access to a Docker socket is equivalent to root on that host.** A process that can talk to it can
-start a privileged container mounting the host filesystem. This is a property of Docker, not of
-URUFLOW, but it defines the blast radius:
-
-| Compromise | Consequence |
-| :--- | :--- |
-| The server host | Full control of the fleet: state, CA, registry, and the ability to deploy anything to every runner |
-| A runner host | Root on that machine and its workloads |
-| A builder host | Root on that machine, plus source code for every project it builds |
-| The CA key | Impersonation of the server and registry |
-| An agent key | Impersonation of that agent |
-
-Run agents on machines you already trust with your workloads. There is no sandbox between an agent and
-its host.
-
-## 9. Access Control
-
-URUFLOW has **no user accounts, no roles for humans, and no audit log.**
-
-The control surface is a root-only Unix socket on the server host. Access control is therefore
-whoever can log into that host and open the workspace with sufficient permission—a small model, provided
-you treat server shell access as equivalent to full deployment authority.
-
-The HTTPS listener exposes only two routes: the webhook path and `/health`. There is no HTTP API for
-managing projects, agents or releases, so there is no remotely reachable management surface to
-misconfigure.
-
-If you add one, put authentication in front of it from the first commit. A management API on a host
-holding a Docker socket is remote code execution when it is wrong.
-
-## 10. Assumptions
-
-State these plainly, because the model depends on them:
-
-1. The server host is trusted and its shell access is restricted.
-2. Agent machines are trusted with the workloads they run.
-3. The network between server and agents may be hostile — this is why TLS and challenge-response
-   exist — but the machines at each end are not.
-4. Anyone permitted to define a project is permitted to run arbitrary code on the runners assigned to
-   it, because a Dockerfile is arbitrary code.
-5. Environment variables are not secrets.
+Related: [Architecture](architecture.md), [Operations](operations.md), [Testing](testing.md).

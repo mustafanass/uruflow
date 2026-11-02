@@ -1,220 +1,112 @@
 # Architecture
 
-This document explains how URUFLOW is put together and why. It is written for contributors and for
-engineers evaluating the design. For vocabulary, read [Core Concepts](concepts.md) first.
+URUFLOW has one Go control plane, an embedded React operator workspace, and Go agents on the machines that build or run applications. This page explains ownership, the main flows and the rules that connect them.
 
-## 1. System Model
+Read [Concepts](concepts.md) for the vocabulary and [Deployments](deployments.md) for the release sequence.
 
-URUFLOW is a control plane that instructs agents. It holds no workloads itself, and agents make no
-decisions.
-
-[![URUFLOW architecture: the server, builder and runner agents and the private registry; the UFP frame and envelopes; the deployment flow; and the components on each side](../assets/uruflow-arch.png)](../assets/uruflow-arch.png)
-
-The four panels are expanded in the sections below: the system model here, the wire format in
-[UFP Protocol](protocol.md), and the flow in [Deployments](deployments.md).
-
-Two properties define the system:
-
-- **Build once, release the same artifact everywhere.** A commit is built exactly once. Every runner
-  receives the identical image by immutable digest.
-- **Agents connect outward.** The server never dials an agent, so agents may sit behind NAT. A
-  disconnected agent is detected by the read deadline on the link, not by polling.
-
-## 2. Component Responsibilities
-
-| Package | Responsibility | Owns |
-| :--- | :--- | :--- |
-| `internal/ufp` | Wire contract: framing, envelopes, handshake, shared connection | Protocol constants and payload types |
-| `internal/link` | Server side of the agent link | Sessions, event fan-out, metrics ingestion, alerts |
-| `internal/pipeline` | Release orchestration across two stages | Release state transitions |
-| `internal/projects` | Project file loading, writing, dotenv parsing | The file format |
-| `internal/registry` | Registry container lifecycle and catalog | The `registry:2` deployment |
-| `internal/pki` | Certificate authority and leaf certificates | All private keys |
-| `internal/docker` | Docker Engine API client | Container and image operations |
-| `internal/storage` | Persistence contract and SQLite implementation | The database schema |
-| `internal/agent` | Agent daemon, builder, runner, metrics | Execution on a target machine |
-| `internal/api` | Composition root, HTTP webhooks, project reload | Wiring |
-| `internal/grammar` | Canonical workspace command schema | Syntax, help, validation and interaction metadata |
-| `internal/ops` | Shared operational command engine | Typed command events |
-| `internal/control` | Root-only local command transport | Unix socket and JSON event stream |
-| `internal/cliui` | Human-readable operation output | Tables, panels, color and logs |
-| `internal/workbench` | Single-page operations workspace | Transcript, prompt, confirmation and inline YAML input |
-
-### Dependency Rules
-
-`internal/ufp` depends on nothing else in the tree. It defines the contract both
-sides implement, and a dependency from the protocol onto server or agent internals would make the two
-sides impossible to evolve separately. Adding an import there should be treated as a design change.
-
-`internal/ops` reads through `internal/api`. The workbench consumes its typed event stream through
-`internal/control`; presentation does not own pipeline behavior. Operational commands exist inside
-that one interface instead of being duplicated as external shell subcommands.
-
-`internal/grammar` is the single command contract shared by `internal/ops` and `internal/workbench`.
-Adding or changing a workspace command happens there once; help rows, usage errors, command discovery,
-argument stages, resource completion, confirmation, and input mode all consume the same definition.
-
-The server process is always the owner of the database, listeners, live agent sessions and command
-actions. Clients send requests over the root-only local socket and receive JSON events. Detaching
-removes only that subscriber and cannot interrupt agent connections or a release.
-
-`internal/docker` is shared by the server (to run the registry) and the agent (to run workloads).
-It knows nothing about projects or releases.
-
-## 3. Authority Boundaries
-
-Authority is enforced at the point of dispatch, not by convention.
-
-| Actor | May | May Not |
-| :--- | :--- | :--- |
-| Server | Decide what to build and release; issue certificates; hold all state | Run workloads |
-| Builder | Clone source, build images, push to the registry | Run released workloads unless it also holds the runner role |
-| Runner | Pull images, run, stop, remove, stream logs | See source code, Dockerfiles, or build tooling |
-
-An agent declares its roles in the handshake, and the server requires an exact match with the roles
-stored at enrollment. The server and agent then enforce those roles independently for every operation.
-
-### Where Things Exist
-
-| Fact | Location | Survives server loss |
-| :--- | :--- | :--- |
-| Source code | Builder work directory only | Yes, but irrelevant |
-| Images | Registry storage on the server | No — registry is a server-side container |
-| Project definitions | Database, and `projects/` if file-backed | Files yes, database only with backups |
-| Agent identity and key | Database, and agent config on the target | Agent side yes |
-| Certificate authority | `<data_dir>/pki` | Only with backups |
-| Running containers | Runner machines | **Yes** |
-
-## 4. Deployment Lifecycle
-
-Full detail in [Deployments](deployments.md). The architectural shape:
+## Components and connections
 
 ```mermaid
-sequenceDiagram
-    participant S as Server
-    participant B as Builder
-    participant G as Registry
-    participant R as Runner
+flowchart TB
+    browser[Browser workspace]
+    web[Operator API and live streams]
+    ops[Application operations]
+    pipeline[Release pipeline]
+    files[(Project YAML and variable files)]
+    db[(SQLite state and history)]
+    link[UFP agent sessions]
+    registry[Managed TLS image registry]
+    builder[Builder agent]
+    runner[Runner agent]
+    docker[Docker workloads and resources]
+    webhook[Separate webhook listener]
 
-    S->>B: REQUEST build.run
-    B-->>S: RESPONSE accepted
-    B->>B: clone, checkout, build
-    B->>G: docker push (sha + latest)
-    B-->>S: EVENT job.status success (digest references, commit)
-    S->>R: REQUEST release.run
-    R-->>S: RESPONSE accepted
-    R->>G: docker pull
-    R->>R: set aside, start, check readiness
-    R-->>S: EVENT job.status success
-    S->>S: settle release
+    browser <-->|Same-origin HTTP and SSE| web
+    web --> ops
+    ops --> files
+    ops --> db
+    ops --> pipeline
+    webhook --> pipeline
+    pipeline --> db
+    pipeline --> link
+    builder <-->|TLS UFP| link
+    runner <-->|TLS UFP| link
+    builder -->|Publish images| registry
+    registry -->|Pull by digest| runner
+    runner --> docker
 ```
 
-The request/response pair carries only acceptance. Progress and completion arrive as events, so a
-long build never holds a request open.
+The frontend build precompresses text assets. The operator listener negotiates gzip for those static files and keeps live event streams separate from asset compression.
 
-## 5. State and Persistence
+The operator, webhook, UFP and registry listeners have separate addresses. The [configuration reference](configuration.md) owns their fields and defaults.
 
-All server state is one SQLite file at `<data_dir>/uruflow.db`, opened with `MaxOpenConns(1)` and WAL
-journalling. Eight tables: `agents`, `projects`, `releases`, `release_targets`, `release_logs`,
-`containers`, `alerts`, `secrets`.
+## Data ownership
 
-Two consequences of the single-writer model:
+| State                                              | Owner and storage                                                        | Readers                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------- |
+| Desired project configuration                      | `internal/projects`; YAML and variable files beside server configuration | Operations, pipeline, browser editors  |
+| Loaded project model                               | Server; SQLite projection of validated files                             | Pipeline and observations              |
+| Users, grants, session hashes and audit            | `internal/web` through SQLite                                            | Protected API and stream handlers      |
+| Agent enrollment and observations                  | Server link and SQLite                                                   | Pipeline, scoped browser views         |
+| Release specification, artifacts, targets and logs | Pipeline and SQLite                                                      | Release details, history and rollback  |
+| Registry image content                             | Managed registry and its data directory                                  | Builders and runners                   |
+| Secrets and encryption material                    | Encrypted SQLite values and server PKI directory                         | Dispatch-time resolution               |
+| Running containers, networks and volumes           | Runner and Docker                                                        | Agent inventory and runtime operations |
+| Graph positions and appearance                     | Browser storage                                                          | That browser's workspace               |
 
-- Concurrency is resolved in Go, not in the database. The release-serialisation lock lives in
-  `internal/pipeline`.
-- Schema changes are additive. New columns are applied idempotently at open by checking
-  `pragma_table_info`, so an existing database upgrades in place.
+A browser cache or a graph node never becomes a configuration authority. The server derives topology from validated definitions, release records and agent observations.
 
-Container rows are **replaced wholesale** per agent on each metrics push rather than merged. State
-converges to what the agent reports instead of drifting.
+## Save, deploy and observe
 
-## 6. Agent Connectivity
+1. The browser sends a document and its revision to the operator API.
+2. The server checks the session, role and project grant, resolves variables, validates placement and secret references, then writes the authoritative file.
+3. **Deploy** claims a release and stores its resolved specification. Saving a document and starting a release are separate operations.
+4. The pipeline sends work over the authenticated UFP link. Builders publish artifacts; runners apply recorded digests.
+5. Agents report status, logs and container observations. The server persists release outcomes and builds scoped read models for the browser.
 
-One `ufp.Conn` type serves both sides of the link. The server and the agent run the same read loop,
-the same envelope handling, and the same request correlation.
+Closing the browser does not cancel server-owned work. Running containers continue under Docker while the control plane restarts.
 
-Ordering matters and is enforced by dispatch policy:
+## Live observations
 
-- **Events are handled inline**, in arrival order, because log lines must not reorder.
-- **Requests are dispatched to a goroutine**, because a handler may take minutes.
+One server observation loop samples state. Release summaries are cached against a database revision; their targets are read in a batch. List responses omit full release specifications, while a release detail loads its recorded specification.
 
-Liveness is a read deadline. The server pings every 20 seconds; both sides fail a connection that
-goes 60 seconds without a frame. There is no separate heartbeat bookkeeping.
+The browser memoizes its shared context and uses observation events and a staleness deadline rather than a periodic workspace render timer.
 
-## 7. Registry
+Both HTTP listeners use Gin route groups, named domain handlers and authentication middleware. Application operations, storage and UFP remain independent of Gin. The operator router preserves strict JSON decoding, origin and CSRF protection, audit records and project grants. Custom Go HTTP servers own TLS, HTTP/2 and connection deadlines. Forwarded client addresses are not trusted by default.
 
-The registry is an ordinary managed container, started by the same `internal/docker` client used for
-workloads and labelled `uruflow.role=registry`. It is configured for TLS with a certificate from the
-URUFLOW authority, `htpasswd` authentication with a generated password, and manifest deletion enabled.
+A stream starts with a scoped snapshot. Later events contain changed top-level fields, and heartbeats maintain connection state. Browsers reconnect after interruptions. Tabs share a snapshot stream through browser coordination where available, and HTTPS supports HTTP/2. Log viewers have independent UFP stream identifiers.
 
-Credentials and the CA certificate are pushed to every agent over the authenticated link at connect
-time, so registry access is a consequence of agent enrolment rather than a separate distribution step.
+Metrics carry validity and collection time. Missing or stale observations appear as unavailable. Graph cards subscribe to measurements by resource identity, and unchanged values retain their identity. Measurements are separate from layout inputs. The graph preserves positions during status changes and recalculates placement when topology or visible host expansion changes. Fleet placement edges combine configured assignments with observed host ownership; authorization is applied before graphs are built.
 
-## 8. Project Loading
+## Architecture rules
 
-Project files are expanded into ordinary projects at load time and written to the database. The
-`source` column records their authoritative environment path; there is no second editable project
-model in the interface.
+1. **Files own desired project configuration.** SQLite stores the loaded model and operational history.
+2. **The API owns authorization.** Every protected read, mutation and stream checks identity and scope.
+3. **The pipeline owns release state.** A request's acceptance does not mean the release completed.
+4. **Each project has one active release.** Persisted reservations prevent competing deployments.
+5. **A release keeps its specification.** Editing a project cannot silently rewrite an in-flight release.
+6. **Artifacts are identified by digest.** Builders' results are checked before runner dispatch.
+7. **Both peers enforce agent roles.** A runner receives runtime work; a builder receives build work.
+8. **Runners change owned containers.** Persistent resources have their own lifetime.
+9. **Observations are evidence.** Connection state, metrics validity and workload health remain distinct.
+10. **`internal/ufp` is independent.** It imports no other URUFLOW package.
 
-Environments are a loader concern. `projects/api/dev.yaml` and
-`projects/api/prod.yaml` become `api-dev` and `api-prod`, and the pipeline sees two ordinary projects.
-Adding environments therefore required no change to the pipeline, runner, registry or schema beyond
-two descriptive columns.
+## Implementation map
 
-Loading never deletes. A project whose file has disappeared is reported as orphaned and left running.
+| Area                                         | Code                                                                        |
+| -------------------------------------------- | --------------------------------------------------------------------------- |
+| Entry points and local recovery              | `cmd`, `internal/cli`, `internal/agent/cli`                                 |
+| Server composition and webhooks              | `internal/api`, `internal/services`                                         |
+| Browser API, authentication and SSE          | `internal/web`                                                              |
+| Typed operations and document revisions      | `internal/ops`                                                              |
+| Read models and topology                     | `internal/observe`                                                          |
+| Release lifecycle and target outcomes        | `internal/pipeline`                                                         |
+| Agent sessions and event handling            | `internal/link`                                                             |
+| Agent process, builds, rollout and telemetry | `internal/agent`                                                            |
+| Framing, handshake and payloads              | `internal/ufp`                                                              |
+| Project schema and file writes               | `internal/projects`                                                         |
+| SQLite, PKI, secrets and registry            | `internal/storage`, `internal/pki`, `internal/secrets`, `internal/registry` |
+| Browser shell and domain pages               | `frontend/src/app`, `frontend/src/features`                                 |
+| Shared UI, API client, types and tokens      | `frontend/src/shared`, `frontend/src/styles`                                |
 
-## 9. Failure Recovery
-
-Recovery belongs to whichever side still holds authority. The server closes out state it can no longer
-account for; the runner owns the container in front of it.
-
-- **The server reconciles before it serves.** On start, every agent is marked offline and any release
-  still `building` or `releasing` is failed with `interrupted by a server restart`. This runs ahead of
-  the registry and the link, so a release can never be observed in an impossible state.
-- **A disconnect fails the work, not the workload.** A builder that drops fails the release; a runner
-  that drops fails its own target and the release settles on the remaining ones. Containers already
-  running are untouched.
-- **A failed replacement is undone by the runner alone.** The set-aside container is renamed back and
-  started without consulting the server, so recovery does not depend on the link surviving.
-- **A server outage costs only new releases.** Agents retry every `reconnect_sec` and re-register when
-  it returns.
-
-The per-failure matrix, including what each failure does to the running service, is in
-[Deployments](deployments.md#4-failure-boundaries).
-
-## 10. Security Boundaries
-
-Summarised here; stated fully with assumptions in [Security](security.md).
-
-- One certificate authority signs both the agent link and the registry, so an agent installs one
-  trust root.
-- Agent authentication is HMAC challenge-response over TLS. The shared key never crosses the wire.
-- The server process holds a Docker socket. Anyone who can run commands on the server host, or who
-  obtains that socket, controls the fleet.
-
-## 11. Design Constraints
-
-Constraints that shaped the implementation and should be preserved:
-
-1. **The protocol package stays dependency-free.** It is the contract.
-2. **One release per project at a time.** Enforced in the pipeline, checked against stored state so it
-   survives a restart. This is what keeps two builds off one working directory on a builder.
-3. **Never delete implicitly.** Removing a project file, or losing an agent, does not tear down
-   workloads.
-4. **Only labelled containers are touched.** URUFLOW is a guest on machines that may run other things.
-5. **Configuration has one authoritative location.** Project YAML is desired state; the database
-   contains its loaded model and observed runtime state, never a competing editable definition.
-6. **Presentation holds no pipeline logic.** The workbench renders typed command events and owns only
-   interaction concerns such as history, confirmation, inline editors and layout.
-
-## 12. Where a Change Belongs
-
-| Change | Package |
-| :--- | :--- |
-| New instruction from server to agent | `internal/ufp` (method + payload), then both handlers |
-| New release stage or state transition | `internal/pipeline` |
-| New field in a project file | `internal/projects` schema, then `internal/models` |
-| Different container runtime behaviour | `internal/agent/runner` and `internal/docker` |
-| New persisted fact | `internal/storage` contract, then `internal/storage/sqlite` |
-| New workspace command or argument | `internal/grammar`, then its `internal/ops` handler |
-| New workspace behavior or key binding | `internal/workbench` only |
+Related: [Security](security.md), [UFP](protocol.md), [Testing](testing.md), [Contributing](../CONTRIBUTING.md).

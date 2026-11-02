@@ -140,8 +140,11 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if payload.ContainerID == "" {
 			return nil, fmt.Errorf("container id is required")
 		}
+		if _, err := ufp.ParseLogPosition(payload.After); err != nil {
+			return nil, err
+		}
 		d.followContainer(payload)
-		return ufp.Accepted{}, nil
+		return ufp.Accepted{StreamID: payload.StreamID}, nil
 
 	case ufp.MethodLogsStop:
 		var payload ufp.LogsStop
@@ -154,7 +157,11 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if payload.ContainerID == "" {
 			return nil, fmt.Errorf("container id is required")
 		}
-		d.stopFollow(payload.ContainerID)
+		key := payload.StreamID
+		if key == "" {
+			key = payload.ContainerID
+		}
+		d.stopFollow(key)
 		return ufp.Accepted{}, nil
 	}
 

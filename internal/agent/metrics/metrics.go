@@ -19,10 +19,16 @@
 package metrics
 
 import (
+	"fmt"
+	"runtime"
 	"time"
 )
 
 type System struct {
+	Available     []string
+	Errors        []string
+	CPUCores      int
+	HostUptime    int64
 	CPUPercent    float64
 	MemoryPercent float64
 	MemoryUsed    uint64
@@ -47,30 +53,30 @@ func NewCollector() *Collector {
 }
 
 func (c *Collector) Collect() (*System, error) {
-	m := &System{
-		LoadAvg: []float64{0, 0, 0},
-		Uptime:  int64(time.Since(c.bootTime).Seconds()),
-	}
-
+	m := &System{CPUCores: runtime.NumCPU(), Uptime: int64(time.Since(c.bootTime).Seconds()), HostUptime: c.getHostUptime()}
+	primed := c.prevCPUTotal > 0
 	if cpu, err := c.getCPUPercent(); err == nil {
 		m.CPUPercent = cpu
+		if primed {
+			m.Available = append(m.Available, "cpu")
+		}
+	} else {
+		m.Errors = append(m.Errors, fmt.Sprintf("CPU: %v", err))
 	}
-
-	memUsed, memTotal, _ := c.getMemoryInfo()
-	m.MemoryUsed = memUsed
-	m.MemoryTotal = memTotal
-	if memTotal > 0 {
-		m.MemoryPercent = float64(memUsed) / float64(memTotal) * 100
+	if used, total, err := c.getMemoryInfo(); err == nil && total > 0 {
+		m.MemoryUsed, m.MemoryTotal = used, total
+		m.MemoryPercent = float64(used) / float64(total) * 100
+		m.Available = append(m.Available, "memory")
+	} else {
+		m.Errors = append(m.Errors, "Memory collection unavailable")
 	}
-
-	diskUsed, diskTotal, _ := c.getDiskInfo("/")
-	m.DiskUsed = diskUsed
-	m.DiskTotal = diskTotal
-	if diskTotal > 0 {
-		m.DiskPercent = float64(diskUsed) / float64(diskTotal) * 100
+	if used, total, err := c.getDiskInfo("/"); err == nil && total > 0 {
+		m.DiskUsed, m.DiskTotal = used, total
+		m.DiskPercent = float64(used) / float64(total) * 100
+		m.Available = append(m.Available, "disk")
+	} else {
+		m.Errors = append(m.Errors, "Root filesystem collection unavailable")
 	}
-
 	m.LoadAvg = c.getLoadAvg()
-
 	return m, nil
 }

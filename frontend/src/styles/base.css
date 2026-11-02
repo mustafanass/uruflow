@@ -1,0 +1,210 @@
+:root {
+  font-family: 'Public Sans Variable', 'Public Sans', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--background);
+  font-synthesis: none;
+  font-size: 14px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+button {
+  cursor: pointer;
+  color: inherit;
+}
+
+button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+tr:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 27px;
+  font-weight: 660;
+  line-height: 1.25;
+  letter-spacing: -0.8px;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.15px;
+}
+
+h3 {
+  font-size: 14px;
+  font-weight: 630;
+}
+
+h4 {
+  font-size: 12px;
+  font-weight: 650;
+  margin: 20px 0 10px;
+}
+
+small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+code,
+pre,
+kbd {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+code {
+  font-size: 12px;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+input::placeholder {
+  color: var(--muted);
+}
+
+input[type='checkbox'] {
+  accent-color: var(--text);
+  width: 15px;
+  height: 15px;
+  padding: 0;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  margin: 16px 0;
+  padding: 14px;
+}
+
+legend {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+label small {
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+select {
+  cursor: pointer;
+}
+
+label input,
+label select {
+  width: 100%;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.warning-text {
+  color: var(--warn);
+}
+
+.danger-text {
+  color: var(--bad);
+}
+
+.application {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 224px;
+  background: var(--navy);
+  color: var(--nav-text);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+}
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  scroll-margin-top: 80px;
+}

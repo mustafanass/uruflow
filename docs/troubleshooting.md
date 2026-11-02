@@ -1,230 +1,96 @@
 # Troubleshooting
 
-Symptoms, causes and fixes. Start with the log. Both processes write to their log file and stdout, so
-systemd installations can use `journalctl -fu uruflow` or `journalctl -fu uruflow-agent`. The server
-file is `<data_dir>/uruflow.log`; each agent uses `log_file` from `agent.yaml`.
+Start with the affected resource and its latest observation. Release outcomes, current container state and connection status answer different questions. Use the browser message and the matching process log together.
 
-## Commands Cannot Reach the Server
+## Find the evidence
 
-**`uruflow server is not running (control socket …)`**
+| Evidence                            | Location                                                    |
+| ----------------------------------- | ----------------------------------------------------------- |
+| Server process                      | `<data_dir>/uruflow.log` or `journalctl -u uruflow`         |
+| Agent process                       | `log_file` in `agent.yaml` or `journalctl -u uruflow-agent` |
+| Build, job and rollout output       | Release → Logs                                              |
+| Runtime output                      | Container → Logs                                            |
+| Host and container observation time | Agents, Containers and System                               |
+| User actions and access changes     | System → Audit log, for administrators                      |
 
-The workspace is a client, not the server. Start the persistent process with `sudo systemctl start
-uruflow`, inspect it with `sudo systemctl status uruflow`, then open `sudo uruflow` and run `status`.
+## Browser access and sign-in
 
-**`permission denied (run with sudo)`**
+**The workspace does not open.** Check that `uruflow serve` is running and use `web.host` and `web.port`. The default is `127.0.0.1:9002`. The webhook listener is a separate service address. A non-loopback operator bind requires HTTPS.
 
-The local workspace can deploy and delete workloads, so `<data_dir>/control.sock` is deliberately
-root-only. Open it with `sudo`.
+**The page loads but stays reconnecting.** Check server availability and reverse-proxy streaming settings. SSE must pass without buffering. The page preserves its last observation while reconnecting; verify that fresh samples resume after the service returns.
 
-## Server Will Not Start
+**Sign-in appears again.** Check session expiry and account changes. Valid sessions survive server restarts, while password, permission and explicit session revocation require another sign-in. [Security](security.md#passwords-and-sessions) owns the policy.
 
-**`registry.host is required` / `server.advertise is required`**
+**The only administrator's password is lost.** Run the local [administrator recovery command](security.md#administrator-recovery) against the existing server configuration.
 
-Both are mandatory and validated before anything starts. They are placed in the certificates agents
-verify, so URUFLOW will not guess them. Set both in `config.yaml`.
+**A project is missing for one user.** An administrator should check its exact expanded name under **System → Access**. A role alone does not grant non-admin accounts project access.
 
-**`uruflow needs docker to host the registry`**
+## Server startup
 
-The server could not reach the Docker socket at `registry.socket`. Check the daemon is running and the
-user can use it.
+**Configuration validation fails.** Read the field named in the error. Confirm advertise and registry names, generated credentials, distinct operator port and certificate pairs using [Configuration](configuration.md).
 
-**`registry did not become healthy on <host>`**
+**Docker cannot be reached.** Check the daemon, `registry.socket` and the service account's socket access.
 
-The registry container started but did not answer within 60 seconds. Check `docker logs
-uruflow-registry`. Common causes: the published port is already in use, or `<data_dir>/registry` is
-not writable.
+**The registry cannot start or become healthy.** Check its published port, storage permissions and `docker logs uruflow-registry`. Confirm the configured registry name reaches that host.
 
-On macOS, port 5000 is often taken by AirPlay Receiver. Choose another `registry.port`.
+**CA or secret material is missing.** Restore the matching PKI and database from the same backup. The server checks for missing keys before starting against existing enrollment or encrypted values.
 
-## Agent Will Not Connect
+**Frontend assets are missing.** Build with `make build` and install its server binary. The production build embeds the browser assets.
 
-Read the agent log first; the reason is almost always stated there.
+## Agent connection
 
-**`agent not registered or invalid key`**
+**Enrollment or key rejection.** Compare `agent_id`, key and roles with that enrollment. If the original command was lost, enroll a replacement from **Agents** and use its new configuration.
 
-The `agent_id` or `key` in `agent.yaml` does not match the server's record. Re-enrol with `agent add`
-in the workspace and rewrite the config with the printed command.
+**Unknown certificate authority.** Download the CA from **Agents**, install it at `server.ca_cert` on the agent, and restart the agent.
 
-**`x509: certificate signed by unknown authority`**
+**Wrong certificate name.** Check that the agent reaches the intended server and that its certificate belongs to this installation. Restore or repair the matching server PKI rather than replacing the CA independently.
 
-The agent is not using the server's CA. Copy it again:
+**Connection refused or timed out.** Check the agent's server address, UFP port, server bind and firewall path. The agent initiates the connection outward.
 
-```bash
-scp <server>:/var/lib/uruflow/pki/ca.crt /tmp/ca.crt
-sudo mv /tmp/ca.crt /etc/uruflow/ca.crt
-```
+**Registry trust or login fails.** Check the agent log, certificate-directory permissions and builder Docker CLI access. Registry readiness must complete before build or release dispatch.
 
-**`x509: certificate is valid for …, not uruflow-server`**
+## Project files and saving
 
-The server certificate does not carry the expected logical name. This happens if the PKI directory was
-partly restored. Delete `pki/server.crt` and `pki/server.key` and restart the server — they are
-reissued from the CA.
+**An image tag is rejected.** Supply the full `repository@sha256:digest` reference. The model requires 64 lowercase hexadecimal digest digits.
 
-**`agent declared no valid role`**
+**An agent name or role is rejected.** Use enrolled names shown on **Agents**, with builder and runner roles matching the workflow.
 
-`roles:` is empty or misspelled. It must contain `builder`, `runner`, or both.
+**An unknown YAML field is reported.** Check the field spelling and placement against [Build and runtime model](native-build-model.md).
 
-**Connection refused**
+**A save conflicts.** Copy your unsaved edits, choose **Load latest**, confirm the replacement, then reapply changes to the fresh document. During a conflict, **Discard edits** also offers this path.
 
-Check `server.host` in `config.yaml` binds an interface the agent can reach, that `ufp_port` matches,
-and that nothing between them blocks the port. Agents always dial outward, so no inbound rule is needed
-on the agent side.
+**External edits are absent.** Choose **Projects → Reload definitions** after changing files. If a definition disappeared, restore it and reload; running workloads are not implicitly deleted.
 
-## Releases
+**A required variable or secret is missing.** Supply the interpolation value or replace the affected secret reference in the variables editor under **Configuration**, then save. [Projects](projects.md) explains the syntax.
 
-**`a release is already running for this project`**
+## Release execution
 
-Exactly what it says. One release per project at a time. Wait for it, or check the releases view for a
-release stuck because an agent vanished — a server restart closes those out.
+**Another release owns the project.** Inspect that release's progress and target outcomes before starting new work. The project permits one active release.
 
-**`builder agent is offline` / `project has no runner agents`**
+**Build or pull fails.** Read the stage log. Check source access on the builder, base-image access, image identity, registry availability and the relevant agent's network.
 
-The configured builder or runners are not connected, or do not hold the role. Run `agent list` in
-the workspace.
+**The old version is running after failure.** Inspect startup output and readiness errors in the failed release. The runner attempts to restore the previous container when replacement fails.
 
-**Build fails with `failed to fetch anonymous token` or a DNS timeout**
+**Some runners succeeded and another failed.** Read each target's message and current inventory. Fix the failed target and deploy again, or deliberately restore an earlier successful release.
 
-The builder could not reach the base image registry. This is the builder's network, not URUFLOW.
-Base images are cached after the first successful pull.
+**A release says it was interrupted by restart.** Startup reconciled unfinished work as failed. Inspect current containers and fresh agent observations before the next attempt.
 
-**A prebuilt service fails to pull with `unauthorized`**
+**Restore is unavailable.** Confirm the project has an eligible successful release with artifacts. The release already identified as live is not offered as a restore target.
 
-Credentials are only sent to the URUFLOW registry, so a public image is pulled anonymously. Prebuilt
-images must be configured as `repository@sha256:digest`; mutable tags are rejected before a release.
-An authorization error from a public registry means that digest is private or unavailable.
+## Containers and logs
 
-**Push fails with a certificate error**
+**A succeeded release now has an exited container.** The container may have stopped after rollout readiness. Open its health details and logs; compare timestamps with the release result.
 
-The builder's Docker daemon does not trust the URUFLOW CA. The agent installs it automatically at
-`/etc/docker/certs.d/<registry>/ca.crt`, but that needs root. Check the agent log for `could not
-install the registry CA` and run the agent as root.
+**A failed replacement disappeared.** Its startup output is copied into the release log before cleanup. Job output also belongs to the release log.
 
-**Release succeeded but the container is not running**
+**A viewed container leaves inventory.** Keep its open detail view to inspect the last observation and loaded output. Download loaded logs before leaving that view.
 
-Check readiness semantics in [Deployments](deployments.md#readiness). A release only succeeds after
-the container is ready, so this usually means it exited afterwards. Use `container logs` in the
-workspace, or `docker logs uruflow-<project>`.
+**No log lines appear.** Check agent connectivity and the viewer's state or error. Docker output comes from stdout and stderr; applications writing only internal log files need their own log collection. An idle application may simply have no new output.
 
-When a replacement exits before it becomes ready, the agent copies its last 80 startup lines into
-the durable release log before removing it and restoring the previous container. Use `release logs
-<release-id>` to recover startup errors such as missing environment variables after the failed
-container has gone.
+**Metrics are unavailable or old.** Check collection timestamps, reported availability and the agent connection. An unavailable counter does not imply zero use. Wait for a fresh observation after reconnect.
 
-**Release failed and the old version is still running**
+## Describe a problem
 
-That is the intended behaviour. The replacement failed readiness and the previous container was
-restored. The release message and log say why.
+Include `uruflow version`, `uruflow-agent version`, the platform, resource identity, expected result, actual result, relevant timestamps and selected log lines. Remove credentials and sensitive application output before sharing.
 
-**One runner failed, others succeeded**
-
-The release is marked failed and the fleet is split — successful runners are on the new image, the
-failed one kept its previous container. URUFLOW does not roll the others back. Fix the failing runner
-and deploy again, or roll back deliberately.
-
-**Release stuck in `building` or `releasing`**
-
-Only possible while the server is down. Restarting it closes out interrupted releases as failed.
-
-## Containers
-
-**A container is not managed by URUFLOW**
-
-URUFLOW only sees containers labelled `uruflow.managed=true`. Containers started by hand are invisible
-and are never touched.
-
-**A `-previous` container is left behind**
-
-A set-aside container is removed once its replacement is ready, or renamed back if it is not. One
-surviving after a crash mid-release is safe to remove by hand:
-
-```bash
-docker rm -f uruflow-<project>-previous
-```
-
-**Container logs show nothing**
-
-The stream is working; the container is not writing to stdout. Applications that log to a file inside
-the container produce nothing here. The empty state distinguishes the two cases.
-
-## Secrets
-
-**`references "x": secret is not set`**
-
-A project variable references a secret that does not exist. The deploy is refused before any build
-starts. Run `project variables <project>`, find the affected `secret NAME=${secret:...}` line, and
-replace the reference with the real value before saving.
-
-**A secret cannot be read back**
-
-By design. The project-variable editor shows only the stored reference. Replace that reference with the
-new value and save to rotate it.
-
-**`secret material is malformed` after a restore**
-
-`pki/secrets.key` does not match the ciphertext in the database — usually a database restored without
-its key, or the reverse. Both must come from the same backup. If the key is lost, every secret must be
-set again from its original source.
-
-## Projects and Files
-
-**`field brnach not found in type projects.Environment`**
-
-A misspelled key. Unknown fields are rejected by name rather than being silently ignored.
-
-**`unknown agent "web-99"` / `does not carry the builder role`**
-
-The file names an agent that does not exist, or one without the required role. Names come from
-`agent list` in the workspace.
-
-**`came from this file, which is gone`**
-
-A project file was deleted. The project keeps running; restore the file and run `project reload` in
-the workspace. URUFLOW never deletes a running workload implicitly.
-
-**Edits to project files have no effect**
-
-Files are read on start and by `project reload` in the workspace. There is no filesystem watcher.
-
-**Editing a project failed validation**
-
-The internal editor reports the reason and keeps the YAML open without losing the text. Correct it and
-press `Ctrl+S` again. If the full reload fails after writing, URUFLOW restores the previous file.
-
-## Webhooks
-
-**Pushes do nothing**
-
-Service-owned multi-repository projects are deployed manually. A pushed commit cannot safely stand
-for every repository in one release.
-
-**`invalid signature`**
-
-The secret in your git host does not match `webhook.secret`. GitHub uses `X-Hub-Signature-256`, GitLab
-uses `X-Gitlab-Token` — configuring the wrong one for the host gives this error.
-
-**Tag pushes are ignored**
-
-Only `refs/heads/*` is handled.
-
-## Terminal Interface
-
-Keys and views are listed in [Terminal Interface](interface.md).
-
-**The display is corrupted**
-
-The interface owns the terminal while it runs. Nothing else should write to it. If the server is also
-running headless in the same terminal, stop that first.
-
-**Changes are not visible after an upgrade**
-
-A running process keeps its old code. Quit with `q` and start it again.
-
-**`terminal too narrow`**
-
-The interface needs at least 40 columns.
-
-## Getting More Detail
-
-The server log records every release transition, agent connection and file-loading problem. Failed
-releases keep their full build output in the releases view — open the release and read the log rather
-than guessing from the status.
+Related: [Operations](operations.md), [Security](security.md), [Deployments](deployments.md).
