@@ -243,6 +243,9 @@ func (p *Pipeline) claim(release *models.Release, runners []models.Agent) error 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.maintenance {
+		return ErrRegistryMaintenance
+	}
 	if _, exists := p.busy[release.Project]; exists {
 		return fmt.Errorf("%s: %w", release.Project, ErrProjectBusy)
 	}
@@ -261,6 +264,9 @@ func (p *Pipeline) reserve(project string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.maintenance {
+		return ErrRegistryMaintenance
+	}
 	if _, exists := p.busy[project]; exists {
 		return fmt.Errorf("%s: %w", project, ErrProjectBusy)
 	}

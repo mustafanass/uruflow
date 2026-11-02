@@ -8,6 +8,7 @@ interface ReleaseTarget {
   ended_at?: string
 }
 export interface Release {
+  artifacts_expired?: boolean
   id: string
   project: string
   status: string
@@ -33,5 +34,14 @@ export interface Image {
   tag: string
   digest: string
   size: number
+  size_known: boolean
   created_at: string
+}
+
+export interface ImageCatalog {
+  images: Image[]
+  sampled_at: string
+  refreshing: boolean
+  partial: boolean
+  error?: string
 }

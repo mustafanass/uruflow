@@ -112,6 +112,7 @@ For this workspace, regression review includes:
 - Page scrolling with the pointer over a table, log following across buffer trimming, and pausing to read older output without moving the surrounding page.
 - Amber rollout progress despite temporary missing or stopped containers, with actual container failures and post-release degradation still visible.
 - Five primary destinations, ownership of direct resource links and redirects from retired index pages.
+- Full-width YAML and Secrets & variables tabs, large-file scrolling, modified-tab indicators, and independent edits retained while switching.
 - Simultaneous configuration and variable edits: saving or discarding one must preserve the other’s navigation guard.
 - Combined release overview, first and subsequent release diffs, saved-definition access and stable tab selection during live progress.
 - Scoped active and resolved alert history, event filters, and administrator-only audit access under System.
@@ -127,3 +128,5 @@ Use controlled responses to force browser error states when needed. Use real Doc
 Record the affected behavior, success and failure cases, commands, environment and relevant browser results in the change description. Keep generated assets, screenshots, credentials and temporary databases out of source control. Test counts belong to runner output, not a handwritten documentation total.
 
 Related: [Contributing](../CONTRIBUTING.md), [Architecture](architecture.md), [Upgrading](upgrading.md).
+
+Registry changes also verify bounded concurrent tag listing without manifest requests, partial results, cached reads during refresh, OCI index sizes and shared children. Retention tests cover pinned and observed images, distinct per-service history, expired restore rejection, and exclusion of releases and project edits during maintenance. The focused live registry test proves that garbage collection removes obsolete blobs while retained OCI images remain readable.

@@ -187,26 +187,27 @@ type Volume struct {
 }
 
 type Release struct {
-	ID          string            `json:"id"`
-	Project     string            `json:"project"`
-	Branch      string            `json:"branch"`
-	Commit      string            `json:"commit"`
-	Commits     map[string]string `json:"commits,omitempty"`
-	Image       string            `json:"image"`
-	Images      map[string]string `json:"images,omitempty"`
-	Digest      string            `json:"digest"`
-	Status      Status            `json:"status"`
-	Builder     string            `json:"builder"`
-	BuilderName string            `json:"builder_name"`
-	Trigger     Trigger           `json:"trigger"`
-	Message     string            `json:"message,omitempty"`
-	Targets     []ReleaseTarget   `json:"targets,omitempty"`
-	Spec        Project           `json:"spec,omitzero"`
-	Workflow    string            `json:"workflow,omitempty"`
-	RunnerCount int               `json:"runner_count,omitempty"`
-	StartedAt   time.Time         `json:"started_at"`
-	EndedAt     *time.Time        `json:"ended_at,omitempty"`
-	Duration    int64             `json:"duration"`
+	ArtifactsExpired bool              `json:"artifacts_expired,omitempty"`
+	ID               string            `json:"id"`
+	Project          string            `json:"project"`
+	Branch           string            `json:"branch"`
+	Commit           string            `json:"commit"`
+	Commits          map[string]string `json:"commits,omitempty"`
+	Image            string            `json:"image"`
+	Images           map[string]string `json:"images,omitempty"`
+	Digest           string            `json:"digest"`
+	Status           Status            `json:"status"`
+	Builder          string            `json:"builder"`
+	BuilderName      string            `json:"builder_name"`
+	Trigger          Trigger           `json:"trigger"`
+	Message          string            `json:"message,omitempty"`
+	Targets          []ReleaseTarget   `json:"targets,omitempty"`
+	Spec             Project           `json:"spec,omitzero"`
+	Workflow         string            `json:"workflow,omitempty"`
+	RunnerCount      int               `json:"runner_count,omitempty"`
+	StartedAt        time.Time         `json:"started_at"`
+	EndedAt          *time.Time        `json:"ended_at,omitempty"`
+	Duration         int64             `json:"duration"`
 }
 
 type ReleaseTarget struct {
@@ -256,8 +257,17 @@ type Image struct {
 	Repository string    `json:"repository"`
 	Tag        string    `json:"tag"`
 	Digest     string    `json:"digest"`
+	SizeKnown  bool      `json:"size_known"`
 	Size       int64     `json:"size"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type ImageCatalog struct {
+	Images     []Image   `json:"images"`
+	SampledAt  time.Time `json:"sampled_at"`
+	Refreshing bool      `json:"refreshing"`
+	Partial    bool      `json:"partial"`
+	Error      string    `json:"error,omitempty"`
 }
 
 type Secret struct {

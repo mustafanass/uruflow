@@ -7,17 +7,20 @@ export default function CodeEditor({
   onChange,
   variables = false,
   readOnly = false,
+  height = '440px',
 }: {
   value: string
   onChange: (value: string) => void
   variables?: boolean
   readOnly?: boolean
+  height?: string
 }) {
   const { resolved } = useTheme()
   return (
     <CodeMirror
       value={value}
-      height="440px"
+      height={height}
+      width="100%"
       theme={resolved === 'dark' ? 'dark' : 'light'}
       extensions={variables ? [] : [yaml()]}
       onChange={onChange}

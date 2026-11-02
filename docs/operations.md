@@ -87,9 +87,13 @@ Agent logs use `log_file` from `agent.yaml`; builders keep checkouts under `<age
 
 ## Registry maintenance
 
-URUFLOW manages the registry container and stores blobs under `<data_dir>/registry`. **System → Server** shows the artifact registry's repositories, tags and digests. An administrator can remove a selected manifest after checking release references.
+URUFLOW manages the registry container and stores blobs under `<data_dir>/registry`. **System → Server** reads repository names and tags from a persistent server cache. It refreshes after releases and every three minutes. Digest and size load when an image is opened; incomplete metadata shows **Size unknown**. Docker manifests, OCI manifests and image indexes are supported.
 
-Tags may share a manifest digest, and manifest deletion may remove more than one tag. Retain artifacts needed for restores. Manifest removal does not reclaim all blob storage immediately; schedule registry maintenance separately from deployments.
+Automatic cleanup keeps the latest ten distinct successful images per service by default. Running or last-observed container images, saved pinned images, `latest`, manual tags and shared image-index children remain protected. Set `registry.retain_releases` to change the window, or `0` to disable automatic cleanup. Older release records and logs remain; a release whose artifacts expired no longer offers restoration.
+
+Cleanup first checks ten minutes after startup, then daily. Busy installations retry after releases and project edits finish. The pipeline excludes new releases and configuration writes during cleanup. URUFLOW removes obsolete manifests, stops registry writes by stopping the registry container, collects unreferenced blobs in an isolated container, and restarts the registry. Registry health shows **maintenance** during collection. A failed or interrupted collection is stopped before writes resume.
+
+Tags can share a digest. Manual manifest deletion can remove several tags and still needs a review of release references. Automatic cleanup only considers recorded URUFLOW artifacts in its configured registry namespace. Incomplete registry or history reads prevent automatic deletion.
 
 ## Backup and restore
 

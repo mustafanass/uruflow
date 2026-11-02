@@ -188,3 +188,23 @@
   background: var(--bad-surface);
   color: var(--bad);
 }
+
+.project-configuration {
+  width: 100%;
+  min-width: 0;
+}
+.project-configuration > .tabs {
+  margin: 0 0 16px;
+}
+.project-configuration .panel {
+  margin-bottom: 0;
+}
+.tab-modified {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+  margin-left: 6px;
+  vertical-align: middle;
+}

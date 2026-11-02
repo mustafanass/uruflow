@@ -42,7 +42,7 @@ Graph retains runtime and delivery views. Runtime connects service intent, runne
 
 Active rollouts show amber progress states, including **Deploying** while runners replace containers. Container observations retain their actual state. Once the release ends, the project returns to its observed runtime health.
 
-Configuration contains the authoritative YAML and variable overlay as separate editors. Each editor has its own revision, validation, save control and unsaved state. Saving one preserves unsaved edits in the other. Both contribute to the navigation guard. Editors remain read-only while their own save is in flight.
+Configuration uses the full content width, with **YAML** and **Secrets & variables** tabs. Each editor keeps its revision, validation, save control and unsaved edits when switching tabs. Modified tabs show an indicator. Saving one preserves unsaved edits in the other, and both contribute to the navigation guard. Editors remain read-only while their own save is in flight.
 
 If a save conflicts with another revision, use **Copy unsaved edits** if needed, then **Load latest**. Confirming loads the new file and revision so you can apply changes again. During a conflict, **Discard edits** uses the same recovery path.
 
@@ -66,7 +66,7 @@ Enrollment displays its setup command once. Save it, then confirm **I saved the 
 
 Activity combines the live event feed with release records and durable alert history. Filter the timeline by event type or resource. The Alerts view includes active and resolved conditions. Operators can resolve alerts within their project scope.
 
-System groups **Server**, **Access** and **Audit log**. Server includes host resources and the registry catalogue. Fleet access is required for registry data. Access and Audit log are administrator-only; shared Activity does not expose administrative audit records.
+System groups **Server**, **Access** and **Audit log**. Server includes host resources and the cached registry catalogue. Repository names and tags appear first; opening an image loads its digest and size. A partial manifest reports **Size unknown**. Fleet access is required for registry data. Access and Audit log are administrator-only; shared Activity does not expose administrative audit records.
 
 The live event feed is a bounded server buffer. Release records, alert history and the administrative audit use persistent storage. [Security](security.md) explains roles, project grants and the local account recovery command.
 

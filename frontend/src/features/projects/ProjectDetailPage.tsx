@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Play, RotateCcw, Square } from 'lucide-react'
 
 import { ActivityTable } from '@/features/activity/ActivityTable'
-import { ProjectEditor } from '@/features/projects/ProjectEditor'
+import { ProjectConfiguration } from './ProjectConfiguration'
 import { ProjectReleases } from '@/features/projects/ProjectReleases'
 import { RollbackProject } from '@/features/projects/RollbackProject'
 import { api, segment } from '@/shared/api'
@@ -74,6 +74,7 @@ export default function ProjectDetailPage() {
     (release) =>
       release.project === p.name &&
       release.status === 'succeeded' &&
+      !release.artifacts_expired &&
       (release.image || Object.keys(release.images || {}).length) &&
       !currentRelease(snapshot, release),
   )
@@ -184,18 +185,11 @@ export default function ProjectDetailPage() {
         {tab === 'Releases' && <ProjectReleases name={p.name} />}
         {tab === 'Configuration' &&
           (canOperate ? (
-            <div className="stack">
-              <ProjectEditor
-                key={p.name + '/configuration'}
-                project={p}
-                variables={false}
-              />
-              <ProjectEditor
-                key={p.name + '/variables'}
-                project={p}
-                variables
-              />
-            </div>
+            <ProjectConfiguration
+              key={p.name}
+              project={p}
+              initialSecrets={legacyTab === 'Variables'}
+            />
           ) : (
             <EmptyState
               title="Operator access required"

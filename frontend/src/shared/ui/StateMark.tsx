@@ -20,6 +20,7 @@ export function StateMark({ state, label }: { state: string; label?: string }) {
             'deploying',
             'pending',
             'missing',
+            'maintenance',
           ].includes(state)
         ? 'warn'
         : 'neutral'

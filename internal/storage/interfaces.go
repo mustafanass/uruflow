@@ -45,6 +45,8 @@ type Store interface {
 	ClaimRelease(release *models.Release, targets []models.ReleaseTarget) error
 	UpdateRelease(release *models.Release) error
 	GetRelease(id string) (*models.Release, error)
+	ArtifactHistory() ([]models.Release, error)
+	ExpireReleaseArtifacts([]string) error
 	ListReleases(limit int) ([]models.Release, error)
 	SnapshotReleases() ([]models.Release, error)
 	ProjectReleaseSummaries(string) ([]models.Release, error)

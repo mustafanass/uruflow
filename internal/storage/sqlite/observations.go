@@ -41,7 +41,7 @@ func (s *Store) SnapshotReleases() ([]models.Release, error) {
 
 func (s *Store) ProjectReleaseSummaries(project string) ([]models.Release, error) {
 	return s.releaseSummaries(`id IN (SELECT id FROM releases WHERE project=? ORDER BY started_at DESC LIMIT 100)
- OR id IN (SELECT id FROM releases WHERE project=? AND status='succeeded' AND (image<>'' OR EXISTS (SELECT 1 FROM json_each(images))) ORDER BY started_at DESC LIMIT 2)`, project, project)
+ OR id IN (SELECT id FROM releases WHERE project=? AND status='succeeded' AND artifacts_expired=0 AND (image<>'' OR EXISTS (SELECT 1 FROM json_each(images))) ORDER BY started_at DESC LIMIT 2)`, project, project)
 }
 
 func (s *Store) releaseSummaries(selection string, args ...any) ([]models.Release, error) {

@@ -29,9 +29,16 @@ func (h *Handler) images(c *gin.Context) {
 	if !requireFleet(w, u) {
 		return
 	}
+	if c.Query("refresh") == "true" {
+		h.operations.RefreshImages()
+	}
 	rows, err := h.operations.Images(r.Context())
 	if err != nil {
 		writeError(w, 503, "Registry catalog unavailable.")
+		return
+	}
+	if c.Request.URL.Path == "/api/images" {
+		writeJSON(w, 200, rows.Images)
 		return
 	}
 	writeJSON(w, 200, rows)
@@ -48,4 +55,16 @@ func (h *Handler) removeImage(c *gin.Context) {
 	h.mutation(w, r, u, "image.remove", body.Repository+":"+body.Tag, func() (any, error) {
 		return map[string]bool{"removed": true}, h.operations.RemoveImage(r.Context(), body.Repository, body.Tag)
 	})
+}
+
+func (h *Handler) imageDetails(c *gin.Context) {
+	if !requireFleet(c.Writer, currentUser(c)) {
+		return
+	}
+	image, err := h.operations.Image(c.Request.Context(), c.Query("repository"), c.Query("tag"))
+	if err != nil {
+		writeError(c.Writer, 503, "Manifest details unavailable. Retry when the registry is reachable.")
+		return
+	}
+	writeJSON(c.Writer, 200, image)
 }

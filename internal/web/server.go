@@ -39,6 +39,7 @@ import (
 	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/observe"
 	"github.com/mustafanass/uruflow/internal/ops"
+	"github.com/mustafanass/uruflow/internal/pipeline"
 	"github.com/mustafanass/uruflow/internal/storage"
 	"github.com/mustafanass/uruflow/pkg/logger"
 )
@@ -178,6 +179,10 @@ func (h *Handler) mutation(w http.ResponseWriter, r *http.Request, user *storage
 		}
 		if errors.Is(err, storage.ErrNotFound) {
 			status = 404
+		}
+		if errors.Is(err, pipeline.ErrRegistryMaintenance) {
+			status = 503
+			w.Header().Set("Retry-After", "30")
 		}
 		if errors.Is(err, ops.ErrConflict) {
 			status = 409

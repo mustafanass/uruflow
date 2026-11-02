@@ -21,6 +21,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -141,6 +142,9 @@ services:
 		}
 	}
 	seed()
+	catalogCtx, catalogCancel := context.WithCancel(context.Background())
+	defer catalogCancel()
+	server.Registry().StartCatalog(catalogCtx)
 	if err = h.Listen(cfg); err != nil {
 		t.Fatal(err)
 	}

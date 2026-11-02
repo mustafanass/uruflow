@@ -75,7 +75,7 @@ func TestGinKeepsStrictBodiesAndDecodesScopedRouteParameters(t *testing.T) {
 
 type panickingOperator struct{ fixtureOperator }
 
-func (*panickingOperator) Images(context.Context) ([]models.Image, error) {
+func (*panickingOperator) Images(context.Context) (models.ImageCatalog, error) {
 	panic("test handler panic")
 }
 

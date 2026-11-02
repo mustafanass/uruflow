@@ -35,6 +35,7 @@ export function RollbackProject({
   const releases = (data || []).filter(
     (r) =>
       r.status === 'succeeded' &&
+      !r.artifacts_expired &&
       (r.image || Object.keys(r.images || {}).length) &&
       !currentRelease(snapshot, r),
   )

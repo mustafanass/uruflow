@@ -40,7 +40,9 @@ type Operator interface {
 	StopProject(string) error
 	ProjectReleases(string) ([]models.Release, error)
 	Release(string) (*models.Release, error)
-	Images(context.Context) ([]models.Image, error)
+	Images(context.Context) (models.ImageCatalog, error)
+	Image(context.Context, string, string) (models.Image, error)
+	RefreshImages()
 	RemoveImage(context.Context, string, string) error
 	Alert(string) (*models.Alert, error)
 	ResolveAlert(string) error

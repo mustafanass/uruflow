@@ -71,13 +71,14 @@ type ServerConfig struct {
 }
 
 type RegistryConfig struct {
-	Host      string `yaml:"host"`
-	Port      int    `yaml:"port"`
-	Namespace string `yaml:"namespace"`
-	Username  string `yaml:"username"`
-	Password  string `yaml:"password"`
-	Image     string `yaml:"image"`
-	Socket    string `yaml:"socket"`
+	RetainReleases int    `yaml:"retain_releases"`
+	Host           string `yaml:"host"`
+	Port           int    `yaml:"port"`
+	Namespace      string `yaml:"namespace"`
+	Username       string `yaml:"username"`
+	Password       string `yaml:"password"`
+	Image          string `yaml:"image"`
+	Socket         string `yaml:"socket"`
 }
 
 type WebhookConfig struct {
@@ -106,11 +107,12 @@ func defaults() *Config {
 			DataDir:  DefaultDataDir,
 		},
 		Registry: RegistryConfig{
-			Port:      DefaultRegistry,
-			Namespace: DefaultNamespace,
-			Username:  DefaultNamespace,
-			Image:     RegistryImage,
-			Socket:    "/var/run/docker.sock",
+			RetainReleases: 10,
+			Port:           DefaultRegistry,
+			Namespace:      DefaultNamespace,
+			Username:       DefaultNamespace,
+			Image:          RegistryImage,
+			Socket:         "/var/run/docker.sock",
 		},
 		Webhook: WebhookConfig{
 			Path: "/webhook",
@@ -154,6 +156,9 @@ func (c *Config) Save(path string) error {
 }
 
 func (c *Config) Validate() error {
+	if c.Registry.RetainReleases < 0 {
+		return fmt.Errorf("registry.retain_releases must be zero or greater")
+	}
 	if c.Web.PublicURL != "" {
 		u, err := url.Parse(c.Web.PublicURL)
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {

@@ -21,6 +21,7 @@ const inactiveStates = new Set([
   'dead',
   'completed',
   'unavailable',
+  'maintenance',
 ])
 
 export function graphConnections(
