@@ -57,16 +57,17 @@ const (
 )
 
 type Server struct {
-	cfg      *config.Config
-	store    storage.Store
-	link     *link.Server
-	registry *registry.Registry
-	pipeline *pipeline.Pipeline
-	vault    *secrets.Vault
-	activity *activity.Feed
-	webhook  *services.WebhookService
-	http     *http.Server
-	caCert   string
+	catalogCancel context.CancelFunc
+	cfg           *config.Config
+	store         storage.Store
+	link          *link.Server
+	registry      *registry.Registry
+	pipeline      *pipeline.Pipeline
+	vault         *secrets.Vault
+	activity      *activity.Feed
+	webhook       *services.WebhookService
+	http          *http.Server
+	caCert        string
 
 	loader   *projects.Loader
 	problems []projects.Problem
@@ -193,6 +194,10 @@ func (s *Server) Start() error {
 	if err := s.link.Start(); err != nil {
 		return err
 	}
+	catalogCtx, catalogCancel := context.WithCancel(context.Background())
+	s.catalogCancel = catalogCancel
+	s.registry.StartCatalog(catalogCtx)
+	s.pipeline.StartRegistryMaintenance(catalogCtx, s.cfg.Registry.RetainReleases)
 
 	s.http = &http.Server{
 		Addr:         s.cfg.HTTPAddr(),
@@ -238,6 +243,12 @@ func (s *Server) reconcile() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.catalogCancel != nil {
+		s.catalogCancel()
+	}
+	if err := s.pipeline.WaitRegistryMaintenance(ctx); err != nil {
+		return err
+	}
 	s.link.Stop()
 
 	if s.http != nil {

@@ -20,11 +20,13 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/docker"
@@ -65,15 +67,23 @@ type Registry struct {
 	clientOnce    sync.Once
 	client        *http.Client
 	clientErr     error
+	catalogCache  catalogCache
+	maintaining   atomic.Bool
 }
 
 func New(options Options, engine *docker.Client) *Registry {
-	return &Registry{options: options, docker: engine, containerName: ContainerName}
+	r := &Registry{options: options, docker: engine, containerName: ContainerName}
+	r.catalogCache.wake = make(chan struct{}, 1)
+	r.loadCatalog()
+	return r
 }
 
 func (r *Registry) Options() Options { return r.options }
 
 func (r *Registry) Ensure(ctx context.Context, onProgress func(string)) error {
+	if err := r.docker.Remove(ctx, r.containerName+"-gc", true); err != nil && !errors.Is(err, docker.ErrNotFound) {
+		return fmt.Errorf("recover registry maintenance: %w", err)
+	}
 	if err := r.writeHtpasswd(); err != nil {
 		return fmt.Errorf("registry credentials: %w", err)
 	}
@@ -203,3 +213,5 @@ func (r *Registry) credentialsMatch(current []byte) bool {
 	}
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.options.Password)) == nil
 }
+
+func (r *Registry) Maintaining() bool { return r.maintaining.Load() }

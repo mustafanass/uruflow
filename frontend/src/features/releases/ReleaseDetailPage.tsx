@@ -79,6 +79,7 @@ export default function ReleaseDetailPage() {
             <Badge value={r.status} />
             {canOperate &&
               r.status === 'succeeded' &&
+              !r.artifacts_expired &&
               !currentRelease(snapshot, r) && (
                 <button
                   className="button"
@@ -111,6 +112,12 @@ export default function ReleaseDetailPage() {
           </>
         }
       />
+      {r.artifacts_expired && (
+        <p className="subtle-note">
+          Artifacts expired under registry retention. Release history and logs
+          remain available.
+        </p>
+      )}
       <Tabs
         items={tabs}
         value={tab}

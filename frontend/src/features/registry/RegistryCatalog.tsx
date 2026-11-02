@@ -1,57 +1,41 @@
-import { RelativeTime } from '@/shared/ui/RelativeTime'
-import { useVisible } from '@/shared/hooks/useVisible'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-
-import { ArrowUpRight, Package, RefreshCw, Trash2 } from 'lucide-react'
-
-import { api, segment } from '@/shared/api'
+import { Package, RefreshCw } from 'lucide-react'
+import { api } from '@/shared/api'
 import { useLoad, useWorkspace } from '@/shared/hooks'
-import { type Image } from '@/shared/types'
+import { useVisible } from '@/shared/hooks/useVisible'
+import type { Image, ImageCatalog } from '@/shared/types'
 import {
-  Badge,
-  Code,
   DataTable,
   EmptyState,
   ErrorState,
-  Facts,
   LoadingIndicator,
-  Modal,
   Panel,
   Spinner,
 } from '@/shared/ui'
-import { bytes, short } from '@/shared/utils'
+import { RelativeTime } from '@/shared/ui/RelativeTime'
+import { errorText } from '@/shared/utils'
+import { ImageDetails } from './ImageDetails'
 
 export function RegistryCatalog() {
   const visible = useVisible()
-  const { canAdmin, snapshot, confirm, fleetAccess } = useWorkspace()
-  const { data, error, loading, reload } = useLoad<Image[]>(
-    '/api/images',
+  const { confirm, fleetAccess, notify } = useWorkspace()
+  const { data, error, loading, reload, setData } = useLoad<ImageCatalog>(
+    '/api/registry/catalog',
     fleetAccess && visible,
   )
   const [selected, setSelected] = useState<Image | null>(null)
-  const [loaded, setLoaded] = useState('')
-  useEffect(() => {
-    if (data) {
-      setLoaded(new Date().toISOString())
-    }
-  }, [data])
   useEffect(() => {
     if (!visible || !fleetAccess) return
-    const timer = setInterval(reload, 15000)
+    const timer = setInterval(reload, data?.refreshing ? 2000 : 15000)
     return () => clearInterval(timer)
-  }, [reload, visible, fleetAccess])
-  const images = data || []
-  const refs = selected
-    ? (snapshot?.releases || []).filter(
-        (r) =>
-          selected.digest &&
-          (Object.values(r.images || {}).some((image) =>
-            image.includes(selected.digest),
-          ) ||
-            r.image.includes(selected.digest)),
-      )
-    : []
+  }, [reload, visible, fleetAccess, data?.refreshing])
+  const refresh = async () => {
+    try {
+      setData(await api<ImageCatalog>('/api/registry/catalog?refresh=true'))
+    } catch (error) {
+      notify(errorText(error), 'error')
+    }
+  }
   const remove = (image: Image) => {
     setSelected(null)
     confirm({
@@ -70,146 +54,89 @@ export function RegistryCatalog() {
       },
     })
   }
-  if (!fleetAccess) {
+  if (!fleetAccess)
     return (
       <EmptyState
         title="Registry access restricted"
         detail="The registry catalogue requires access to all projects. Project images remain visible in your release details."
       />
     )
-  }
+  const updating = loading || data?.refreshing
+  const failure = error || data?.error
   return (
     <>
-      {loading && !data ? (
-        <Spinner label="Reading the registry catalog…" />
-      ) : (
-        <Panel
-          title="Artifact registry"
-          actions={
-            <button
-              className="button"
-              disabled={loading}
-              aria-busy={loading}
-              onClick={reload}
-            >
-              {loading ? <LoadingIndicator small /> : <RefreshCw size={15} />}
-              {loading ? 'Refreshing…' : 'Refresh catalog'}
-            </button>
-          }
-          detail={
+      <Panel
+        title="Artifact registry"
+        actions={
+          <button
+            className="button"
+            disabled={!!updating}
+            aria-busy={!!updating}
+            onClick={refresh}
+          >
+            {updating ? <LoadingIndicator small /> : <RefreshCw size={15} />}{' '}
+            {updating ? 'Refreshing…' : 'Refresh catalog'}
+          </button>
+        }
+        detail={
+          data?.sampled_at && !data.sampled_at.startsWith('0001') ? (
             <>
-              Catalog sampled <RelativeTime value={loaded} /> · refreshes every
-              15 seconds
+              Catalog sampled <RelativeTime value={data.sampled_at} /> · details
+              load when opened
             </>
-          }
-        >
-          {error && <ErrorState message={error} retry={reload} />}
-          {(!error || data) && (
-            <DataTable
-              scope="registry-page"
-              rows={images}
-              rowKey={(im) => im.repository + ':' + im.tag}
-              onRow={setSelected}
-              searchText={(im) =>
-                im.repository + ' ' + im.tag + ' ' + im.digest
-              }
-              empty="No image manifests stored"
-              emptyDetail="Successfully built and pushed artifacts appear in this catalog."
-              columns={[
-                {
-                  key: 'repository',
-                  title: 'Repository',
-                  render: (im) => (
-                    <div className="resource-title">
-                      <span className="resource-icon image">
-                        <Package size={18} />
-                      </span>
-                      <strong>{im.repository}</strong>
-                    </div>
-                  ),
-                  sort: (im) => im.repository,
-                },
-                {
-                  key: 'tag',
-                  title: 'Tag',
-                  render: (im) => <code>{im.tag}</code>,
-                  sort: (im) => im.tag,
-                },
-                {
-                  key: 'digest',
-                  title: 'Digest',
-                  render: (im) =>
-                    im.digest ? (
-                      <Code value={short(im.digest, 30)} />
-                    ) : (
-                      <span className="warning-text">Unavailable</span>
-                    ),
-                },
-                {
-                  key: 'size',
-                  title: 'Artifact size',
-                  render: (im) => bytes(im.size),
-                  sort: (im) => im.size,
-                },
-              ]}
-            />
-          )}
-        </Panel>
-      )}
-      {selected && (
-        <Modal
-          title={selected.repository + ':' + selected.tag}
-          onClose={() => setSelected(null)}
-        >
-          <Facts
-            items={[
-              ['Repository', selected.repository],
-              ['Tag', selected.tag],
-              ['Digest', <Code value={selected.digest} copy />],
-              ['Artifact size', bytes(selected.size)],
-              ['Catalog sample', <RelativeTime value={loaded} />],
+          ) : (
+            'Repository names and tags load first'
+          )
+        }
+      >
+        {failure && <ErrorState message={failure} retry={refresh} />}
+        {data?.partial && (
+          <p className="subtle-note">
+            Some repositories could not be refreshed. Available tags are shown.
+          </p>
+        )}
+        {updating && !data?.images.length ? (
+          <Spinner label="Reading repository names…" />
+        ) : failure && !data?.images.length ? null : (
+          <DataTable
+            scope="registry-page"
+            rows={data?.images || []}
+            rowKey={(image) => image.repository + ':' + image.tag}
+            onRow={setSelected}
+            searchText={(image) => image.repository + ' ' + image.tag}
+            empty="No image manifests stored"
+            emptyDetail="Successfully built and pushed artifacts appear in this catalog."
+            columns={[
+              {
+                key: 'repository',
+                title: 'Repository',
+                render: (image) => (
+                  <div className="resource-title">
+                    <span className="resource-icon image">
+                      <Package size={18} />
+                    </span>
+                    <strong>{image.repository}</strong>
+                  </div>
+                ),
+                sort: (image) => image.repository,
+              },
+              {
+                key: 'tag',
+                title: 'Tag',
+                render: (image) => <code>{image.tag}</code>,
+                sort: (image) => image.tag,
+              },
             ]}
           />
-          <h3 className="modal-section-title">
-            References in recent release history
-          </h3>
-          {refs.length ? (
-            refs.map((r) => (
-              <Link
-                className="resource-choice"
-                to={'/releases/' + segment(r.id)}
-                key={r.id}
-              >
-                <span>
-                  {r.project}
-                  <small>
-                    {short(r.id)} · <RelativeTime value={r.started_at} />
-                  </small>
-                </span>
-                <Badge value={r.status} />
-                <ArrowUpRight size={15} />
-              </Link>
-            ))
-          ) : (
-            <p className="muted">
-              No recent references. Older releases may use this digest.
-            </p>
-          )}
-          <div className="modal-actions">
-            <button className="button" onClick={() => setSelected(null)}>
-              Close
-            </button>
-            {canAdmin && (
-              <button
-                className="button danger"
-                onClick={() => remove(selected)}
-              >
-                <Trash2 size={14} />
-                Delete manifest
-              </button>
-            )}
-          </div>
-        </Modal>
+        )}
+      </Panel>
+      {selected && (
+        <ImageDetails
+          key={selected.repository + ':' + selected.tag}
+          image={selected}
+          close={() => setSelected(null)}
+          remove={remove}
+        />
       )}
     </>
   )

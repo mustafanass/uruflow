@@ -86,7 +86,10 @@ func (e *Engine) Snapshot(ctx context.Context) (observe.Snapshot, error) {
 			DiskPercent: sys.DiskPercent, DiskUsed: sys.DiskUsed, DiskTotal: sys.DiskTotal, LoadAvg: sys.LoadAvg, Uptime: sys.Uptime}
 	}
 	s.Host = e.hostCache
-	if time.Since(e.registryChecked) > 15*time.Second {
+	if e.server.Registry().Maintaining() {
+		e.registryState = "maintenance"
+		e.registryChecked = time.Now()
+	} else if e.registryState == "maintenance" || time.Since(e.registryChecked) > 15*time.Second {
 		healthCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 		e.registryState = "healthy"
 		if e.server.Registry().Health(healthCtx) != nil {

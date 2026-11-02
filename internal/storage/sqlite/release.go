@@ -21,13 +21,14 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 const releaseColumns = `id, project, branch, commit_sha, commits, image, images, digest, status,
-	builder, builder_name, trigger_type, message, spec, started_at, ended_at, duration_ms`
+	builder, builder_name, trigger_type, message, spec, started_at, ended_at, duration_ms, artifacts_expired`
 
 func (s *Store) CreateRelease(release *models.Release) error {
 	_, err := s.db.Exec(`
@@ -123,7 +124,7 @@ func (s *Store) ProjectHasActiveRelease(project string) (bool, error) {
 func (s *Store) LastSuccessfulRelease(project string) (*models.Release, error) {
 	return scanRelease(s.db.QueryRow(`SELECT `+releaseColumns+`
 		FROM releases
-		WHERE project = ? AND status = ? AND image != ''
+		WHERE project = ? AND status = ? AND image != '' AND artifacts_expired=0
 		ORDER BY started_at DESC LIMIT 1`, project, models.StatusSucceeded))
 }
 
@@ -190,7 +191,7 @@ func scanRelease(row scanner) (*models.Release, error) {
 	err := row.Scan(&release.ID, &release.Project, &release.Branch, &release.Commit, &commits,
 		&release.Image, &images, &release.Digest, &release.Status, &release.Builder,
 		&release.BuilderName, &release.Trigger, &release.Message, &spec,
-		&release.StartedAt, &endedAt, &release.Duration)
+		&release.StartedAt, &endedAt, &release.Duration, &release.ArtifactsExpired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, storage.ErrNotFound
 	}
@@ -203,4 +204,27 @@ func scanRelease(row scanner) (*models.Release, error) {
 	decodeJSON(spec, &release.Spec)
 	release.EndedAt = timePointer(endedAt)
 	return &release, nil
+}
+
+func (s *Store) ArtifactHistory() ([]models.Release, error) {
+	columns := strings.Replace(releaseColumns, "spec,", "'{}',", 1)
+	return s.queryReleases("SELECT " + columns + " FROM releases ORDER BY started_at DESC, id DESC")
+}
+func (s *Store) ExpireReleaseArtifacts(ids []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	statement, err := tx.Prepare("UPDATE releases SET artifacts_expired=1 WHERE id=? AND status IN ('succeeded','failed','skipped')")
+	if err != nil {
+		return err
+	}
+	defer statement.Close()
+	for _, id := range ids {
+		if _, err = statement.Exec(id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

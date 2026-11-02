@@ -284,6 +284,9 @@ func (p *Pipeline) completeRelease(release *models.Release, status models.Status
 		return
 	}
 	p.publishRelease(release)
+	if p.registry != nil {
+		p.registry.RefreshCatalog()
+	}
 }
 
 func (p *Pipeline) agentName(agentID string) string {

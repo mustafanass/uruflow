@@ -41,27 +41,31 @@ const (
 )
 
 var (
-	ErrSecretMissing   = errors.New("secret is not set")
-	ErrReleaseInFlight = errors.New("a release is already running for this project")
-	ErrProjectBusy     = errors.New("another project operation is already running")
-	ErrProjectNotFound = errors.New("project not found")
-	ErrNoBuilder       = errors.New("project has no builder agent")
-	ErrBuilderOffline  = errors.New("builder agent is offline")
-	ErrNoRunners       = errors.New("project has no runner agents")
-	ErrRunnerOffline   = errors.New("runner agent is offline")
-	ErrNotRunner       = errors.New("agent does not have the runner role")
-	ErrNothingToRun    = errors.New("no successful release to roll back to")
-	ErrNotBuilder      = errors.New("agent does not have the builder role")
+	ErrRegistryMaintenance = errors.New("registry maintenance is in progress; try again shortly")
+	ErrSecretMissing       = errors.New("secret is not set")
+	ErrReleaseInFlight     = errors.New("a release is already running for this project")
+	ErrProjectBusy         = errors.New("another project operation is already running")
+	ErrProjectNotFound     = errors.New("project not found")
+	ErrNoBuilder           = errors.New("project has no builder agent")
+	ErrBuilderOffline      = errors.New("builder agent is offline")
+	ErrNoRunners           = errors.New("project has no runner agents")
+	ErrRunnerOffline       = errors.New("runner agent is offline")
+	ErrNotRunner           = errors.New("agent does not have the runner role")
+	ErrNothingToRun        = errors.New("no successful release to roll back to")
+	ErrNotBuilder          = errors.New("agent does not have the builder role")
 )
 
 type Pipeline struct {
-	store    storage.Store
-	link     *link.Server
-	registry *registry.Registry
-	vault    *secrets.Vault
-	activity *activity.Feed
-	mu       sync.Mutex
-	busy     map[string]struct{}
+	store           storage.Store
+	link            *link.Server
+	registry        *registry.Registry
+	vault           *secrets.Vault
+	activity        *activity.Feed
+	mu              sync.Mutex
+	busy            map[string]struct{}
+	maintenance     bool
+	referenceEdits  int
+	maintenanceDone chan struct{}
 }
 
 func New(store storage.Store, links *link.Server, images *registry.Registry, vault *secrets.Vault) *Pipeline {
@@ -207,6 +211,9 @@ func (p *Pipeline) RollbackRelease(projectName, releaseID string) (*models.Relea
 	source, err := p.store.GetRelease(releaseID)
 	if err != nil {
 		return nil, err
+	}
+	if source.ArtifactsExpired {
+		return nil, fmt.Errorf("release artifacts have expired under registry retention")
 	}
 	if source.Project != projectName || source.Status != models.StatusSucceeded || source.Image == "" {
 		return nil, fmt.Errorf("rollback source must be a successful release of this project")

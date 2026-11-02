@@ -67,6 +67,11 @@ func (e *Engine) ProjectDocument(name string, variables bool) (Document, error) 
 func (e *Engine) SaveProjectDocument(name string, variables bool, content, revision string, policy func(models.Project) error) (Document, error) {
 	e.configurationMu.Lock()
 	defer e.configurationMu.Unlock()
+	finish, maintenanceErr := e.server.Pipeline().BeginRegistryUpdate()
+	if maintenanceErr != nil {
+		return Document{}, maintenanceErr
+	}
+	defer finish()
 	current, err := e.ProjectDocument(name, variables)
 	if err != nil {
 		return Document{}, err
@@ -118,6 +123,11 @@ func (e *Engine) SaveProjectDocument(name string, variables bool, content, revis
 func (e *Engine) CreateProject(name, environment, content string) (*models.Project, error) {
 	e.configurationMu.Lock()
 	defer e.configurationMu.Unlock()
+	finish, maintenanceErr := e.server.Pipeline().BeginRegistryUpdate()
+	if maintenanceErr != nil {
+		return nil, maintenanceErr
+	}
+	defer finish()
 	if err := e.createProject(name, environment, content); err != nil {
 		return nil, err
 	}
@@ -131,6 +141,11 @@ func (e *Engine) CreateProject(name, environment, content string) (*models.Proje
 func (e *Engine) ReloadProjects() []string {
 	e.configurationMu.Lock()
 	defer e.configurationMu.Unlock()
+	finish, maintenanceErr := e.server.Pipeline().BeginRegistryUpdate()
+	if maintenanceErr != nil {
+		return []string{maintenanceErr.Error()}
+	}
+	defer finish()
 	e.server.ReloadProjects()
 	var problems []string
 	for _, p := range e.server.ProjectProblems() {
@@ -156,10 +171,15 @@ func (e *Engine) Deploy(name, sourceRelease string, rollback bool) (*models.Rele
 	return e.Release(release.ID)
 }
 func (e *Engine) StopProject(name string) error { return e.server.Pipeline().Stop(name) }
-func (e *Engine) Images(ctx context.Context) ([]models.Image, error) {
+func (e *Engine) Images(ctx context.Context) (models.ImageCatalog, error) {
 	return e.server.Registry().Images(ctx)
 }
 func (e *Engine) RemoveImage(ctx context.Context, repository, tag string) error {
+	finish, err := e.server.Pipeline().BeginRegistryUpdate()
+	if err != nil {
+		return err
+	}
+	defer finish()
 	return e.server.Registry().DeleteTag(ctx, repository, tag)
 }
 func (e *Engine) ResolveAlert(id string) error { return e.server.Store().ResolveAlert(id) }
@@ -180,3 +200,8 @@ func (e *Engine) Alert(id string) (*models.Alert, error) {
 	}
 	return nil, storage.ErrNotFound
 }
+
+func (e *Engine) Image(ctx context.Context, repository, tag string) (models.Image, error) {
+	return e.server.Registry().Image(ctx, repository, tag)
+}
+func (e *Engine) RefreshImages() { e.server.Registry().RefreshCatalog() }

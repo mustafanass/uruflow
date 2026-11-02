@@ -59,6 +59,8 @@ func (h *Handler) routes(router *gin.Engine) {
 	releases.GET("/:id/logs", h.releaseLogs)
 	authenticated.GET("/containers/:agent/:id/logs", h.containerLogs)
 	authenticated.Match([]string{"GET", "HEAD"}, "/images", h.images)
+	authenticated.Match([]string{"GET", "HEAD"}, "/registry/catalog", h.images)
+	authenticated.Match([]string{"GET", "HEAD"}, "/images/details", h.imageDetails)
 	authenticated.DELETE("/images", h.requireRole("admin"), h.removeImage)
 	authenticated.POST("/alerts/:id/resolve", h.requireRole("operator"), h.resolveAlert)
 	authenticated.Match([]string{"GET", "HEAD"}, "/alerts", h.alerts)

@@ -7,10 +7,12 @@ export function Tabs({
   items,
   value,
   onChange,
+  modified = [],
 }: {
   items: string[]
   value: string
   onChange: (value: string) => void
+  modified?: readonly string[]
 }) {
   const root = useRef<HTMLDivElement>(null)
   return (
@@ -22,6 +24,9 @@ export function Tabs({
           role="tab"
           id={tabID(item)}
           aria-controls={panelID(item)}
+          aria-label={
+            modified.includes(item) ? item + ', unsaved changes' : undefined
+          }
           aria-selected={item === value}
           tabIndex={item === value ? 0 : -1}
           className={item === value ? 'selected' : ''}
@@ -47,6 +52,9 @@ export function Tabs({
           }}
         >
           {item}
+          {modified.includes(item) && (
+            <span className="tab-modified" aria-hidden="true" />
+          )}
         </button>
       ))}
     </div>
@@ -56,12 +64,15 @@ export function Tabs({
 export function TabPanel({
   value,
   children,
+  hidden = false,
 }: {
   value: string
   children: ReactNode
+  hidden?: boolean
 }) {
   return (
     <section
+      hidden={hidden}
       role="tabpanel"
       id={panelID(value)}
       aria-labelledby={tabID(value)}

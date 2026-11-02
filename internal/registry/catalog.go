@@ -30,14 +30,15 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mustafanass/uruflow/internal/models"
 )
 
 const (
-	manifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
-	catalogPageSize   = 200
-	apiTimeout        = 15 * time.Second
+	manifestMediaType    = "application/vnd.docker.distribution.manifest.v2+json"
+	ociManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
+	ociIndexMediaType    = "application/vnd.oci.image.index.v1+json"
+	dockerListMediaType  = "application/vnd.docker.distribution.manifest.list.v2+json"
+	catalogPageSize      = 200
+	apiTimeout           = 15 * time.Second
 )
 
 func (r *Registry) Health(ctx context.Context) error {
@@ -105,7 +106,9 @@ func (r *Registry) catalog(ctx context.Context, path string) ([]string, string, 
 	return catalog.Repositories, next, nil
 }
 
-func catalogNext(header string) (string, error) {
+func catalogNext(header string) (string, error) { return pageNext(header, "/v2/_catalog") }
+
+func pageNext(header, path string) (string, error) {
 	for _, value := range strings.Split(header, ",") {
 		parts := strings.Split(value, ";")
 		if len(parts) < 2 {
@@ -126,7 +129,7 @@ func catalogNext(header string) (string, error) {
 			return "", fmt.Errorf("registry catalog returned an invalid next link")
 		}
 		parsed, err := url.ParseRequestURI(target[1 : len(target)-1])
-		if err != nil || parsed.IsAbs() || parsed.Path != "/v2/_catalog" {
+		if err != nil || parsed.IsAbs() || parsed.Path != path || parsed.Host != "" {
 			return "", fmt.Errorf("registry catalog returned an invalid next link")
 		}
 		return parsed.RequestURI(), nil
@@ -135,48 +138,60 @@ func catalogNext(header string) (string, error) {
 }
 
 func (r *Registry) Tags(ctx context.Context, repository string) ([]string, error) {
-	var listing struct {
-		Tags []string `json:"tags"`
+	if !validRepository(repository) {
+		return nil, fmt.Errorf("invalid repository")
 	}
-	if err := r.decode(ctx, "/v2/"+repository+"/tags/list", &listing); err != nil {
-		return nil, err
-	}
-
-	sort.Sort(sort.Reverse(sort.StringSlice(listing.Tags)))
-	return listing.Tags, nil
-}
-
-func (r *Registry) Images(ctx context.Context) ([]models.Image, error) {
-	repositories, err := r.Repositories(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	images := make([]models.Image, 0)
-	for _, repository := range repositories {
-		tags, err := r.Tags(ctx, repository)
+	base := "/v2/" + repository + "/tags/list"
+	path := fmt.Sprintf("%s?n=%d", base, catalogPageSize)
+	seen := map[string]bool{}
+	tags := map[string]bool{}
+	for path != "" {
+		if seen[path] {
+			return nil, fmt.Errorf("registry tag pagination repeated")
+		}
+		seen[path] = true
+		response, err := r.call(ctx, http.MethodGet, path)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		for _, tag := range tags {
-			image := models.Image{Repository: repository, Tag: tag}
-			if digest, size, err := r.manifest(ctx, repository, tag); err == nil {
-				image.Digest = digest
-				image.Size = size
+		var listing struct {
+			Tags []string `json:"tags"`
+		}
+		if response.StatusCode != http.StatusOK {
+			response.Body.Close()
+			return nil, fmt.Errorf("registry tags: %s", response.Status)
+		}
+		err = json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&listing)
+		next, nextErr := pageNext(response.Header.Get("Link"), base)
+		response.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if nextErr != nil {
+			return nil, nextErr
+		}
+		for _, tag := range listing.Tags {
+			if validTag(tag) {
+				tags[tag] = true
 			}
-			images = append(images, image)
 		}
+		path = next
 	}
-	return images, nil
+	result := make([]string, 0, len(tags))
+	for tag := range tags {
+		result = append(result, tag)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(result)))
+	return result, nil
 }
 
 func (r *Registry) DeleteTag(ctx context.Context, repository, tag string) error {
-	digest, _, err := r.manifest(ctx, repository, tag)
+	manifest, err := r.readManifest(ctx, repository, tag)
 	if err != nil {
 		return err
 	}
 
-	response, err := r.call(ctx, http.MethodDelete, "/v2/"+repository+"/manifests/"+digest)
+	response, err := r.call(ctx, http.MethodDelete, "/v2/"+repository+"/manifests/"+manifest.Digest)
 	if err != nil {
 		return err
 	}
@@ -186,53 +201,8 @@ func (r *Registry) DeleteTag(ctx context.Context, repository, tag string) error 
 	if response.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("delete %s:%s: %s", repository, tag, response.Status)
 	}
+	r.RefreshCatalog()
 	return nil
-}
-
-func (r *Registry) manifest(ctx context.Context, repository, tag string) (string, int64, error) {
-	response, err := r.call(ctx, http.MethodGet, "/v2/"+repository+"/manifests/"+tag)
-	if err != nil {
-		return "", 0, err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, response.Body)
-		return "", 0, fmt.Errorf("manifest %s:%s: %s", repository, tag, response.Status)
-	}
-
-	var manifest struct {
-		Config struct {
-			Size int64 `json:"size"`
-		} `json:"config"`
-		Layers []struct {
-			Size int64 `json:"size"`
-		} `json:"layers"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&manifest); err != nil {
-		return "", 0, err
-	}
-
-	size := manifest.Config.Size
-	for _, layer := range manifest.Layers {
-		size += layer.Size
-	}
-
-	return response.Header.Get("Docker-Content-Digest"), size, nil
-}
-
-func (r *Registry) decode(ctx context.Context, path string, target any) error {
-	response, err := r.call(ctx, http.MethodGet, path)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, response.Body)
-		return fmt.Errorf("registry %s: %s", path, response.Status)
-	}
-	return json.NewDecoder(response.Body).Decode(target)
 }
 
 func (r *Registry) call(ctx context.Context, method, path string) (*http.Response, error) {
@@ -246,7 +216,7 @@ func (r *Registry) call(ctx context.Context, method, path string) (*http.Respons
 		return nil, err
 	}
 	request.SetBasicAuth(r.options.Username, r.options.Password)
-	request.Header.Set("Accept", manifestMediaType)
+	request.Header.Set("Accept", strings.Join([]string{ociIndexMediaType, ociManifestMediaType, dockerListMediaType, manifestMediaType}, ", "))
 
 	return client.Do(request)
 }

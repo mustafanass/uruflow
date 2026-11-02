@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE TABLE IF NOT EXISTS releases (
+	artifacts_expired INTEGER NOT NULL DEFAULT 0,
 	id           TEXT PRIMARY KEY,
 	project      TEXT NOT NULL,
 	branch       TEXT NOT NULL DEFAULT '',

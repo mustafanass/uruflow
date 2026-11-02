@@ -19,9 +19,11 @@ const CodeEditor = lazy(() => import('@/shared/ui/CodeEditor'))
 export function ProjectEditor({
   project,
   variables,
+  onDirtyChange,
 }: {
   project: Project
   variables: boolean
+  onDirtyChange?: (changed: boolean) => void
 }) {
   const { data, error, loading, reload, setData } = useLoad<Document>(
     `/api/projects/${segment(project.name)}/${variables ? 'variables' : 'configuration'}`,
@@ -45,6 +47,9 @@ export function ProjectEditor({
     setDirty(changed, editorKey)
     return () => setDirty(false, editorKey)
   }, [changed, editorKey, setDirty])
+  useEffect(() => {
+    onDirtyChange?.(changed)
+  }, [changed, onDirtyChange])
   if (error) {
     return <ErrorState message={error} retry={reload} />
   }
@@ -97,7 +102,7 @@ export function ProjectEditor({
   return (
     <Panel
       className="editor-panel"
-      title={variables ? 'Project variables' : 'Project configuration'}
+      title={variables ? 'Secrets & variables' : 'Project configuration'}
       detail={
         variables ? 'Saved secrets reopen as references.' : project.source
       }
@@ -177,6 +182,7 @@ export function ProjectEditor({
       ) : (
         <Suspense fallback={<Spinner label="Loading editor…" />}>
           <CodeEditor
+            height="max(440px, calc(100vh - 480px))"
             value={content}
             onChange={setContent}
             variables={variables}

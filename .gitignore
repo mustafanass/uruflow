@@ -19,3 +19,5 @@ frontend/*.tsbuildinfo
 internal/web/assets/*
 !internal/web/assets/.keep
 .playwright-cli/
+
+output/playwright/

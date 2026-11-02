@@ -24,7 +24,8 @@ export function statusTone(state: string) {
     ].includes(state)
   )
     return 'bad'
-  if (['missing', 'warning', 'restarting'].includes(state)) return 'warn'
+  if (['missing', 'warning', 'restarting', 'maintenance'].includes(state))
+    return 'warn'
   if (
     [
       'building',
