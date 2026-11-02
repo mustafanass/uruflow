@@ -22,6 +22,8 @@ Overview combines a fleet summary, the attention list and the live infrastructur
 
 Fleet graphs connect the server to its agents, then agents to their projects. Build links and assigned or observed runtime placements remain distinct. Projects without a host stay visible as unconnected cards. **Show containers** expands a host's observed workloads; search can find a container while its host is collapsed or show the hosts assigned to a project.
 
+Dependencies and planned connections appear when you hover or select a related node. **All connections** reveals them together. Labels appear on hover or selection, while the inspector keeps dependency conditions and configured agents available. These controls preserve node positions and the current view. Selected live relationships have a subtle moving highlight; historical observations and planned links stay still. Motion follows the browser's reduced-motion preference.
+
 Cards show state, service readiness, host and container CPU and memory, container uptime and restarts, or the project's latest release. Missing samples remain distinct from zero usage. Measurements update without moving the graph. The canvas uses the available screen height, and **Expand graph** provides more room. Small graphs omit the minimap.
 
 Two-finger trackpad scrolling pans horizontally and vertically. Pinch, **Ctrl/⌘ + scroll** or the zoom buttons change the scale. Dragging the canvas also pans the view. Fit and reset share the same framing; tall project graphs retain a readable scale and can be panned.
@@ -38,6 +40,8 @@ Graph retains runtime and delivery views. Runtime connects service intent, runne
 
 **Deploy** starts a release of the saved configuration. **Rollback** selects an eligible successful release. **Stop** stops managed project containers. Actions are disabled when their required state is absent or another release owns the project.
 
+Active rollouts show amber progress states, including **Deploying** while runners replace containers. Container observations retain their actual state. Once the release ends, the project returns to its observed runtime health.
+
 Configuration contains the authoritative YAML and variable overlay as separate editors. Each editor has its own revision, validation, save control and unsaved state. Saving one preserves unsaved edits in the other. Both contribute to the navigation guard. Editors remain read-only while their own save is in flight.
 
 If a save conflicts with another revision, use **Copy unsaved edits** if needed, then **Load latest**. Confirming loads the new file and revision so you can apply changes again. During a conflict, **Discard edits** uses the same recovery path.
@@ -52,7 +56,7 @@ Overview brings together progress, the release record, runner outcomes and immut
 
 ## Agents and containers
 
-The Agents directory provides machine inventory and a fleet Containers view. An agent has **Overview**, **Workloads** and **Metrics**. Workloads groups its assigned projects, observed containers and build work. Administrators remove an agent from the danger section in Overview after unassigning its projects.
+The Agents directory provides machine inventory and a fleet Containers view. An agent has **Overview**, **Containers** and **Metrics**. Containers groups its observed containers, assigned projects and build work. Administrators remove an agent from the danger section in Overview after unassigning its projects.
 
 A container has **Overview**, **Logs**, **Metrics** and **Inspect**. Overview brings together identity, state, ports, networks, storage and health probes. Direct project and host links keep related resources within reach.
 

@@ -14,6 +14,7 @@ import {
   Save,
   Search,
   X,
+  Waypoints,
 } from 'lucide-react'
 
 import { type ResourceFlowNode } from './ResourceNode'
@@ -27,6 +28,8 @@ interface Props {
   focused: boolean
   toggleFocus: () => void
   hasSelection: boolean
+  allConnections: boolean
+  toggleConnections: () => void
   saveError: boolean
   save: () => void
   reset: () => void
@@ -64,6 +67,16 @@ export function GraphToolbar(props: Props) {
         {resourceCount(props.count, 'resource')}
       </span>
       <div className="toolbar-actions">
+        <button
+          className="button small"
+          aria-pressed={props.allConnections}
+          aria-label="All connections"
+          title="Show all dependencies and planned connections"
+          onClick={props.toggleConnections}
+        >
+          <Waypoints size={14} />
+          <span className="graph-tool-label">All connections</span>
+        </button>
         <button
           className="button small"
           aria-pressed={props.attachments}

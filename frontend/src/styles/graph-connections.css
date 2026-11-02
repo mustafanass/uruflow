@@ -1,0 +1,58 @@
+.graph-connection {
+  transition: opacity 140ms ease-out;
+}
+
+.graph-connection.is-inactive {
+  opacity: 0.5;
+}
+
+.graph-connection.is-muted {
+  opacity: 0.18;
+}
+
+.graph-connection .react-flow__edge-textwrapper {
+  pointer-events: none;
+}
+
+.graph-edge-motion {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 3 97;
+  pointer-events: none;
+  opacity: 0.8;
+  animation: graph-connection-flow 4.5s linear infinite;
+}
+
+.graph-canvas.is-paused .graph-edge-motion {
+  animation-play-state: paused;
+}
+
+.node-dependencies {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--surface-tint);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@keyframes graph-connection-flow {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-connection {
+    transition: none;
+  }
+  .graph-edge-motion {
+    display: none;
+  }
+}

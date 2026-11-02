@@ -2,6 +2,8 @@ export interface ResourceObservation {
   services?: number
   runners?: number
   state: string
+  role?: string
+  dependencies?: number
   cpu?: number | null
   cpuCapacity?: number
   memory?: number | null

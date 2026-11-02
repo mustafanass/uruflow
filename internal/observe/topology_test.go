@@ -61,6 +61,36 @@ func TestTopologyJoinsDesiredAndObservedWithoutInventingReadiness(t *testing.T) 
 		t.Fatalf("offline workload state=%s", got)
 	}
 }
+func TestActiveRolloutPrecedesTemporaryRuntimeDegradation(t *testing.T) {
+	now := time.Now()
+	p := models.Project{Name: "p", Runners: []string{"r"}, Services: []models.Service{{Name: "web", Image: "image"}}}
+	s := Snapshot{At: now, Agents: []models.Agent{{ID: "r", Status: models.AgentOnline, Metrics: &models.Metrics{CollectedAt: now, ContainersAvailable: true}}}, Releases: []models.Release{{Project: "p", Status: models.StatusReleasing}}, Containers: []models.Container{{AgentID: "r", Project: "p", Service: "web", State: "exited", ObservedAt: now}}}
+	for status, want := range map[models.Status]string{models.StatusPending: "pending", models.StatusBuilding: "building", models.StatusReleasing: "deploying"} {
+		s.Releases[0].Status = status
+		if got := s.ProjectState(p); got != want {
+			t.Fatalf("project during %s = %s, want %s", status, got, want)
+		}
+		if got := s.ServiceState(p, p.Services[0]); got != want {
+			t.Fatalf("service during %s = %s, want %s", status, got, want)
+		}
+		if got := s.ExpectedState(p, p.Services[0], "r"); got != "deploying" {
+			t.Fatalf("replacement during rollout = %s", got)
+		}
+		if got := s.ContainerState(s.Containers[0], false); got != "exited" {
+			t.Fatalf("actual container state hidden: %s", got)
+		}
+	}
+	s.Releases[0].Status = models.StatusFailed
+	if got := s.ProjectState(p); got != "degraded" {
+		t.Fatalf("unhealthy runtime after failed rollout = %s", got)
+	}
+	s.Containers = nil
+	s.Releases[0].Status = models.StatusSucceeded
+	if got := s.ProjectState(p); got != "degraded" {
+		t.Fatalf("missing runtime after completed rollout = %s", got)
+	}
+}
+
 func TestFreshnessUsesAgentCadenceAndCollectionAvailability(t *testing.T) {
 	now := time.Now()
 	p := models.Project{Name: "p", Runners: []string{"r"}, Services: []models.Service{{Name: "web", Image: "image"}}}

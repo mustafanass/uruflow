@@ -17,6 +17,7 @@ export function StateMark({ state, label }: { state: string; label?: string }) {
             'restarting',
             'building',
             'releasing',
+            'deploying',
             'pending',
             'missing',
           ].includes(state)

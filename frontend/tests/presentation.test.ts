@@ -5,6 +5,21 @@ import { currentRelease } from '../src/features/projects/release-state.ts'
 import type { Release } from '../src/shared/types/release.ts'
 import type { Snapshot } from '../src/shared/types/observation.ts'
 import { count, duration } from '../src/shared/utils/format.ts'
+import { statusTone } from '../src/shared/utils/status.ts'
+
+test('rollout phases are amber while failures remain distinct', () => {
+  for (const state of [
+    'pending',
+    'building',
+    'deploying',
+    'releasing',
+    'starting',
+  ])
+    assert.equal(statusTone(state), 'warn')
+  assert.equal(statusTone('degraded'), 'bad')
+  assert.equal(statusTone('unhealthy'), 'bad')
+  assert.equal(statusTone('running'), 'good')
+})
 
 test('formats long uptime without an unbounded minute count', () => {
   assert.equal(duration(5252 * 60000 + 55000), '3d 15h')

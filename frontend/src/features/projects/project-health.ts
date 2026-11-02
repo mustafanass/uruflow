@@ -87,7 +87,12 @@ export function projectHealth(
 
 export function projectPriority(state: string) {
   if (['failed', 'degraded', 'unhealthy', 'unknown'].includes(state)) return 0
-  if (['building', 'releasing', 'pending', 'starting'].includes(state)) return 1
+  if (
+    ['building', 'releasing', 'deploying', 'pending', 'starting'].includes(
+      state,
+    )
+  )
+    return 1
   if (state === 'undeployed') return 2
   return 3
 }

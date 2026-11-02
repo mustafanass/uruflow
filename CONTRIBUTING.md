@@ -31,14 +31,14 @@ make check
 make release
 ```
 
-`make release` builds the production frontend once, embeds it in the server, and writes these files to `dist/v3.0.0/`:
+`make release` builds the production frontend once, embeds it in the server, and writes these files to `dist/v3.0.1/`:
 
 | Asset                                    | Contents                                                  |
 | :--------------------------------------- | :-------------------------------------------------------- |
-| `uruflow-3.0.0-linux-amd64.tar.gz`       | Server for Linux x86-64, its service unit and MIT license |
-| `uruflow-3.0.0-linux-arm64.tar.gz`       | Server for Linux ARM64, its service unit and MIT license  |
-| `uruflow-agent-3.0.0-linux-amd64.tar.gz` | Agent for Linux x86-64, its service unit and MIT license  |
-| `uruflow-agent-3.0.0-linux-arm64.tar.gz` | Agent for Linux ARM64, its service unit and MIT license   |
+| `uruflow-3.0.1-linux-amd64.tar.gz`       | Server for Linux x86-64, its service unit and MIT license |
+| `uruflow-3.0.1-linux-arm64.tar.gz`       | Server for Linux ARM64, its service unit and MIT license  |
+| `uruflow-agent-3.0.1-linux-amd64.tar.gz` | Agent for Linux x86-64, its service unit and MIT license  |
+| `uruflow-agent-3.0.1-linux-arm64.tar.gz` | Agent for Linux ARM64, its service unit and MIT license   |
 | `SHA256SUMS.txt`                         | SHA-256 checksums for the four archives                   |
 
 Verify each architecture on Linux: run both `version` commands, inspect the embedded workspace,
@@ -48,12 +48,12 @@ define the additional checks for a change. Build from the same committed checkou
 After committing and pushing the release changes, create and push the tag, then upload the files:
 
 ```sh
-git tag -a v3.0.0 -m "URUFLOW 3.0.0"
-git push origin v3.0.0
-gh release create v3.0.0 dist/v3.0.0/* --verify-tag --title "URUFLOW 3.0.0" --generate-notes
+git tag -a v3.0.1 -m "URUFLOW 3.0.1"
+git push origin v3.0.1
+gh release create v3.0.1 dist/v3.0.1/* --verify-tag --title "URUFLOW 3.0.1" --generate-notes
 ```
 
-Alternatively, create release `v3.0.0` in GitHub and attach all five files from `dist/v3.0.0/`.
+Alternatively, create release `v3.0.1` in GitHub and attach all five files from `dist/v3.0.1/`.
 Publishing the release makes the README's pinned download URLs available.
 [`--verify-tag`](https://cli.github.com/manual/gh_release_create) prevents GitHub CLI from creating
 a tag against an unintended commit. Building locally does not upload files or create a release.

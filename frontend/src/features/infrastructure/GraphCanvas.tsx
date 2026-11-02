@@ -12,9 +12,11 @@ import {
 import { EmptyState } from '@/shared/ui'
 import type { GraphNode } from '@/shared/types'
 import { statusTone } from '@/shared/utils/status'
+import { useVisible } from '@/shared/hooks/useVisible'
 
 import { nodeTypes, type ResourceFlowNode } from './ResourceNode'
 import { fitGraph, graphFit } from './graph-options'
+import { edgeTypes } from './ResourceEdge'
 
 interface Props {
   nodes: ResourceFlowNode[]
@@ -26,6 +28,9 @@ interface Props {
   initialize: (instance: ReactFlowInstance<ResourceFlowNode, Edge>) => void
   fitKey: string
   settled: boolean
+  hoverNode: (id: string | null) => void
+  hoverEdge: (id: string | null) => void
+  allConnections: boolean
 }
 
 export function GraphCanvas({
@@ -38,8 +43,12 @@ export function GraphCanvas({
   initialize,
   fitKey,
   settled,
+  hoverNode,
+  hoverEdge,
+  allConnections,
 }: Props) {
   const canvas = useRef<HTMLDivElement>(null)
+  const visible = useVisible()
   const fleet = nodes.some((node) => node.data.resource.kind === 'server')
   useEffect(() => {
     if (!instance || !settled) return
@@ -50,15 +59,27 @@ export function GraphCanvas({
   }, [instance, fitKey, settled])
 
   return (
-    <div className="graph-canvas" ref={canvas}>
+    <div
+      className={'graph-canvas' + (visible ? '' : ' is-paused')}
+      ref={canvas}
+      onMouseLeave={() => {
+        hoverNode(null)
+        hoverEdge(null)
+      }}
+    >
       {nodes.length ? (
         <ReactFlow<ResourceFlowNode, Edge>
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onInit={initialize}
           onNodeClick={(_, node) => select(node.id)}
+          onNodeMouseEnter={(_, node) => hoverNode(node.id)}
+          onNodeMouseLeave={() => hoverNode(null)}
+          onEdgeMouseEnter={(_, edge) => hoverEdge(edge.id)}
+          onEdgeMouseLeave={() => hoverEdge(null)}
           onPaneClick={close}
           nodesConnectable={false}
           edgesReconnectable={false}
@@ -92,9 +113,7 @@ export function GraphCanvas({
                     ? 'var(--bad)'
                     : tone === 'warn'
                       ? 'var(--warn)'
-                      : tone === 'active'
-                        ? 'var(--blue)'
-                        : 'var(--graph-node)'
+                      : 'var(--graph-node)'
               }}
             />
           )}
@@ -112,7 +131,13 @@ export function GraphCanvas({
         </span>
         <span>
           <i className={fleet ? 'assignment' : 'dependency'} />
-          {fleet ? 'Configured connection' : 'Deployment dependency'}
+          {allConnections
+            ? fleet
+              ? 'Configured connection'
+              : 'Deployment dependency'
+            : fleet
+              ? 'Planned links on selection'
+              : 'Dependencies on selection'}
         </span>
       </div>
     </div>

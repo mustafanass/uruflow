@@ -70,7 +70,7 @@
 
 .table-scroll {
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
 }
 
 .data-table table {
@@ -234,12 +234,6 @@
   background: var(--warn-surface);
   color: var(--warn);
   border-color: var(--warn-border);
-}
-
-.badge.active {
-  background: var(--surface-subtle);
-  color: var(--muted);
-  border-color: var(--border);
 }
 
 .environment-label,

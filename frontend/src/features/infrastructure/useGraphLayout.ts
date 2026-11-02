@@ -17,6 +17,7 @@ import {
 } from './graph-layout'
 import { layout, nodeSize } from './layout'
 import { type ResourceFlowNode } from './ResourceNode'
+import { graphConnections } from './graph-connections'
 
 export function useGraphLayout({
   graph,
@@ -30,6 +31,10 @@ export function useGraphLayout({
   toggle,
   togglable,
   filtered,
+  hovered,
+  hoveredEdge,
+  allConnections,
+  live,
 }: {
   graph: Graph
   base: Graph
@@ -42,6 +47,10 @@ export function useGraphLayout({
   toggle: (id: string) => void
   togglable: boolean
   filtered: boolean
+  hovered: string | null
+  hoveredEdge: string | null
+  allConnections: boolean
+  live: boolean
 }) {
   const [nodes, setNodes, changeNodes] = useNodesState<ResourceFlowNode>([])
   const [initial] = useState(() => readPositions(storageKey, nodeSize))
@@ -111,22 +120,39 @@ export function useGraphLayout({
     togglable,
   ])
   const edgeSignature = JSON.stringify(view.edges)
+  const stateSignature = JSON.stringify(
+    view.nodes.map((node) => [node.id, node.state]),
+  )
   const edges: Edge[] = useMemo(
     () =>
-      view.edges.map((edge) => ({
+      graphConnections(view, {
+        selected,
+        hovered,
+        hoveredEdge,
+        all: allConnections,
+        live,
+      }).map((edge) => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        type: 'smoothstep',
+        type: 'resource',
         label: edge.label || undefined,
+        hidden: edge.hidden,
+        className:
+          'graph-connection' +
+          (edge.muted ? ' is-muted' : '') +
+          (edge.inactive ? ' is-inactive' : ''),
+        data: { motion: edge.motion },
         focusable: false,
         selectable: false,
         style: {
           stroke:
             edge.kind === 'dependency'
               ? 'var(--graph-dependency)'
-              : 'var(--graph-edge)',
-          strokeWidth: 1.4,
+              : edge.highlighted
+                ? 'var(--blue)'
+                : 'var(--graph-edge)',
+          strokeWidth: edge.highlighted ? 2 : 1.4,
           strokeDasharray: ['dependency', 'assignment'].includes(edge.kind)
             ? '5 4'
             : undefined,
@@ -136,12 +162,22 @@ export function useGraphLayout({
           color:
             edge.kind === 'dependency'
               ? 'var(--graph-dependency)'
-              : 'var(--graph-edge)',
+              : edge.highlighted
+                ? 'var(--blue)'
+                : 'var(--graph-edge)',
         },
         labelStyle: { fill: 'var(--text)', fontSize: 11 },
         labelBgStyle: { fill: 'var(--surface-subtle)' },
       })),
-    [edgeSignature],
+    [
+      edgeSignature,
+      stateSignature,
+      selected,
+      hovered,
+      hoveredEdge,
+      allConnections,
+      live,
+    ],
   )
 
   const onNodesChange: OnNodesChange<ResourceFlowNode> = useCallback(
