@@ -94,6 +94,9 @@ func (c *Client) State(ctx context.Context, id string) (*State, error) {
 	}
 
 	state := &State{
+		ID:       details.ID,
+		Image:    details.Config.Image,
+		SpecHash: details.Config.Labels[LabelSpec],
 		Status:   details.State.Status,
 		Health:   HealthNone,
 		ExitCode: details.State.ExitCode,

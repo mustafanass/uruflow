@@ -67,6 +67,7 @@ type RegistryConfig struct {
 }
 
 type BuildRequest struct {
+	Rebuild bool          `json:"rebuild,omitempty"`
 	JobID   string        `json:"job_id"`
 	Project string        `json:"project"`
 	Timeout time.Duration `json:"timeout,omitempty"`
@@ -75,14 +76,17 @@ type BuildRequest struct {
 }
 
 type BuildTarget struct {
-	Service    string            `json:"service"`
-	Image      string            `json:"image"`
-	Dockerfile string            `json:"dockerfile"`
-	Context    string            `json:"context"`
-	BuildArgs  map[string]string `json:"build_args,omitempty"`
-	GitURL     string            `json:"git_url,omitempty"`
-	Branch     string            `json:"branch,omitempty"`
-	Commit     string            `json:"commit,omitempty"`
+	Service        string            `json:"service"`
+	Image          string            `json:"image"`
+	Dockerfile     string            `json:"dockerfile"`
+	Context        string            `json:"context"`
+	BuildArgs      map[string]string `json:"build_args,omitempty"`
+	Watch          []string          `json:"watch,omitempty"`
+	PreviousImage  string            `json:"previous_image,omitempty"`
+	PreviousCommit string            `json:"previous_commit,omitempty"`
+	GitURL         string            `json:"git_url,omitempty"`
+	Branch         string            `json:"branch,omitempty"`
+	Commit         string            `json:"commit,omitempty"`
 }
 
 type ReleaseRequest struct {
@@ -205,16 +209,17 @@ type JobLog struct {
 }
 
 type JobStatus struct {
-	JobID    string            `json:"job_id"`
-	Stage    string            `json:"stage"`
-	Status   string            `json:"status"`
-	Message  string            `json:"message,omitempty"`
-	Image    string            `json:"image,omitempty"`
-	Images   map[string]string `json:"images,omitempty"`
-	Digest   string            `json:"digest,omitempty"`
-	Commit   string            `json:"commit,omitempty"`
-	Commits  map[string]string `json:"commits,omitempty"`
-	Duration int64             `json:"duration"`
+	Containers map[string]string `json:"containers,omitempty"`
+	JobID      string            `json:"job_id"`
+	Stage      string            `json:"stage"`
+	Status     string            `json:"status"`
+	Message    string            `json:"message,omitempty"`
+	Image      string            `json:"image,omitempty"`
+	Images     map[string]string `json:"images,omitempty"`
+	Digest     string            `json:"digest,omitempty"`
+	Commit     string            `json:"commit,omitempty"`
+	Commits    map[string]string `json:"commits,omitempty"`
+	Duration   int64             `json:"duration"`
 }
 
 type Metrics struct {

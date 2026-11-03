@@ -29,6 +29,7 @@ const (
 	LabelRelease = "uruflow.release"
 	LabelService = "uruflow.service"
 	LabelRole    = "uruflow.role"
+	LabelSpec    = "uruflow.spec"
 
 	RoleRegistry = "registry"
 	RoleService  = "service"

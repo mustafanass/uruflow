@@ -77,7 +77,7 @@ export function ResourceSearch() {
         }
       }}
     >
-      <Search size={16} />
+      <Search size={16} aria-hidden="true" />
       <input
         ref={input}
         role="combobox"
@@ -121,7 +121,6 @@ export function ResourceSearch() {
         autoComplete="off"
         spellCheck={false}
       />
-      <kbd>⌘ K</kbd>
       {open && !!needle && (
         <div
           id={listId}

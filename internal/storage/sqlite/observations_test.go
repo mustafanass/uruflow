@@ -39,7 +39,7 @@ func TestSnapshotReleaseProjectionAndRevision(t *testing.T) {
 	if err = store.CreateRelease(&r); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.SaveReleaseTarget(&models.ReleaseTarget{ReleaseID: r.ID, AgentID: "runner1", AgentName: "Runner 1", Status: models.StatusSucceeded}); err != nil {
+	if err = store.SaveReleaseTarget(&models.ReleaseTarget{ReleaseID: r.ID, AgentID: "runner1", AgentName: "Runner 1", Status: models.StatusSucceeded, Containers: map[string]string{"web": "container-01"}}); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := store.ReleaseRevision()
@@ -52,6 +52,9 @@ func TestSnapshotReleaseProjectionAndRevision(t *testing.T) {
 	}
 	if len(rows[0].Targets) != 1 || rows[0].RunnerCount != 1 || rows[0].Spec.Services[0].Env != nil {
 		t.Fatal("projection lost outcomes or included configuration")
+	}
+	if rows[0].Targets[0].Containers["web"] != "container-01" {
+		t.Fatal("snapshot lost applied container identities")
 	}
 	rows[0].Spec = models.Project{}
 	wire, err := json.Marshal(rows[0])

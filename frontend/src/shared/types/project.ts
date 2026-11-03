@@ -17,6 +17,7 @@ export interface Service {
   branch?: string
   dockerfile?: string
   context?: string
+  watch?: string[]
   mode?: string
   ports?: Port[]
   volumes?: Mount[]

@@ -50,16 +50,6 @@
   .sidebar nav a em {
     display: inline-block;
   }
-  .sidebar .agent-link-state span:last-child {
-    display: inline;
-  }
-  .sidebar .account-name {
-    display: block;
-    flex: 1;
-  }
-  .sidebar-bottom {
-    margin-top: auto;
-  }
   .navigation-backdrop {
     display: block;
     position: fixed;
@@ -89,9 +79,10 @@
     padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
   .search-results {
-    width: min(480px, calc(100vw - 24px));
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
+    top: 68px;
+    left: 12px;
+    right: 12px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -37,7 +37,7 @@ func TestMultiServiceRollbackReusesEveryDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestRollbackReleaseRestoresSelectedHistoryAndRejectsOtherProjects(t *testin
 	if err := harness.store.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}
-	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestRollbackReleaseRestoresSelectedHistoryAndRejectsOtherProjects(t *testin
 	if err = harness.store.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}
-	second, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	second, err := harness.pipeline.Trigger("api", "", models.TriggerManual, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -153,7 +153,7 @@ func (e *Engine) ReloadProjects() []string {
 	}
 	return problems
 }
-func (e *Engine) Deploy(name, sourceRelease string, rollback bool) (*models.Release, error) {
+func (e *Engine) Deploy(name, sourceRelease string, rollback, rebuild bool) (*models.Release, error) {
 	var release *models.Release
 	var err error
 	if rollback {
@@ -163,7 +163,7 @@ func (e *Engine) Deploy(name, sourceRelease string, rollback bool) (*models.Rele
 			release, err = e.server.Pipeline().Rollback(name, "")
 		}
 	} else {
-		release, err = e.server.Pipeline().Trigger(name, "", models.TriggerManual)
+		release, err = e.server.Pipeline().Trigger(name, "", models.TriggerManual, rebuild)
 	}
 	if err != nil {
 		return nil, err

@@ -118,6 +118,7 @@ For this workspace, regression review includes:
 - Scoped active and resolved alert history, event filters, and administrator-only audit access under System.
 - Account-menu keyboard navigation, focus restoration, theme changes, password changes and sign-out confirmations.
 - Read-only editors during pending saves and idle workspace rendering without a one-second update loop.
+- Selective deployment and the Rebuild all images option; complete release records and live-release identification when unchanged containers keep running.
 - Compressed asset negotiation, identity fallback, HEAD responses and matching decoded content.
 - Empty fleets, unavailable metrics and state-dependent actions.
 

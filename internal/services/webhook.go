@@ -97,7 +97,7 @@ func (s *WebhookService) Handle(provider string, payload []byte) (*Result, error
 	for _, project := range matches {
 		outcome := Outcome{Project: project.Name}
 
-		release, err := s.pipeline.Trigger(project.Name, push.Commit, models.TriggerWebhook)
+		release, err := s.pipeline.Trigger(project.Name, push.Commit, models.TriggerWebhook, false)
 		if err != nil {
 			outcome.Err = err
 			logger.Warn("[WEBHOOK] %s: %v", project.Name, err)

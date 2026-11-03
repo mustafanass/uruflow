@@ -152,7 +152,7 @@ func TestReleaseTargetsLogsAndRollbackSource(t *testing.T) {
 	store.SaveReleaseTarget(&models.ReleaseTarget{ReleaseID: "r1", AgentID: "a1",
 		AgentName: "runner-01", Status: models.StatusPending})
 	store.SaveReleaseTarget(&models.ReleaseTarget{ReleaseID: "r1", AgentID: "a1",
-		AgentName: "runner-01", Status: models.StatusSucceeded})
+		AgentName: "runner-01", Status: models.StatusSucceeded, Containers: map[string]string{"api": "container-01"}})
 
 	store.AppendLog(&models.LogLine{ReleaseID: "r1", Stage: "build",
 		Stream: "stdout", Line: "step 1/3", Timestamp: time.Now()})
@@ -171,6 +171,9 @@ func TestReleaseTargetsLogsAndRollbackSource(t *testing.T) {
 	}
 	if len(loaded.Targets) != 1 || loaded.Targets[0].Status != models.StatusSucceeded {
 		t.Fatalf("targets = %+v", loaded.Targets)
+	}
+	if loaded.Targets[0].Containers["api"] != "container-01" {
+		t.Fatal("applied container identity was not persisted")
 	}
 	if loaded.EndedAt == nil {
 		t.Fatal("ended_at was not persisted")

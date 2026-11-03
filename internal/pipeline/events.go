@@ -62,7 +62,7 @@ func (p *Pipeline) disconnectAgentFromRelease(releaseID, agentID string) {
 
 	for _, target := range release.Targets {
 		if target.AgentID == agentID && !target.Status.Done() {
-			if err := p.finishTarget(release.ID, agentID, target.AgentName, models.StatusFailed, "agent disconnected"); err != nil {
+			if err := p.finishTarget(release.ID, agentID, target.AgentName, models.StatusFailed, "agent disconnected", nil); err != nil {
 				logger.Error("[PIPELINE] update disconnected target %s/%s: %v", release.ID, agentID, err)
 			}
 		}
@@ -198,22 +198,23 @@ func (p *Pipeline) onReleaseStatus(release *models.Release, agentID string, stat
 		return
 	}
 
-	if err := p.finishTarget(release.ID, agentID, p.agentName(agentID), outcome, status.Message); err != nil {
+	if err := p.finishTarget(release.ID, agentID, p.agentName(agentID), outcome, status.Message, status.Containers); err != nil {
 		logger.Error("[PIPELINE] update target %s/%s: %v", release.ID, agentID, err)
 		return
 	}
 	p.settle(release.ID)
 }
 
-func (p *Pipeline) finishTarget(releaseID, agentID, agentName string, status models.Status, message string) error {
+func (p *Pipeline) finishTarget(releaseID, agentID, agentName string, status models.Status, message string, containers map[string]string) error {
 	ended := time.Now()
 	return p.store.SaveReleaseTarget(&models.ReleaseTarget{
-		ReleaseID: releaseID,
-		AgentID:   agentID,
-		AgentName: agentName,
-		Status:    status,
-		Message:   message,
-		EndedAt:   &ended,
+		ReleaseID:  releaseID,
+		AgentID:    agentID,
+		AgentName:  agentName,
+		Status:     status,
+		Message:    message,
+		Containers: containers,
+		EndedAt:    &ended,
 	})
 }
 
@@ -261,7 +262,7 @@ func (p *Pipeline) failRelease(release *models.Release, message string) {
 				continue
 			}
 			if err := p.finishTarget(release.ID, target.AgentID, target.AgentName,
-				models.StatusSkipped, message); err != nil {
+				models.StatusSkipped, message, nil); err != nil {
 				logger.Error("[PIPELINE] close target %s/%s: %v", release.ID, target.AgentID, err)
 			}
 		}

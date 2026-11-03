@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/secrets"
 )
 
 func buildServices(declared map[string]Service, variableSets ...map[string]string) ([]models.Service, error) {
@@ -52,6 +53,9 @@ func buildServices(declared map[string]Service, variableSets ...map[string]strin
 		if err := validName(name); err != nil {
 			return nil, fmt.Errorf("service name: %w", err)
 		}
+		if err := secrets.ValidateBuildArgs(declaration.BuildArgs); err != nil {
+			return nil, fmt.Errorf("service %q: %w", name, err)
+		}
 
 		if declaration.Image != "" && declaration.Dockerfile != "" {
 			return nil, fmt.Errorf("service %q sets both image and dockerfile", name)
@@ -64,6 +68,14 @@ func buildServices(declared map[string]Service, variableSets ...map[string]strin
 		}
 		if err := validateBuildPath("service "+name+" context", declaration.Context); err != nil {
 			return nil, err
+		}
+		for _, path := range declaration.Watch {
+			if !models.ValidWatchPath(path) {
+				return nil, fmt.Errorf("service %q watch paths must stay inside the source directory", name)
+			}
+		}
+		if declaration.Image != "" && len(declaration.Watch) > 0 {
+			return nil, fmt.Errorf("service %q watch paths require a source build", name)
 		}
 
 		ports, err := models.ParsePorts(declaration.Ports)
@@ -158,6 +170,7 @@ func buildServices(declared map[string]Service, variableSets ...map[string]strin
 			Dockerfile:  declaration.Dockerfile,
 			Context:     declaration.Context,
 			BuildArgs:   declaration.BuildArgs,
+			Watch:       declaration.Watch,
 			GitURL:      declaration.Git,
 			Branch:      declaration.Branch,
 			Entrypoint:  declaration.Entrypoint,

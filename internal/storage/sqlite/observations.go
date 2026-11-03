@@ -57,7 +57,7 @@ func (s *Store) releaseSummaries(selection string, args ...any) ([]models.Releas
 		releases[i].Workflow = string(releases[i].Spec.Workflow)
 		releases[i].RunnerCount = len(releases[i].Spec.Runners)
 	}
-	rows, err := s.db.Query(`SELECT release_id,agent_id,agent_name,status,message,ended_at FROM release_targets WHERE release_id IN (SELECT id FROM releases WHERE `+selection+`) ORDER BY agent_name`, args...)
+	rows, err := s.db.Query(`SELECT release_id,agent_id,agent_name,status,message,ended_at,containers FROM release_targets WHERE release_id IN (SELECT id FROM releases WHERE `+selection+`) ORDER BY agent_name`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -65,10 +65,12 @@ func (s *Store) releaseSummaries(selection string, args ...any) ([]models.Releas
 	for rows.Next() {
 		var target models.ReleaseTarget
 		var ended sql.NullTime
-		if err = rows.Scan(&target.ReleaseID, &target.AgentID, &target.AgentName, &target.Status, &target.Message, &ended); err != nil {
+		var containers string
+		if err = rows.Scan(&target.ReleaseID, &target.AgentID, &target.AgentName, &target.Status, &target.Message, &ended, &containers); err != nil {
 			return nil, err
 		}
 		target.EndedAt = timePointer(ended)
+		decodeJSON(containers, &target.Containers)
 		if i, ok := byID[target.ReleaseID]; ok {
 			releases[i].Targets = append(releases[i].Targets, target)
 		}

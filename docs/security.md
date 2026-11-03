@@ -36,7 +36,7 @@ Sessions use random identifiers in HttpOnly, SameSite cookies. HTTPS uses Secure
 
 Only hashes of session identifiers are stored in the private database. Valid sessions survive a server restart. Sessions expire after 30 idle minutes or eight hours total. Password or permission changes invalidate their credential fingerprint. Live streams recheck authentication and close revoked access.
 
-Every user can change their password using the current password, or choose **Sign out everywhere** in **System**. Administrators can reset another account's password through **System → Access**.
+Every user can change their password using the current password, or choose **Sign out** in the top-bar account menu to end their sessions on all devices. Administrators can reset another account's password through **System → Access**.
 
 ## Administrator recovery
 

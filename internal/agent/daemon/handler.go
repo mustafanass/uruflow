@@ -22,9 +22,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/secrets"
 	"github.com/mustafanass/uruflow/internal/ufp"
 	"github.com/mustafanass/uruflow/pkg/logger"
 )
@@ -186,8 +188,21 @@ func validateBuildRequest(request ufp.BuildRequest) error {
 		if target.GitURL == "" || target.Branch == "" {
 			return fmt.Errorf("build target %q source is incomplete", target.Service)
 		}
+		if err := secrets.ValidateBuildArgs(target.BuildArgs); err != nil {
+			return fmt.Errorf("build target %q: %w", target.Service, err)
+		}
 		if target.Commit != "" && !models.ValidGitCommit(target.Commit) {
 			return fmt.Errorf("build target %q has an invalid commit", target.Service)
+		}
+		if (target.PreviousImage == "") != (target.PreviousCommit == "") ||
+			(target.PreviousImage != "" && (!models.ValidDigestReference(target.PreviousImage) ||
+				!strings.HasPrefix(target.PreviousImage, target.Image+"@sha256:") || !models.ValidGitCommit(target.PreviousCommit))) {
+			return fmt.Errorf("build target %q has an invalid previous artifact", target.Service)
+		}
+		for _, path := range target.Watch {
+			if !models.ValidWatchPath(path) {
+				return fmt.Errorf("build target %q has invalid watch paths", target.Service)
+			}
 		}
 		seen[target.Service] = true
 	}
@@ -280,7 +295,7 @@ func (d *Daemon) runBuild(request ufp.BuildRequest, job *activeJob) {
 		return
 	}
 
-	logger.Info("[AGENT] build %s: pushed %d image(s)", request.JobID, len(result.Images))
+	logger.Info("[AGENT] build %s: prepared %d image(s)", request.JobID, len(result.Images))
 	d.finishJob(request.JobID, ufp.StageBuild, nil, started, ufp.JobStatus{
 		Image:   result.Image,
 		Images:  result.Images,
@@ -306,7 +321,7 @@ func (d *Daemon) runRelease(request ufp.ReleaseRequest, job *activeJob) {
 	ctx, cancel := context.WithTimeout(job.ctx, timeout)
 	defer cancel()
 
-	err := d.runner.Release(ctx, request, log)
+	containers, err := d.runner.Release(ctx, request, log)
 	d.endJob(request.Project, job)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -314,7 +329,7 @@ func (d *Daemon) runRelease(request ufp.ReleaseRequest, job *activeJob) {
 		}
 		log(ufp.StreamStderr, err.Error())
 	}
-	d.finishJob(request.JobID, ufp.StageRelease, err, started, ufp.JobStatus{})
+	d.finishJob(request.JobID, ufp.StageRelease, err, started, ufp.JobStatus{Containers: containers})
 }
 
 func (d *Daemon) finishJob(jobID, stage string, failure error, started time.Time, status ufp.JobStatus) {

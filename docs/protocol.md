@@ -115,6 +115,10 @@ The server checks enrolled roles before dispatch. Agents independently reject me
 
 Job stages are `build` and `release`; status events use `running`, `success` and `failed`. The server correlates job identity and reporting agent with persisted work before applying outcomes.
 
+Build targets may carry `watch`, `previous_image` and `previous_commit`. The server supplies previous artifacts only when build settings match a successful retained release and their registry manifests exist. It checks manifests with bounded concurrent HEAD requests; registry failures stop the attempt without dispatching a rebuild. The builder compares the selected source paths before reusing the artifact. `rebuild` on the build request bypasses reuse and Docker's build cache. Build results still report every source-built service's image and original build commit. The overall commit identifies the first rebuilt service, or the first resolved source when all images are reused.
+
+A successful release-stage status may include `containers`, mapping each long-running service name to its applied container ID. This includes unchanged containers. The server stores the map with the runner target so the browser can identify the applied release while preserving original container creation labels.
+
 ### Observations
 
 `metrics.push` separates collection time, host availability and container inventory validity. `system.available` lists valid collectors; `system.errors` explains unavailable samples. `cpu_cores` and `metrics_sec` describe capacity and cadence. `uptime` retains process-lifetime meaning; optional `host_uptime` reports host boot age.

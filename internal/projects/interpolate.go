@@ -173,6 +173,12 @@ func interpolateService(service Service, variables map[string]string) (Service, 
 			return Service{}, err
 		}
 	}
+	for index := range service.Watch {
+		service.Watch[index], err = Interpolate(service.Watch[index], variables)
+		if err != nil {
+			return Service{}, err
+		}
+	}
 	for index := range service.Command.Exec {
 		service.Command.Exec[index], err = Interpolate(service.Command.Exec[index], variables)
 		if err != nil {

@@ -34,6 +34,8 @@ type fakeEngine struct {
 	renameErr      error
 	waitReadyErr   error
 	started        []string
+	stopped        []string
+	pulled         []string
 	removed        []string
 	endpoint       string
 	runSpecs       []docker.Spec
@@ -54,12 +56,18 @@ type fakeLogLine struct {
 	line   string
 }
 
-func (f *fakeEngine) Pull(context.Context, string, *docker.Auth, func(string)) error { return nil }
+func (f *fakeEngine) Pull(_ context.Context, image string, _ *docker.Auth, _ func(string)) error {
+	f.pulled = append(f.pulled, image)
+	return nil
+}
 func (f *fakeEngine) ContainerOwnership(_ context.Context, name, _ string) (bool, bool, error) {
 	exists := f.exists[name]
 	return exists, exists && !f.unowned[name], nil
 }
-func (f *fakeEngine) Stop(context.Context, string, time.Duration) error { return nil }
+func (f *fakeEngine) Stop(_ context.Context, name string, _ time.Duration) error {
+	f.stopped = append(f.stopped, name)
+	return nil
+}
 func (f *fakeEngine) Rename(_ context.Context, from, to string) error {
 	if f.renameErr != nil {
 		return f.renameErr
