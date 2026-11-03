@@ -43,6 +43,7 @@ type column struct {
 }
 
 var addedColumns = []column{
+	{table: "release_targets", name: "containers", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "releases", name: "artifacts_expired", spec: "INTEGER NOT NULL DEFAULT 0"},
 	{table: "console_users", name: "projects", spec: "TEXT NOT NULL DEFAULT '[]'"},
 	{table: "alerts", name: "project", spec: "TEXT NOT NULL DEFAULT ''"},

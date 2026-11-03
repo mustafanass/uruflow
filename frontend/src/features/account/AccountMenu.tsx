@@ -1,12 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronUp, KeyRound, LogOut, Moon, Sun, Monitor } from 'lucide-react'
-import { api } from '@/shared/api'
+import { ChevronDown, KeyRound, LogOut, Moon, Sun, Monitor } from 'lucide-react'
 import { useWorkspace } from '@/shared/hooks'
 import { setTheme, useTheme } from '@/shared/hooks/useTheme'
 import { ChangePassword } from './ChangePassword'
 
 export function AccountMenu({ signOut }: { signOut: () => void }) {
-  const { session, confirm, dirty } = useWorkspace()
+  const { session } = useWorkspace()
   const { theme } = useTheme()
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState(false)
@@ -62,7 +61,7 @@ export function AccountMenu({ signOut }: { signOut: () => void }) {
           <strong>{account.username}</strong>
           <span>{account.role}</span>
         </span>
-        <ChevronUp size={15} aria-hidden="true" />
+        <ChevronDown size={15} aria-hidden="true" />
       </button>
       {open && (
         <div
@@ -105,6 +104,10 @@ export function AccountMenu({ signOut }: { signOut: () => void }) {
             }
           }}
         >
+          <div className="account-summary">
+            <strong>{account.username}</strong>
+            <small>{account.role}</small>
+          </div>
           <button
             role="menuitem"
             tabIndex={-1}
@@ -124,30 +127,6 @@ export function AccountMenu({ signOut }: { signOut: () => void }) {
             <Icon size={16} aria-hidden="true" />
             Theme: {theme}
             <span>{nextTheme}</span>
-          </button>
-          <button
-            role="menuitem"
-            tabIndex={-1}
-            onClick={() => {
-              close()
-              confirm({
-                title: 'Sign out everywhere?',
-                description:
-                  'Revoke all your sessions, including this one.' +
-                  (dirty ? ' Unsaved project edits will be discarded.' : ''),
-                label: 'Sign out everywhere',
-                run: async () => {
-                  await api('/api/account/sessions', {
-                    method: 'DELETE',
-                    body: {},
-                  })
-                  window.dispatchEvent(new Event('uruflow:unauthorized'))
-                },
-              })
-            }}
-          >
-            <LogOut size={16} aria-hidden="true" />
-            Sign out everywhere
           </button>
           <button
             role="menuitem"

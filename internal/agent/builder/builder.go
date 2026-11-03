@@ -63,6 +63,7 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 		commit string
 	}
 	checkouts := make(map[string]sourceCheckout)
+	rebuilt := false
 
 	for _, target := range request.Targets {
 		gitURL, branch, requestedCommit := targetSource(target)
@@ -83,7 +84,6 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 			checkouts[key] = checkout
 		}
 		sourceDir, commit := checkout.dir, checkout.commit
-		result.Commits[target.Service] = commit
 		if result.Commit == "" {
 			result.Commit = commit
 		}
@@ -93,6 +93,11 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 		if _, err := safeBuildPath(sourceDir, target.Context); err != nil {
 			return nil, fmt.Errorf("context for %s: %w", target.Service, err)
 		}
+		if !request.Rebuild && unchangedSource(ctx, sourceDir, target, commit) {
+			log(ufp.StreamStdout, "unchanged source and build inputs; reusing "+target.Service+" at "+shortCommit(target.PreviousCommit))
+			result.record(target.Service, target.PreviousImage, target.PreviousCommit)
+			continue
+		}
 		tags := targetTags(target, request.Tags, shortCommit(commit))
 
 		label := target.Service
@@ -101,7 +106,7 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 		}
 		log(ufp.StreamStdout, fmt.Sprintf("building %s at %s", label, shortCommit(commit)))
 
-		if err := b.build(ctx, sourceDir, target, tags, log); err != nil {
+		if err := b.build(ctx, sourceDir, target, tags, request.Rebuild, log); err != nil {
 			return nil, err
 		}
 
@@ -116,10 +121,10 @@ func (b *Builder) Build(ctx context.Context, request ufp.BuildRequest, log LogFu
 		if err != nil {
 			return nil, err
 		}
-		result.Images[target.Service] = digestRef
-		if result.Image == "" {
-			result.Image = digestRef
-			result.Digest = parseDigest(digestRef)
+		result.record(target.Service, digestRef, commit)
+		if !rebuilt {
+			result.Commit = commit
+			rebuilt = true
 		}
 	}
 
@@ -181,7 +186,7 @@ func (b *Builder) sync(ctx context.Context, sourceDir, gitURL, branch, commit st
 	return stream(ctx, sourceDir, log, gitBinary, "reset", "--hard", target)
 }
 
-func (b *Builder) build(ctx context.Context, sourceDir string, target ufp.BuildTarget, tags []string, log LogFunc) error {
+func (b *Builder) build(ctx context.Context, sourceDir string, target ufp.BuildTarget, tags []string, rebuild bool, log LogFunc) error {
 	dockerfile, err := safeBuildPath(sourceDir, target.Dockerfile)
 	if err != nil {
 		return err
@@ -191,6 +196,9 @@ func (b *Builder) build(ctx context.Context, sourceDir string, target ufp.BuildT
 		return err
 	}
 	args := []string{"build", "-f", dockerfile}
+	if rebuild {
+		args = append(args, "--pull", "--no-cache")
+	}
 
 	for _, tag := range tags {
 		args = append(args, "-t", tag)

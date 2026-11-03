@@ -44,6 +44,12 @@ func ValidSourcePath(value string) bool {
 		!strings.HasPrefix(cleaned, ".."+string(filepath.Separator))
 }
 
+func ValidWatchPath(value string) bool {
+	cleaned := filepath.Clean(value)
+	return value != "" && ValidSourcePath(value) && !strings.ContainsAny(value, "\x00*?[]\\") &&
+		cleaned != ".git" && !strings.HasPrefix(cleaned, ".git"+string(filepath.Separator))
+}
+
 func ValidDigestReference(value string) bool {
 	repository, digest, found := strings.Cut(value, "@sha256:")
 	if !found || repository == "" || repository != strings.ToLower(repository) || strings.ContainsAny(repository, "@ \t\r\n") ||

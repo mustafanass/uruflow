@@ -41,6 +41,7 @@ type Service struct {
 	Dockerfile  string                       `yaml:"dockerfile,omitempty"`
 	Context     string                       `yaml:"context,omitempty"`
 	BuildArgs   map[string]string            `yaml:"build_args,omitempty"`
+	Watch       []string                     `yaml:"watch,omitempty"`
 	Git         string                       `yaml:"git,omitempty"`
 	Branch      string                       `yaml:"branch,omitempty"`
 	Entrypoint  []string                     `yaml:"entrypoint,omitempty"`

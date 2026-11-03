@@ -36,7 +36,7 @@ type Operator interface {
 	ReloadProjects() []string
 	ProjectDocument(string, bool) (ops.Document, error)
 	SaveProjectDocument(string, bool, string, string, func(models.Project) error) (ops.Document, error)
-	Deploy(string, string, bool) (*models.Release, error)
+	Deploy(string, string, bool, bool) (*models.Release, error)
 	StopProject(string) error
 	ProjectReleases(string) ([]models.Release, error)
 	Release(string) (*models.Release, error)

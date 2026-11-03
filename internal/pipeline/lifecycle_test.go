@@ -27,7 +27,7 @@ import (
 
 func TestBuildThenReleaseReachesRunners(t *testing.T) {
 	harness := newHarness(t)
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("trigger: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestBuildOnlyStopsAfterPublishingArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestReleaseOnlySkipsBuilder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestReleaseOnlySkipsBuilder(t *testing.T) {
 func TestFailedBuildNeverReachesRunners(t *testing.T) {
 	harness := newHarness(t)
 	harness.agent.failBuild = true
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("trigger: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestFailedBuildNeverReachesRunners(t *testing.T) {
 func TestFailedRunnerFailsTheRelease(t *testing.T) {
 	harness := newHarness(t)
 	harness.agent.failRun = true
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("trigger: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestFailedRunnerFailsTheRelease(t *testing.T) {
 
 func TestRollbackSkipsTheBuildStage(t *testing.T) {
 	harness := newHarness(t)
-	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("trigger: %v", err)
 	}

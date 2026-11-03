@@ -14,7 +14,7 @@ The browser workspace is the operator interface for URUFLOW. Its pages share liv
 
 Use **Ctrl/⌘ K** to find projects, agents, containers and releases directly. Resource detail URLs remain stable. Existing index links for Infrastructure, Releases, Containers, Alerts and Registry open their new locations.
 
-Tab selection and table filters stay in the URL, including when you move between views. Your account menu is under the avatar in the sidebar. It provides password changes, theme selection, sign-out and sign-out everywhere. The top bar keeps resource search, connection status and help.
+Tab selection and table filters stay in the URL, including when you move between views. Your account menu is under the avatar in the top bar, beside resource search and help. It provides password changes, theme selection and **Sign out**, which ends your sessions on all devices. Connection status appears at the bottom of the sidebar.
 
 ## Overview and graphs
 
@@ -42,7 +42,7 @@ Graph retains runtime and delivery views. Runtime connects service intent, runne
 
 Active rollouts show amber progress states, including **Deploying** while runners replace containers. Container observations retain their actual state. Once the release ends, the project returns to its observed runtime health.
 
-Configuration uses the full content width, with **YAML** and **Secrets & variables** tabs. Each editor keeps its revision, validation, save control and unsaved edits when switching tabs. Modified tabs show an indicator. Saving one preserves unsaved edits in the other, and both contribute to the navigation guard. Editors remain read-only while their own save is in flight.
+Configuration uses the full content width, with **YAML** and **Secrets & variables** tabs. Each editor keeps its revision, validation, save control and unsaved edits when switching tabs. Modified tabs show an indicator. The taller editor shows more of large files; **Expand editor** fills the screen while keeping save controls visible. **Escape** returns to the page. Saving one preserves unsaved edits in the other, and both contribute to the navigation guard. Editors remain read-only while their own save is in flight.
 
 If a save conflicts with another revision, use **Copy unsaved edits** if needed, then **Load latest**. Confirming loads the new file and revision so you can apply changes again. During a conflict, **Discard edits** uses the same recovery path.
 

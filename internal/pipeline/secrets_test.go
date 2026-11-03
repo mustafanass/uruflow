@@ -39,7 +39,7 @@ func TestSecretsResolveIntoTheReleaseRequest(t *testing.T) {
 	project.Runtime.Env = map[string]string{"DATABASE_URL": "${secret:api_db}", "MODE": "production"}
 	harness.store.SaveProject(project)
 
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("trigger: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestMissingSecretFailsBeforeBuilding(t *testing.T) {
 	project.Runtime.Env = map[string]string{"DATABASE_URL": "${secret:absent}"}
 	harness.store.SaveProject(project)
 
-	_, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	_, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if !errors.Is(err, ErrSecretMissing) {
 		t.Fatalf("error = %v, want ErrSecretMissing", err)
 	}

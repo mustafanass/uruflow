@@ -1,6 +1,6 @@
 import { withTab } from '@/shared/utils/url'
 import { useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { Play, RotateCcw, Square } from 'lucide-react'
 
@@ -25,6 +25,7 @@ import { count, services } from '@/shared/utils'
 import { ProjectInfrastructure } from './ProjectInfrastructure'
 import { ProjectOverview } from './ProjectOverview'
 import { currentRelease } from './release-state'
+import { DeployProject } from './DeployProject'
 
 export default function ProjectDetailPage() {
   const { name = '' } = useParams()
@@ -33,7 +34,6 @@ export default function ProjectDetailPage() {
     '/api/projects/' + segment(name) + '/releases',
     canOperate,
   )
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const tabs = [
     'Overview',
@@ -52,6 +52,7 @@ export default function ProjectDetailPage() {
         : legacyTab
   const tab = tabs.includes(requestedTab) ? requestedTab : 'Overview'
   const [rolling, setRolling] = useState(false)
+  const [deploying, setDeploying] = useState(false)
   const project = snapshot?.projects.find((p) => p.name === name)
   if (!snapshot) {
     return <Spinner />
@@ -90,20 +91,6 @@ export default function ProjectDetailPage() {
       r.project === p.name &&
       !['succeeded', 'failed', 'skipped'].includes(r.status),
   )
-  const deploy = () =>
-    confirm({
-      title: 'Deploy ' + p.name,
-      description: `${p.workflow === 'deploy_only' || services(p).every((service) => service.image) ? 'Release the saved images and configuration' : 'Build and release the saved configuration'} for ${p.env || 'this environment'} across ${runners.join(', ') || 'the configured builder'}. You can follow the release in the browser.`,
-      label: 'Deploy',
-      success: 'Deployment started',
-      run: async () => {
-        const r = await api<Release>(
-          '/api/projects/' + segment(p.name) + '/deploy',
-          { method: 'POST', body: {} },
-        )
-        navigate('/releases/' + segment(r.id) + '?tab=Logs')
-      },
-    })
   return (
     <>
       <PageHeader
@@ -160,7 +147,7 @@ export default function ProjectDetailPage() {
                 <button
                   className="button primary"
                   disabled={active || dirty}
-                  onClick={deploy}
+                  onClick={() => setDeploying(true)}
                 >
                   <Play size={15} />
                   {active ? 'Release in progress' : 'Deploy'}
@@ -214,6 +201,9 @@ export default function ProjectDetailPage() {
         )}
         {rolling && (
           <RollbackProject project={p} onClose={() => setRolling(false)} />
+        )}
+        {deploying && (
+          <DeployProject project={p} onClose={() => setDeploying(false)} />
         )}
       </TabPanel>
     </>

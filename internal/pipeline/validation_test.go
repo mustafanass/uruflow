@@ -52,3 +52,11 @@ func TestProjectValidationRejectsProjectSourceFallback(t *testing.T) {
 		t.Fatalf("project source fallback error = %v", err)
 	}
 }
+
+func TestProjectValidationRejectsSecretBuildArguments(t *testing.T) {
+	project := serviceOwnedProject()
+	project.Services[0].BuildArgs = map[string]string{"TOKEN": "${secret:app.TOKEN}"}
+	if err := (&Pipeline{}).validateProject(project); err == nil || !strings.Contains(err.Error(), "build_args does not support secrets") {
+		t.Fatalf("secret build argument accepted: %v", err)
+	}
+}

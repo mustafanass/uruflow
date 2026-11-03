@@ -122,7 +122,7 @@ func TestReadinessFailureRestoresAllPreviousContainers(t *testing.T) {
 		{Name: "app", Image: immutableTestImage, Labels: map[string]string{"traefik.enable": "true"}},
 		{Name: "worker", Image: immutableTestImage, Healthcheck: &ufp.HealthcheckSpec{Type: "tcp", Port: 1, Interval: time.Millisecond, Timeout: 10 * time.Millisecond, Retries: 1}},
 	}}
-	if err := runner.Release(context.Background(), request, func(string, string) {}); err == nil {
+	if _, err := runner.Release(context.Background(), request, func(string, string) {}); err == nil {
 		t.Fatal("failed readiness reported success")
 	}
 	if !engine.exists["uruflow-api-app"] || !engine.exists["uruflow-api-worker"] {

@@ -67,6 +67,7 @@ type logEngine interface {
 }
 
 type replacement struct {
+	id            string
 	project       string
 	name          string
 	previous      string
@@ -86,30 +87,43 @@ func ContainerName(project, service string) string {
 	return NamePrefix + project + "-" + service
 }
 
-func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log ufp.LogFunc) error {
+func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log ufp.LogFunc) (map[string]string, error) {
 	if err := validateReleaseRequest(request); err != nil {
-		return fmt.Errorf("invalid release request: %w", err)
+		return nil, fmt.Errorf("invalid release request: %w", err)
 	}
 	if err := r.ensureResources(ctx, request); err != nil {
-		return err
+		return nil, err
 	}
 	resolveResourceNames(&request)
+	containers := make(map[string]string)
 	for _, service := range request.Services {
+		id, err := r.keepContainer(ctx, request, service)
+		if err != nil {
+			return nil, err
+		}
+		if id != "" {
+			containers[service.Name] = id
+			log(ufp.StreamStdout, "unchanged configuration; keeping "+ContainerName(request.Project, service.Name))
+			continue
+		}
 		log(ufp.StreamStdout, "pulling "+service.Image)
 		if err := r.pull(ctx, service.Image, log); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	done := make([]replacement, 0, len(request.Services))
 
 	for _, service := range request.Services {
+		if containers[service.Name] != "" {
+			continue
+		}
 		if service.Mode == "job" {
 			if err := r.runJob(ctx, request, service, log); err != nil {
 				restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 				restoreErr := r.rollback(restoreCtx, done, log)
 				cancel()
-				return errors.Join(err, restoreErr)
+				return nil, errors.Join(err, restoreErr)
 			}
 			continue
 		}
@@ -121,10 +135,11 @@ func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log uf
 			restoreErr := r.rollback(restoreCtx, done, log)
 			cancel()
 			if restoreErr != nil {
-				return errors.Join(err, fmt.Errorf("restore previous containers: %w", restoreErr))
+				return nil, errors.Join(err, fmt.Errorf("restore previous containers: %w", restoreErr))
 			}
-			return err
+			return nil, err
 		}
+		containers[service.Name] = state.id
 	}
 
 	for _, state := range done {
@@ -136,7 +151,7 @@ func (r *Runner) Release(ctx context.Context, request ufp.ReleaseRequest, log uf
 	}
 
 	log(ufp.StreamStdout, fmt.Sprintf("%s is live (%d service(s))", request.Project, len(request.Services)))
-	return nil
+	return containers, nil
 }
 
 func (r *Runner) runJob(ctx context.Context, request ufp.ReleaseRequest, service ufp.ServiceSpec, log ufp.LogFunc) error {
@@ -249,6 +264,7 @@ func (r *Runner) replace(ctx context.Context, request ufp.ReleaseRequest, servic
 		return state, errors.Join(err, inspectErr)
 	}
 	state.newRunning = true
+	state.id = id
 
 	log(ufp.StreamStdout, "waiting for "+name+" to come up")
 	if err := r.waitReady(ctx, id, service.Healthcheck); err != nil {
@@ -445,6 +461,11 @@ func spec(name string, request ufp.ReleaseRequest, service ufp.ServiceSpec) (doc
 			Type: volume.Type, Source: volume.Source, Target: volume.Target, ReadOnly: volume.ReadOnly, CreateHostPath: volume.CreateHostPath,
 		})
 	}
+	hash, err := serviceHash(request, service)
+	if err != nil {
+		return docker.Spec{}, err
+	}
+	container.Labels[docker.LabelSpec] = hash
 
 	return container, nil
 }

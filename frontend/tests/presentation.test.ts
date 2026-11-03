@@ -39,6 +39,7 @@ test('uses singular nouns for one resource and plural nouns for empty fleets', (
 test('identifies the current release from containers even when the project is degraded', () => {
   const release = { id: 'r1', project: 'commerce' } as Release
   const snapshot = {
+    releases: [release],
     project_states: { commerce: 'running' },
     containers: [
       { project: 'commerce', state: 'running', details: { release: 'r1' } },

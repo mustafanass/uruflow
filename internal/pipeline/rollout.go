@@ -43,7 +43,7 @@ func (p *Pipeline) rollout(release *models.Release, project *models.Project, run
 	for _, runner := range runners {
 		if !p.link.Online(runner.ID) {
 			p.mu.Lock()
-			if err := p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusSkipped, "agent offline"); err != nil {
+			if err := p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusSkipped, "agent offline", nil); err != nil {
 				logger.Error("[PIPELINE] update target %s/%s: %v", release.ID, runner.ID, err)
 			}
 			p.mu.Unlock()
@@ -51,7 +51,7 @@ func (p *Pipeline) rollout(release *models.Release, project *models.Project, run
 		}
 		if err := p.dispatch(runner.ID, ufp.MethodReleaseRun, *request); err != nil {
 			p.mu.Lock()
-			if saveErr := p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusFailed, err.Error()); saveErr != nil {
+			if saveErr := p.finishTarget(release.ID, runner.ID, runner.Name, models.StatusFailed, err.Error(), nil); saveErr != nil {
 				logger.Error("[PIPELINE] update target %s/%s: %v", release.ID, runner.ID, saveErr)
 			}
 			p.mu.Unlock()
@@ -76,6 +76,7 @@ func (p *Pipeline) buildTargets(project *models.Project) []ufp.BuildTarget {
 			Dockerfile: service.BuildFile(),
 			Context:    service.BuildContext(),
 			BuildArgs:  service.BuildArgs,
+			Watch:      service.Watch,
 			GitURL:     service.GitURL,
 			Branch:     service.Branch,
 		})

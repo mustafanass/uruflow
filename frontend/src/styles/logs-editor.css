@@ -190,11 +190,60 @@
 }
 
 .project-configuration {
+  --project-editor-height: max(560px, 70vh);
   width: 100%;
   min-width: 0;
 }
-.project-configuration > .tabs {
-  margin: 0 0 16px;
+.configuration-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.configuration-toolbar > .tabs {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.configuration-toolbar > .icon-button {
+  flex-shrink: 0;
+}
+.project-configuration.is-expanded {
+  position: fixed;
+  inset: 12px;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.project-configuration.is-expanded > [role='tabpanel']:not([hidden]) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.project-configuration.is-expanded .editor-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.project-configuration.is-expanded
+  .editor-panel
+  > :not(.code-editor):not(.diff-view) {
+  flex-shrink: 0;
+}
+.project-configuration.is-expanded .code-editor,
+.project-configuration.is-expanded .diff-view {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.project-configuration.is-expanded .code-editor > .cm-editor {
+  height: 100%;
 }
 .project-configuration .panel {
   margin-bottom: 0;

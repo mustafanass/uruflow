@@ -36,6 +36,20 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 type Lookup func(name string) (string, error)
 
+func ValidateBuildArgs(args map[string]string) error {
+	var names []string
+	for name, value := range args {
+		if strings.Contains(value, Prefix) {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+	return fmt.Errorf("build argument %q cannot contain a secret reference; build_args does not support secrets", names[0])
+}
+
 func ValidateName(name string) error {
 	if !namePattern.MatchString(name) {
 		return fmt.Errorf("invalid secret name %q; use letters, numbers, dots, dashes or underscores", name)

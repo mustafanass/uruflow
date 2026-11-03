@@ -23,7 +23,9 @@ package runner
 import (
 	"context"
 	"os"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/mustafanass/uruflow/internal/docker"
 	"github.com/mustafanass/uruflow/internal/ufp"
@@ -84,7 +86,7 @@ func TestLiveFailedReleaseRestoresTheRunningContainer(t *testing.T) {
 
 	quiet := func(stream, line string) { t.Logf("  %s | %s", stream, line) }
 
-	if err := runner.Release(ctx, release(liveProject, "sleep 300", image), quiet); err != nil {
+	if _, err := runner.Release(ctx, release(liveProject, "sleep 300", image), quiet); err != nil {
 		t.Fatalf("first release: %v", err)
 	}
 
@@ -98,7 +100,7 @@ func TestLiveFailedReleaseRestoresTheRunningContainer(t *testing.T) {
 	}
 	_ = before
 
-	err = runner.Release(ctx, release(liveProject, "exit 1", image), quiet)
+	_, err = runner.Release(ctx, release(liveProject, "exit 1", image), quiet)
 	if err == nil {
 		t.Fatal("a release of a crashing image reported success")
 	}
@@ -124,12 +126,12 @@ func TestLiveSuccessfulReleaseReplacesAndCleansUp(t *testing.T) {
 
 	quiet := func(stream, line string) {}
 
-	if err := runner.Release(ctx, release(liveProject, "sleep 300", image), quiet); err != nil {
+	if _, err := runner.Release(ctx, release(liveProject, "sleep 300", image), quiet); err != nil {
 		t.Fatalf("first release: %v", err)
 	}
 	first, _ := client.Inspect(ctx, name)
 
-	if err := runner.Release(ctx, release(liveProject, "sleep 301", image), quiet); err != nil {
+	if _, err := runner.Release(ctx, release(liveProject, "sleep 301", image), quiet); err != nil {
 		t.Fatalf("second release: %v", err)
 	}
 	second, _ := client.Inspect(ctx, name)
@@ -174,7 +176,7 @@ func TestLiveMultiServiceRestoresEveryServiceWhenOneFails(t *testing.T) {
 	})
 
 	good := multiRelease(liveProject, image, map[string]string{"app": "sleep 300", "worker": "sleep 300"})
-	if err := runner.Release(ctx, good, quiet); err != nil {
+	if _, err := runner.Release(ctx, good, quiet); err != nil {
 		t.Fatalf("first multi-service release: %v", err)
 	}
 
@@ -190,7 +192,7 @@ func TestLiveMultiServiceRestoresEveryServiceWhenOneFails(t *testing.T) {
 
 	bad := multiRelease(liveProject, image, map[string]string{"app": "sleep 300", "worker": "exit 1"})
 	bad.JobID = "job-multi-bad"
-	if err := runner.Release(ctx, bad, quiet); err == nil {
+	if _, err := runner.Release(ctx, bad, quiet); err == nil {
 		t.Fatal("a release whose second service crashes reported success")
 	} else {
 		t.Logf("rejected: %v", err)
@@ -213,6 +215,50 @@ func TestLiveMultiServiceRestoresEveryServiceWhenOneFails(t *testing.T) {
 	for _, n := range []string{appName + PreviousSuffix, workerName + PreviousSuffix} {
 		if client.Exists(ctx, n) {
 			t.Errorf("%s was left behind", n)
+		}
+	}
+}
+
+func TestLiveSelectiveReleaseKeepsUnchangedContainers(t *testing.T) {
+	runner, client, image := liveRunner(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	project := "selective-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	t.Cleanup(func() {
+		for _, service := range []string{"rust", "console"} {
+			name := ContainerName(project, service)
+			client.Remove(context.Background(), name, true)
+			client.Remove(context.Background(), name+PreviousSuffix, true)
+		}
+	})
+	request := ufp.ReleaseRequest{Project: project, JobID: "first", Services: []ufp.ServiceSpec{
+		{Name: "rust", Image: image, Command: "trap 'exit 0' TERM; sleep 300 & wait", Healthcheck: &ufp.HealthcheckSpec{Type: "running", StableFor: 100 * time.Millisecond}},
+		{Name: "console", Image: image, Command: "trap 'exit 0' TERM; sleep 300 & wait", Healthcheck: &ufp.HealthcheckSpec{Type: "running", StableFor: 100 * time.Millisecond}},
+	}}
+	started := time.Now()
+	quiet := func(_, line string) { t.Logf("%s %s", time.Since(started).Round(time.Millisecond), line) }
+	first, err := runner.Release(ctx, request, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.JobID = "second"
+	request.Services[1].Env = map[string]string{"TOKEN": "rotated"}
+	second, err := runner.Release(ctx, request, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first["rust"] != second["rust"] || first["console"] == second["console"] {
+		t.Fatalf("wrong containers replaced: first=%v second=%v", first, second)
+	}
+	request.JobID = "failed"
+	request.Services[1].Command = "exit 1"
+	if _, err = runner.Release(ctx, request, quiet); err == nil {
+		t.Fatal("failed replacement was accepted")
+	}
+	for service, expected := range second {
+		state, err := client.State(ctx, ContainerName(project, service))
+		if err != nil || state.ID != expected || !state.Ready() {
+			t.Fatalf("%s was not kept/restored: %+v %v", service, state, err)
 		}
 	}
 }

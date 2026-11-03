@@ -42,6 +42,7 @@ const (
 
 var (
 	ErrRegistryMaintenance = errors.New("registry maintenance is in progress; try again shortly")
+	ErrRegistryUnavailable = errors.New("registry is unavailable")
 	ErrSecretMissing       = errors.New("secret is not set")
 	ErrReleaseInFlight     = errors.New("a release is already running for this project")
 	ErrProjectBusy         = errors.New("another project operation is already running")
@@ -107,7 +108,7 @@ func (p *Pipeline) checkSecrets(project *models.Project) error {
 	return nil
 }
 
-func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (*models.Release, error) {
+func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger, rebuild bool) (*models.Release, error) {
 	if commit != "" && !models.ValidGitCommit(commit) {
 		return nil, fmt.Errorf("invalid git commit %q", commit)
 	}
@@ -167,7 +168,6 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 	if err != nil {
 		return nil, err
 	}
-
 	release := &models.Release{
 		ID:          helper.GenerateID(),
 		Project:     project.Name,
@@ -182,8 +182,17 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger) (
 	if err := p.claim(release, runners); err != nil {
 		return nil, err
 	}
+	if !rebuild {
+		if err := p.reuseBuilds(project, targets); err != nil {
+			p.mu.Lock()
+			p.failRelease(release, err.Error())
+			p.mu.Unlock()
+			return nil, err
+		}
+	}
 
 	request := ufp.BuildRequest{
+		Rebuild: rebuild,
 		JobID:   release.ID,
 		Project: project.Name,
 		Timeout: project.EffectiveTimeout(),

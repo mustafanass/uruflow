@@ -13,12 +13,6 @@
   .global-search input {
     font-size: 12px;
   }
-  .global-search kbd {
-    display: none;
-  }
-  .live-indicator {
-    font-size: 12px;
-  }
   .page-title {
     align-items: flex-start;
     flex-direction: column;

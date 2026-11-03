@@ -130,21 +130,22 @@ func (s *Store) LastSuccessfulRelease(project string) (*models.Release, error) {
 
 func (s *Store) SaveReleaseTarget(target *models.ReleaseTarget) error {
 	_, err := s.db.Exec(`
-		INSERT INTO release_targets (release_id, agent_id, agent_name, status, message, ended_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO release_targets (release_id, agent_id, agent_name, status, message, ended_at, containers)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(release_id, agent_id) DO UPDATE SET
 			agent_name = excluded.agent_name,
 			status = excluded.status,
 			message = excluded.message,
+			containers = excluded.containers,
 			ended_at = excluded.ended_at`,
 		target.ReleaseID, target.AgentID, target.AgentName, target.Status,
-		target.Message, nullTime(target.EndedAt))
+		target.Message, nullTime(target.EndedAt), encodeJSON(target.Containers))
 	return err
 }
 
 func (s *Store) ListReleaseTargets(releaseID string) ([]models.ReleaseTarget, error) {
 	rows, err := s.db.Query(`
-		SELECT release_id, agent_id, agent_name, status, message, ended_at
+		SELECT release_id, agent_id, agent_name, status, message, ended_at, containers
 		FROM release_targets WHERE release_id = ? ORDER BY agent_name`, releaseID)
 	if err != nil {
 		return nil, err
@@ -155,11 +156,13 @@ func (s *Store) ListReleaseTargets(releaseID string) ([]models.ReleaseTarget, er
 	for rows.Next() {
 		var target models.ReleaseTarget
 		var endedAt sql.NullTime
+		var containers string
 		if err := rows.Scan(&target.ReleaseID, &target.AgentID, &target.AgentName,
-			&target.Status, &target.Message, &endedAt); err != nil {
+			&target.Status, &target.Message, &endedAt, &containers); err != nil {
 			return nil, err
 		}
 		target.EndedAt = timePointer(endedAt)
+		decodeJSON(containers, &target.Containers)
 		targets = append(targets, target)
 	}
 	return targets, rows.Err()

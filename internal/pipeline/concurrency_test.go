@@ -29,13 +29,13 @@ import (
 
 func TestConcurrentReleasesAreRejected(t *testing.T) {
 	harness := newHarness(t)
-	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("first trigger: %v", err)
 	}
 	<-harness.agent.builds
 
-	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual); !errors.Is(err, ErrReleaseInFlight) {
+	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false); !errors.Is(err, ErrReleaseInFlight) {
 		t.Fatalf("second trigger error = %v, want ErrReleaseInFlight", err)
 	}
 	if _, err := harness.pipeline.Rollback("api", ""); !errors.Is(err, ErrReleaseInFlight) {
@@ -44,7 +44,7 @@ func TestConcurrentReleasesAreRejected(t *testing.T) {
 
 	<-harness.agent.releases
 	harness.await(t, first.ID, models.StatusSucceeded)
-	second, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	second, err := harness.pipeline.Trigger("api", "", models.TriggerManual, true)
 	if err != nil {
 		t.Fatalf("trigger once the first settled: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestConcurrentTriggersOnlyOneWins(t *testing.T) {
 	results := make(chan error, attempts)
 	for range attempts {
 		go func() {
-			_, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+			_, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 			results <- err
 		}()
 	}
@@ -79,7 +79,7 @@ func TestConcurrentTriggersOnlyOneWins(t *testing.T) {
 
 func TestTriggerRejectsUnknownProject(t *testing.T) {
 	harness := newHarness(t)
-	if _, err := harness.pipeline.Trigger("ghost", "", models.TriggerManual); !errors.Is(err, ErrProjectNotFound) {
+	if _, err := harness.pipeline.Trigger("ghost", "", models.TriggerManual, false); !errors.Is(err, ErrProjectNotFound) {
 		t.Fatalf("error = %v, want ErrProjectNotFound", err)
 	}
 }
@@ -111,7 +111,7 @@ func TestStopReleasesFleetMutexDuringAgentRoundTrip(t *testing.T) {
 		t.Fatal("stop held the fleet mutex during the agent round-trip")
 	}
 
-	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual); !errors.Is(err, ErrProjectBusy) {
+	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false); !errors.Is(err, ErrProjectBusy) {
 		t.Fatalf("trigger during stop = %v, want ErrProjectBusy", err)
 	}
 	close(harness.agent.holdOperation)

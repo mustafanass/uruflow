@@ -56,7 +56,7 @@ export function ConsoleShell({ expire }: { expire: () => void }) {
     return () => wide.removeEventListener('change', close)
   }, [])
   async function signOut() {
-    await api('/api/session', { method: 'DELETE' })
+    await api('/api/account/sessions', { method: 'DELETE', body: {} })
     setDirty(false)
     expire()
   }
@@ -64,7 +64,8 @@ export function ConsoleShell({ expire }: { expire: () => void }) {
     if (dirty) {
       confirm({
         title: 'Discard edits and sign out?',
-        description: 'Your unsaved changes will be lost.',
+        description:
+          'Your unsaved changes will be lost. You will be signed out on all devices.',
         label: 'Sign out',
         danger: true,
         run: signOut,
@@ -78,16 +79,13 @@ export function ConsoleShell({ expire }: { expire: () => void }) {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <Sidebar
-        open={navOpen}
-        close={() => setNavOpen(false)}
-        signOut={requestSignOut}
-      />
+      <Sidebar open={navOpen} close={() => setNavOpen(false)} />
       <div className="workspace" inert={navOpen}>
         <Topbar
           navigationOpen={navOpen}
           openNavigation={() => setNavOpen(true)}
           openHelp={() => setHelp(true)}
+          signOut={requestSignOut}
         />
         {(stale || connection === 'reconnecting') && (
           <div className="connection-banner" role="status">

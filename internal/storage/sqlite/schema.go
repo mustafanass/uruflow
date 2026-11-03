@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS releases (
 );
 
 CREATE TABLE IF NOT EXISTS release_targets (
+	containers TEXT NOT NULL DEFAULT '{}',
 	release_id TEXT NOT NULL,
 	agent_id   TEXT NOT NULL,
 	agent_name TEXT NOT NULL DEFAULT '',

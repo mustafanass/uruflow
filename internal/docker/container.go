@@ -43,6 +43,9 @@ const (
 )
 
 type State struct {
+	ID       string
+	Image    string
+	SpecHash string
 	Status   string
 	Health   string
 	ExitCode int
@@ -147,6 +150,7 @@ type listEntry struct {
 }
 
 type inspectResult struct {
+	ID      string `json:"Id"`
 	Image   string `json:"Image"`
 	Created string `json:"Created"`
 	Mounts  []struct {
@@ -173,6 +177,7 @@ type inspectResult struct {
 	} `json:"State"`
 	RestartCount int `json:"RestartCount"`
 	Config       struct {
+		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	NetworkSettings struct {

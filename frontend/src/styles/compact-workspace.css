@@ -1,33 +1,56 @@
 .account-menu {
   position: relative;
-  border-top: 1px solid var(--nav-border);
-  padding-top: 15px;
+  flex-shrink: 0;
 }
 .account-trigger {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
   border: 0;
-  padding: 2px 0;
+  border-radius: 8px;
+  padding: 6px 8px;
   background: transparent;
-  color: var(--nav-text);
+  color: var(--muted);
   text-align: left;
 }
-.account-trigger .account-name {
-  flex: 1;
+.account-trigger:hover,
+.account-trigger[aria-expanded='true'] {
+  background: var(--surface-subtle);
 }
-.account-trigger .account-name strong {
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--surface-tint);
+  color: var(--text);
+  font-weight: 600;
+}
+.account-name {
+  min-width: 0;
+  max-width: 140px;
+}
+.account-name strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.account-name span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: capitalize;
+}
 .account-dropdown {
   position: absolute;
-  bottom: calc(100% + 10px);
-  left: 0;
-  min-width: 210px;
-  width: 100%;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 230px;
+  max-width: calc(100vw - 24px);
   padding: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -35,6 +58,17 @@
   color: var(--text);
   box-shadow: 0 8px 30px color-mix(in srgb, var(--shadow) 15%, transparent);
   z-index: 80;
+}
+.account-summary {
+  padding: 8px 9px 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.account-summary small {
+  display: block;
+  text-transform: capitalize;
 }
 .account-dropdown button {
   display: flex;
@@ -56,6 +90,15 @@
   margin-left: auto;
   color: var(--muted);
   font-size: 11px;
+}
+@media (max-width: 760px) {
+  .account-trigger {
+    padding: 6px;
+  }
+  .account-trigger .account-name,
+  .account-trigger > svg {
+    display: none;
+  }
 }
 .context-filters {
   display: flex;

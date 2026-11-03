@@ -77,3 +77,10 @@ func TestReleaseRequestPreservesCommandHealthcheckFields(t *testing.T) {
 		t.Fatalf("valid command healthcheck rejected: %v", err)
 	}
 }
+
+func TestBuildRequestRejectsSecretArguments(t *testing.T) {
+	request := ufp.BuildRequest{JobID: "r1", Project: "app", Targets: []ufp.BuildTarget{{Service: "api", Image: "registry/app", Dockerfile: "Dockerfile", Context: ".", GitURL: "git@host:app.git", Branch: "main", BuildArgs: map[string]string{"TOKEN": "${secret:app.TOKEN}"}}}}
+	if err := validateBuildRequest(request); err == nil {
+		t.Fatal("secret build argument accepted by agent")
+	}
+}

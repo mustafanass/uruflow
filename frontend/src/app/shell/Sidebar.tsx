@@ -1,24 +1,22 @@
 import { useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
-import { X } from 'lucide-react'
+import { ChevronRight, X } from 'lucide-react'
 
 import { navigation, navigationSection } from '@/app/navigation'
-import { AccountMenu } from '@/features/account/AccountMenu'
 import { useWorkspace } from '@/shared/hooks'
 
 import { Brand } from './Brand'
 
-export function Sidebar({
-  open,
-  close,
-  signOut,
-}: {
-  open: boolean
-  close: () => void
-  signOut: () => void
-}) {
-  const { snapshot, connection } = useWorkspace()
+export function Sidebar({ open, close }: { open: boolean; close: () => void }) {
+  const { snapshot, stale, connection } = useWorkspace()
+  const state = stale
+    ? 'Data stale'
+    : connection === 'live'
+      ? 'Live'
+      : connection === 'reconnecting'
+        ? 'Reconnecting'
+        : 'Connecting'
   const section = navigationSection(useLocation().pathname)
   const element = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -34,8 +32,6 @@ export function Sidebar({
       }
     }
   }, [open])
-  const online =
-    snapshot?.agents.filter((agent) => agent.status === 'online').length || 0
   return (
     <>
       {open && (
@@ -107,20 +103,20 @@ export function Sidebar({
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="agent-link-state">
-            <span
-              className={
-                'status-dot' +
-                (connection !== 'live' || !online ? ' inactive' : '')
-              }
-            />
-            <span>
-              {snapshot
-                ? `${online} of ${snapshot.agents.length} agents online`
-                : 'Connecting…'}
-            </span>
-          </div>
-          <AccountMenu signOut={signOut} />
+          <Link
+            className={
+              'live-indicator' +
+              (stale || connection !== 'live' ? ' stale' : '')
+            }
+            to="/system"
+            title={state}
+            aria-label={state + ' updates'}
+            onClick={close}
+          >
+            <span className="status-dot" aria-hidden="true" />
+            <span role="status">{state}</span>
+            <ChevronRight size={14} aria-hidden="true" />
+          </Link>
         </div>
       </aside>
     </>

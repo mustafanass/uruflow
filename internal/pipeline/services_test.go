@@ -40,7 +40,7 @@ func TestMultiServiceBuildsEachAndReleasesTogether(t *testing.T) {
 	project.Runtime.Env = map[string]string{"SHARED": "yes"}
 	harness.store.SaveProject(project)
 
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("trigger: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestServiceOwnedRepositoriesNeedNoPrimarySource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestNativeBuildModelReachesBuilderAndRunner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual)
+	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}

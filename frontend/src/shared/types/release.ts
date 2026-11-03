@@ -1,6 +1,7 @@
 import { Project } from '@/shared/types'
 
 interface ReleaseTarget {
+  containers?: Record<string, string>
   agent_id: string
   agent_name: string
   status: string

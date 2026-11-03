@@ -51,6 +51,31 @@ func validRepository(name string) bool {
 }
 func validTag(tag string) bool { return tagName.MatchString(tag) }
 
+func (r *Registry) HasImage(ctx context.Context, reference string) (bool, error) {
+	if !models.ValidDigestReference(reference) || !strings.HasPrefix(reference, r.options.Address+"/") {
+		return false, fmt.Errorf("invalid managed image reference")
+	}
+	repository, digest, _ := strings.Cut(strings.TrimPrefix(reference, r.options.Address+"/"), "@")
+	if !validRepository(repository) {
+		return false, fmt.Errorf("invalid image repository")
+	}
+	response, err := r.call(ctx, http.MethodHead, "/v2/"+repository+"/manifests/"+digest)
+	if err != nil {
+		return false, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if response.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("image manifest check: %s", response.Status)
+	}
+	if actual := response.Header.Get("Docker-Content-Digest"); actual != "" && actual != digest {
+		return false, fmt.Errorf("image manifest digest mismatch")
+	}
+	return true, nil
+}
+
 type descriptor struct {
 	Digest string `json:"digest"`
 	Size   int64  `json:"size"`

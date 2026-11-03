@@ -18,6 +18,7 @@ export default function CodeEditor({
   const { resolved } = useTheme()
   return (
     <CodeMirror
+      className="code-editor"
       value={value}
       height={height}
       width="100%"

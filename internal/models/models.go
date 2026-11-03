@@ -126,6 +126,7 @@ type Service struct {
 	Dockerfile  string              `json:"dockerfile,omitempty"`
 	Context     string              `json:"context,omitempty"`
 	BuildArgs   map[string]string   `json:"build_args,omitempty"`
+	Watch       []string            `json:"watch,omitempty"`
 	GitURL      string              `json:"git_url,omitempty"`
 	Branch      string              `json:"branch,omitempty"`
 	Command     string              `json:"command,omitempty"`
@@ -211,12 +212,13 @@ type Release struct {
 }
 
 type ReleaseTarget struct {
-	ReleaseID string     `json:"release_id"`
-	AgentID   string     `json:"agent_id"`
-	AgentName string     `json:"agent_name"`
-	Status    Status     `json:"status"`
-	Message   string     `json:"message,omitempty"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	Containers map[string]string `json:"containers,omitempty"`
+	ReleaseID  string            `json:"release_id"`
+	AgentID    string            `json:"agent_id"`
+	AgentName  string            `json:"agent_name"`
+	Status     Status            `json:"status"`
+	Message    string            `json:"message,omitempty"`
+	EndedAt    *time.Time        `json:"ended_at,omitempty"`
 }
 
 type LogLine struct {

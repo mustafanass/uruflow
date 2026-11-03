@@ -12,7 +12,7 @@ Only one release may own a project at a time. The database records the specifica
 flowchart TD
     request[Deploy saved project] --> validate[Validate and reserve project]
     validate --> workflow{Workflow}
-    workflow -->|build_only or build_deploy| build[Resolve sources, build and push]
+    workflow -->|build_only or build_deploy| build[Resolve sources and prepare images]
     workflow -->|deploy_only| deploy[Dispatch recorded image digests]
     build --> buildonly{Build only?}
     buildonly -->|Yes| artifacts[Record successful artifacts]
@@ -26,9 +26,33 @@ Project deadlines and workflow requirements are defined in [Build and runtime mo
 
 ## Build artifacts
 
-For each source-built service, the assigned builder fetches its repository and branch, resolves the commit, and runs Docker with that service's Dockerfile, context and build arguments. Shared repository and branch inputs reuse a checkout.
+For each source-built service, the assigned builder fetches its repository and branch and resolves the commit. Shared repository and branch inputs reuse a checkout. It compares the source and build definition with the latest successful release and reuses that service's recorded image digest when nothing relevant changed. Before dispatch, the server checks the recorded manifest by digest using headers only, without downloading image layers.
 
-The builder pushes the commit tag and `latest`, then reads the repository digest. The server checks the reporting agent, expected repository, digest format and service coverage before recording artifacts. Prebuilt services already carry their digest references.
+The default source comparison covers the build context, Dockerfile and Docker ignore files. For a shared repository, `watch` lists the repository-relative files and folders that affect one service. Include shared libraries, schemas and dependency lockfiles. Dockerfile and ignore-file changes are always checked. Missing history, changed build settings and missing manifests cause a build. Registry authentication, connectivity and server errors are reported rather than treated as missing images.
+
+```yaml
+services:
+  console:
+    git: git@github.com:example/platform.git
+    branch: main
+    dockerfile: console/Dockerfile
+    context: .
+    watch: [console, shared, package-lock.json]
+  core:
+    git: git@github.com:example/platform.git
+    branch: main
+    dockerfile: core/Dockerfile
+    context: .
+    watch: [core, shared, go.mod, go.sum]
+```
+
+Changing `console` builds its image; changing `shared` builds both. Watch entries are literal paths, with directories including their descendants. When the context is `.` and no watch list is set, any tracked repository change is relevant.
+
+New builds push the commit tag and `latest`, then read the repository digest. Reused images keep their original build commit and digest. Every release retains the complete service specification and artifact set for rollback. The server checks the reporting agent, expected repository, digest format and service coverage before recording artifacts. Prebuilt services already carry their digest references.
+
+The release's main revision comes from the first rebuilt service. If every image is reused, it shows the first resolved source revision. Per-service commits always identify the original image builds.
+
+Select **Rebuild all images** in the Deploy dialog to build every source service with fresh base images and without Docker's build cache. This also refreshes build inputs outside Git, such as dependencies fetched during a Dockerfile step. Selective builds require the updated builder agent; keeping unchanged containers requires the updated runner agent.
 
 Build output streams through UFP into persisted release logs. `build_only` finishes after successful artifact publication. `build_deploy` continues to the recorded runners. `deploy_only` begins with runner dispatch.
 
@@ -37,13 +61,15 @@ Build output streams through UFP into persisted release logs. `build_only` finis
 Each runner:
 
 1. Validates the request and prepares declared networks and volumes.
-2. Pulls every required image before container replacement begins.
+2. Keeps owned, healthy containers whose image and resolved runtime configuration match; pulls the images needed for replacements before any replacement begins.
 3. Follows dependency order for services and jobs.
-4. Stops and renames an existing owned service container aside.
+4. Stops and renames each service container that needs replacement aside.
 5. Creates its replacement and waits for readiness.
 6. Removes the previous containers after the runner's complete service sequence succeeds.
 
 The old container stops before its replacement starts. On replacement failure, the runner removes the new container and attempts to restore the previous one. If a later component fails, it restores earlier replacements in reverse order and reports any restoration error.
+
+Environment values, secrets, ports, readiness policies and runtime resource changes replace the affected service even when its image is reused. Unchanged containers remain running during that sequence. Each successful runner result records its applied container IDs, including kept containers; the browser uses those identities to show the live release without changing the containers' original creation labels.
 
 A native `http`, `tcp`, `command` or `running` healthcheck is the chosen readiness policy. The [model reference](native-build-model.md#readiness) owns probe fields and defaults. Without a native policy, Docker image health is used when present; otherwise the service must stay running for five seconds. This fallback is bounded by two minutes and the release context. Exit, unhealthy state or a restart fails the wait.
 

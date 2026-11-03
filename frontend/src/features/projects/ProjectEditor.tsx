@@ -182,7 +182,7 @@ export function ProjectEditor({
       ) : (
         <Suspense fallback={<Spinner label="Loading editor…" />}>
           <CodeEditor
-            height="max(440px, calc(100vh - 480px))"
+            height="var(--project-editor-height)"
             value={content}
             onChange={setContent}
             variables={variables}

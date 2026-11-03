@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/secrets"
 	"github.com/mustafanass/uruflow/internal/ufp"
 )
 
@@ -61,8 +62,16 @@ func (p *Pipeline) validateProject(project *models.Project) error {
 			return fmt.Errorf("service %q is configured more than once", service.Name)
 		}
 		seen[service.Name] = true
+		if err := secrets.ValidateBuildArgs(service.BuildArgs); err != nil {
+			return fmt.Errorf("service %q: %w", service.Name, err)
+		}
 		if !models.ValidSourcePath(service.BuildFile()) || !models.ValidSourcePath(service.BuildContext()) {
 			return fmt.Errorf("service %q build paths must stay inside the source directory", service.Name)
+		}
+		for _, path := range service.Watch {
+			if !models.ValidWatchPath(path) || !service.Built() {
+				return fmt.Errorf("service %q has invalid build watch paths", service.Name)
+			}
 		}
 		for _, port := range service.Ports {
 			if port.Host < 0 || port.Host > 65535 || port.Container < 1 || port.Container > 65535 ||

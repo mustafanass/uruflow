@@ -119,6 +119,7 @@ func (h *Handler) projectAction(c *gin.Context) {
 	}
 	var body struct {
 		ReleaseID string `json:"release_id"`
+		Rebuild   bool   `json:"rebuild"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -127,6 +128,6 @@ func (h *Handler) projectAction(c *gin.Context) {
 		if action == "stop" {
 			return map[string]bool{"stopped": true}, h.operations.StopProject(name)
 		}
-		return h.operations.Deploy(name, body.ReleaseID, action == "rollback")
+		return h.operations.Deploy(name, body.ReleaseID, action == "rollback", body.Rebuild)
 	})
 }

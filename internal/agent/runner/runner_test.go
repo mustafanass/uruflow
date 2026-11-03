@@ -90,7 +90,7 @@ func TestNativeServiceSpecReachesDocker(t *testing.T) {
 func TestReleaseCreatesDeclaredResources(t *testing.T) {
 	engine := &fakeEngine{}
 	runner := New(engine, nil)
-	err := runner.Release(context.Background(), ufp.ReleaseRequest{Project: "api", JobID: "r1",
+	_, err := runner.Release(context.Background(), ufp.ReleaseRequest{Project: "api", JobID: "r1",
 		Networks: map[string]ufp.NetworkResource{"edge": {Name: "urufi-edge"}},
 		Volumes:  map[string]ufp.VolumeResource{"data": {Name: "urufi-data"}},
 		Services: []ufp.ServiceSpec{{Name: "web", Image: immutableTestImage, Networks: []ufp.NetworkAttachment{{Name: "edge"}}, Volumes: []ufp.VolumeBinding{{Type: "volume", Source: "data", Target: "/data"}}}},
@@ -106,7 +106,7 @@ func TestReleaseCreatesDeclaredResources(t *testing.T) {
 func TestJobMustCompleteBeforeReleaseContinues(t *testing.T) {
 	engine := &fakeEngine{state: &docker.State{Status: docker.StateExited, ExitCode: 0}}
 	runner := New(engine, nil)
-	err := runner.Release(context.Background(), ufp.ReleaseRequest{Project: "api", JobID: "r1", Services: []ufp.ServiceSpec{
+	_, err := runner.Release(context.Background(), ufp.ReleaseRequest{Project: "api", JobID: "r1", Services: []ufp.ServiceSpec{
 		{Name: "migrate", Mode: "job", Image: immutableTestImage, JobTimeout: time.Second},
 		{Name: "web", Mode: "service", Image: immutableTestImage, DependsOn: []ufp.Dependency{{Service: "migrate", Condition: "completed"}}},
 	}}, func(string, string) {})
@@ -121,7 +121,7 @@ func TestJobMustCompleteBeforeReleaseContinues(t *testing.T) {
 func TestTimedOutJobIsRemoved(t *testing.T) {
 	engine := &fakeEngine{state: &docker.State{Status: docker.StateRunning}}
 	runner := New(engine, nil)
-	err := runner.Release(context.Background(), ufp.ReleaseRequest{Project: "api", JobID: "r-timeout", Services: []ufp.ServiceSpec{
+	_, err := runner.Release(context.Background(), ufp.ReleaseRequest{Project: "api", JobID: "r-timeout", Services: []ufp.ServiceSpec{
 		{Name: "migrate", Mode: "job", Image: immutableTestImage, JobTimeout: 20 * time.Millisecond},
 	}}, func(string, string) {})
 	if err == nil {
@@ -144,7 +144,7 @@ func TestFailedServiceStartupOutputIsCapturedBeforeRollback(t *testing.T) {
 	}
 	runner := New(engine, nil)
 	var output []string
-	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+	_, err := runner.Release(context.Background(), ufp.ReleaseRequest{
 		JobID: "r-failed", Project: "api", Services: []ufp.ServiceSpec{{Image: immutableTestImage}},
 	}, func(stream, line string) {
 		output = append(output, stream+":"+line)
@@ -180,7 +180,7 @@ func TestStartupLogFailureDoesNotMaskReadinessFailure(t *testing.T) {
 	}
 	runner := New(engine, nil)
 	var output []string
-	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+	_, err := runner.Release(context.Background(), ufp.ReleaseRequest{
 		JobID: "r-failed", Project: "api", Services: []ufp.ServiceSpec{{Image: immutableTestImage}},
 	}, func(_ string, line string) {
 		output = append(output, line)
@@ -199,7 +199,7 @@ func TestRenameFailureRestartsTheCurrentContainer(t *testing.T) {
 		renameErr: errors.New("rename failed"),
 	}
 	runner := New(engine, func() *docker.Auth { return nil })
-	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+	_, err := runner.Release(context.Background(), ufp.ReleaseRequest{
 		JobID: "r1", Project: "api", Services: []ufp.ServiceSpec{{Image: immutableTestImage}},
 	}, func(string, string) {})
 	if err == nil {
@@ -221,7 +221,7 @@ func TestReleaseDoesNotTouchAnUnownedNameCollision(t *testing.T) {
 		unowned: map[string]bool{"uruflow-api": true},
 	}
 	runner := New(engine, func() *docker.Auth { return nil })
-	err := runner.Release(context.Background(), ufp.ReleaseRequest{
+	_, err := runner.Release(context.Background(), ufp.ReleaseRequest{
 		JobID: "r1", Project: "api", Services: []ufp.ServiceSpec{{Image: immutableTestImage}},
 	}, func(string, string) {})
 	if err == nil {

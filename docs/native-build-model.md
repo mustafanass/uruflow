@@ -23,32 +23,35 @@ Keep runtime settings on the service that owns them so each component's configur
 
 ## Service fields
 
-| Field           | Meaning                                                                      |
-| --------------- | ---------------------------------------------------------------------------- |
-| `git`, `branch` | Repository and branch owned by a source-built service                        |
-| `dockerfile`    | Dockerfile inside that source root                                           |
-| `context`       | Build context inside the source root; defaults to `.`                        |
-| `build_args`    | String map of Docker build arguments                                         |
-| `image`         | Prebuilt `repository@sha256:` reference with 64 lowercase hexadecimal digits |
-| `entrypoint`    | Exact OCI entrypoint list                                                    |
-| `command`       | Shell string or exact OCI command list                                       |
-| `mode`          | `service` by default, or one-shot `job`                                      |
-| `timeout`       | Job runtime deadline; default `10m`                                          |
-| `depends_on`    | Service names mapped to dependency conditions                                |
-| `ports`         | Published ports                                                              |
-| `volumes`       | Shorthand mounts using `source:target[:ro]`                                  |
-| `mounts`        | Typed bind, volume or tmpfs mounts                                           |
-| `env`           | String map merged over project variables                                     |
-| `network`       | Docker network selection                                                     |
-| `networks`      | Declared network attachments and optional aliases                            |
-| `restart`       | Docker restart policy; default `unless-stopped`, jobs use `no`               |
-| `resources`     | Memory, CPU and PID limits                                                   |
-| `security`      | User, capabilities and container security options                            |
-| `logging`       | Docker log driver and string options                                         |
-| `healthcheck`   | Native readiness policy                                                      |
-| `labels`        | String Docker labels; the `uruflow.` prefix belongs to URUFLOW               |
+| Field           | Meaning                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------- |
+| `git`, `branch` | Repository and branch owned by a source-built service                                   |
+| `dockerfile`    | Dockerfile inside that source root                                                      |
+| `context`       | Build context inside the source root; defaults to `.`                                   |
+| `build_args`    | String map of non-secret Docker build arguments                                         |
+| `watch`         | Literal repository-relative build-input files or folders; defaults to the build context |
+| `image`         | Prebuilt `repository@sha256:` reference with 64 lowercase hexadecimal digits            |
+| `entrypoint`    | Exact OCI entrypoint list                                                               |
+| `command`       | Shell string or exact OCI command list                                                  |
+| `mode`          | `service` by default, or one-shot `job`                                                 |
+| `timeout`       | Job runtime deadline; default `10m`                                                     |
+| `depends_on`    | Service names mapped to dependency conditions                                           |
+| `ports`         | Published ports                                                                         |
+| `volumes`       | Shorthand mounts using `source:target[:ro]`                                             |
+| `mounts`        | Typed bind, volume or tmpfs mounts                                                      |
+| `env`           | String map merged over project variables                                                |
+| `network`       | Docker network selection                                                                |
+| `networks`      | Declared network attachments and optional aliases                                       |
+| `restart`       | Docker restart policy; default `unless-stopped`, jobs use `no`                          |
+| `resources`     | Memory, CPU and PID limits                                                              |
+| `security`      | User, capabilities and container security options                                       |
+| `logging`       | Docker log driver and string options                                                    |
+| `healthcheck`   | Native readiness policy                                                                 |
+| `labels`        | String Docker labels; the `uruflow.` prefix belongs to URUFLOW                          |
 
 Choose `dockerfile` with `git` and `branch`, or `image`. A built service's Dockerfile and context must remain inside its checkout. Services sharing a repository and branch reuse the builder checkout. Releases record source commits and artifact digests per service.
+
+Secret references (`${secret:...}`) are supported in runtime environment values and rejected in `build_args`.
 
 Published ports accept `host:container` or `host-ip:host:container`, followed by optional `/tcp` or `/udp`.
 
