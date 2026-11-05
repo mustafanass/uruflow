@@ -32,11 +32,9 @@ Select a node to open its inspector without changing zoom or pan. Click the canv
 
 ## Projects
 
-The project directory also provides fleet release history. Each project has **Overview**, **Graph**, **Releases**, **Configuration** and **Activity**, according to permissions.
+The project directory also provides fleet release history. Each project has **Overview**, **Releases**, **Configuration** and **Activity**, according to permissions.
 
-Overview groups observed instances under their services. Each instance shows its runner, CPU, memory and a direct log link. Published ports and dependencies sit with the service they belong to. Latest-release information and assigned-machine resources appear alongside them. **Resource trends** opens session charts without leaving the page.
-
-Graph retains runtime and delivery views. Runtime connects service intent, runner placement and observed containers. Delivery shows build and release relationships. The inspector includes service definitions, limits, dependencies, storage and observed instances.
+Overview is the project graph, with runtime and delivery views. Runtime connects service intent, runner placement and observed containers. Delivery shows build and release relationships. The inspector includes service definitions, limits, dependencies, storage and observed instances, and opens each container for its logs, terminal and trends.
 
 **Deploy** starts a release of the saved configuration. **Rollback** selects an eligible successful release. **Stop** stops managed project containers. Actions are disabled when their required state is absent or another release owns the project.
 
@@ -56,9 +54,11 @@ Overview brings together progress, the release record, runner outcomes and immut
 
 ## Agents and containers
 
-The Agents directory provides machine inventory and a fleet Containers view. An agent has **Overview**, **Containers** and **Metrics**. Containers groups its observed containers, assigned projects and build work. Administrators remove an agent from the danger section in Overview after unassigning its projects.
+The Agents directory provides machine inventory and a fleet Containers view. An agent has **Overview** and **Containers**. Overview holds machine identity, the latest host resources and session trends. Containers lists the runtime containers observed on that machine. Administrators remove an agent from the danger section in Overview after unassigning its projects.
 
-A container has **Overview**, **Logs**, **Metrics** and **Inspect**. Overview brings together identity, state, ports, networks, storage and health probes. Direct project and host links keep related resources within reach.
+A container has **Overview**, **Logs**, **Terminal**, **Metrics** and **Inspect**. Overview brings together identity, state, ports, networks, storage and health probes. Direct project and host links keep related resources within reach.
+
+Operators with access to the project see **Terminal** and **Restart** on project containers. Terminal opens a shell inside the running container; leaving the tab ends it. Restart asks Docker to stop the container gracefully and start it again with the same configuration, and is unavailable while a release owns the project. Both actions are recorded in the audit log.
 
 Enrollment displays its setup command once. Save it, then confirm **I saved the enrollment command** before closing an unconnected agent's setup. The dialog also closes after the agent connects. The CA download remains available on Agents.
 

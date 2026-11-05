@@ -292,6 +292,41 @@ type ContainerLog struct {
 	Timestamp   int64  `json:"timestamp"`
 }
 
+type ContainerRef struct {
+	Project     string `json:"project"`
+	ContainerID string `json:"container_id"`
+}
+
+type TerminalOpen struct {
+	SessionID   string `json:"session_id"`
+	Project     string `json:"project"`
+	ContainerID string `json:"container_id"`
+	Columns     int    `json:"columns"`
+	Rows        int    `json:"rows"`
+}
+
+type TerminalInput struct {
+	SessionID string `json:"session_id"`
+	Data      []byte `json:"data"`
+}
+
+type TerminalResize struct {
+	SessionID string `json:"session_id"`
+	Columns   int    `json:"columns"`
+	Rows      int    `json:"rows"`
+}
+
+type TerminalClose struct {
+	SessionID string `json:"session_id"`
+}
+
+type TerminalOutput struct {
+	SessionID string `json:"session_id"`
+	Data      []byte `json:"data,omitempty"`
+	Complete  bool   `json:"complete,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
 type ContainerDetails struct {
 	Release    string             `json:"release,omitempty"`
 	Role       string             `json:"role,omitempty"`

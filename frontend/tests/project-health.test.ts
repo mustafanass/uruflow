@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import {
-  projectHealth,
-  projectPriority,
-} from '../src/features/projects/project-health.ts'
+import { projectHealth } from '../src/features/projects/project-health.ts'
 import type { Project } from '../src/shared/types/project.ts'
 import type { Snapshot } from '../src/shared/types/observation.ts'
 
@@ -90,7 +87,6 @@ test('completed jobs remain complete after their containers are removed', () => 
     { name: 'migrate', mode: 'job' },
   ])
   assert.equal(health.ready, 2)
-  assert.equal(health.containers.length, 0)
   assert.equal(health.rows[0].placements[0].state, 'completed')
 })
 
@@ -116,13 +112,6 @@ test('does not imply readiness without observations or for build-only workloads'
   assert.equal(projectHealth(project, snapshot, definitions).ready, 0)
   project.workflow = 'build_only'
   const health = projectHealth(project, snapshot, definitions)
-  assert.equal(health.buildOnly, true)
   assert.equal(health.expected, 0)
   assert.equal(health.rows[0].placements.length, 0)
-})
-
-test('surfaces projects that need intervention before healthy projects', () => {
-  assert.ok(projectPriority('degraded') < projectPriority('building'))
-  assert.ok(projectPriority('unknown') < projectPriority('running'))
-  assert.ok(projectPriority('building') < projectPriority('undeployed'))
 })

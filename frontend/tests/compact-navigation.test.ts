@@ -111,7 +111,7 @@ test('release diffs ignore storage metadata and object-key ordering while preser
 test('switching views preserves independent table filters and the selected graph mode', async () => {
   const { withTab } = await import('../src/shared/utils/url.ts')
   const current = new URLSearchParams(
-    'tab=Graph&view=delivery&release-table.q=api&projects-page.page=2',
+    'tab=Activity&view=delivery&release-table.q=api&projects-page.page=2',
   )
   const releases = withTab(current, 'Releases', 'Overview')
   assert.equal(releases.get('tab'), 'Releases')
@@ -119,5 +119,5 @@ test('switching views preserves independent table filters and the selected graph
   assert.equal(releases.get('release-table.q'), 'api')
   assert.equal(releases.get('projects-page.page'), '2')
   assert.equal(withTab(releases, 'Overview', 'Overview').has('tab'), false)
-  assert.equal(current.get('tab'), 'Graph')
+  assert.equal(current.get('tab'), 'Activity')
 })

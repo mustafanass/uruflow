@@ -3,7 +3,6 @@ import type { Container, Project, Service, Snapshot } from '@/shared/types'
 interface Placement {
   agent: string
   state: string
-  containers: Container[]
 }
 
 const readyStates = new Set(['healthy', 'running', 'completed'])
@@ -65,7 +64,7 @@ export function projectHealth(
           (states.every((value) => value === 'completed')
             ? 'completed'
             : 'running')
-      return { agent, state, containers: instances }
+      return { agent, state }
     })
     return {
       service,
@@ -78,21 +77,7 @@ export function projectHealth(
   })
   return {
     rows,
-    containers,
-    buildOnly,
     ready: rows.reduce((sum, row) => sum + row.ready, 0),
     expected: rows.reduce((sum, row) => sum + row.expected, 0),
   }
-}
-
-export function projectPriority(state: string) {
-  if (['failed', 'degraded', 'unhealthy', 'unknown'].includes(state)) return 0
-  if (
-    ['building', 'releasing', 'deploying', 'pending', 'starting'].includes(
-      state,
-    )
-  )
-    return 1
-  if (state === 'undeployed') return 2
-  return 3
 }

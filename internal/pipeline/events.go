@@ -72,6 +72,8 @@ func (p *Pipeline) disconnectAgentFromRelease(releaseID, agentID string) {
 
 func (p *Pipeline) ContainerLog(agentID string, entry ufp.ContainerLog) {}
 
+func (p *Pipeline) TerminalOutput(agentID string, output ufp.TerminalOutput) {}
+
 func (p *Pipeline) JobLog(agentID string, entry ufp.JobLog) {
 	release, err := p.store.GetRelease(entry.JobID)
 	if err != nil || !p.acceptsEvent(release, agentID, entry.Stage) {

@@ -40,11 +40,12 @@ type recorder struct {
 	statuses  chan ufp.JobStatus
 }
 
-func (r *recorder) AgentConnected(agent *models.Agent)    { r.connected <- agent }
-func (r *recorder) AgentDisconnected(agentID string)      {}
-func (r *recorder) JobLog(string, ufp.JobLog)             {}
-func (r *recorder) JobStatus(_ string, s ufp.JobStatus)   { r.statuses <- s }
-func (r *recorder) ContainerLog(string, ufp.ContainerLog) {}
+func (r *recorder) AgentConnected(agent *models.Agent)        { r.connected <- agent }
+func (r *recorder) AgentDisconnected(agentID string)          {}
+func (r *recorder) JobLog(string, ufp.JobLog)                 {}
+func (r *recorder) JobStatus(_ string, s ufp.JobStatus)       { r.statuses <- s }
+func (r *recorder) ContainerLog(string, ufp.ContainerLog)     {}
+func (r *recorder) TerminalOutput(string, ufp.TerminalOutput) {}
 
 type clientHandler struct {
 	registry chan ufp.RegistryConfig

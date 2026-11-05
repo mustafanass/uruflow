@@ -44,24 +44,6 @@
   color: var(--muted);
 }
 
-.service-metrics {
-  margin-bottom: 20px;
-}
-
-.service-metrics > h3 {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin: 22px 0 13px;
-  font-size: 12px;
-}
-
-.service-metrics > h3 > span {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 400;
-}
-
 .probe-output {
   white-space: pre-wrap;
   line-height: 1.7;

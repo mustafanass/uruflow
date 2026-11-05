@@ -44,8 +44,9 @@ func (b *containerBridge) AgentDisconnected(agentID string) {
 		b.disconnectOnce.Do(func() { close(b.disconnected) })
 	}
 }
-func (b *containerBridge) JobLog(string, ufp.JobLog)       {}
-func (b *containerBridge) JobStatus(string, ufp.JobStatus) {}
+func (b *containerBridge) JobLog(string, ufp.JobLog)                 {}
+func (b *containerBridge) JobStatus(string, ufp.JobStatus)           {}
+func (b *containerBridge) TerminalOutput(string, ufp.TerminalOutput) {}
 func (b *containerBridge) ContainerLog(agentID string, entry ufp.ContainerLog) {
 	if agentID != b.agentID || entry.ContainerID != b.container || entry.StreamID != b.streamID {
 		return
@@ -66,6 +67,16 @@ func (e *Engine) Container(agentID, containerID string) (*models.Container, erro
 		}
 	}
 	return nil, storage.ErrNotFound
+}
+func (e *Engine) RestartContainer(agentID, containerID string) error {
+	container, err := e.Container(agentID, containerID)
+	if err != nil {
+		return err
+	}
+	if container.Project == "" {
+		return errors.New("only project containers can be restarted")
+	}
+	return e.server.Pipeline().Restart(container.Project, agentID, containerID)
 }
 func (e *Engine) FollowContainerLogs(ctx context.Context, agentID, containerID, after string, emit func(ufp.ContainerLog) error) error {
 	if _, err := ufp.ParseLogPosition(after); err != nil {

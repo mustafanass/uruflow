@@ -347,6 +347,25 @@ func (p *Pipeline) Remove(projectName string) error {
 	return p.dispatchProject(runners, ufp.MethodReleaseRemove, project.Name)
 }
 
+func (p *Pipeline) Restart(projectName, agentID, containerID string) error {
+	if err := p.reserve(projectName); err != nil {
+		return err
+	}
+	defer p.releaseReservation(projectName)
+
+	runner, err := p.store.GetAgent(agentID)
+	if err != nil {
+		return fmt.Errorf("%s: runner %s was not found", projectName, agentID)
+	}
+	if !runner.HasRole(models.RoleRunner) {
+		return fmt.Errorf("%s: %w", runner.Name, ErrNotRunner)
+	}
+	if !p.link.Online(runner.ID) {
+		return fmt.Errorf("%s: %w", runner.Name, ErrRunnerOffline)
+	}
+	return p.dispatch(runner.ID, ufp.MethodContainerRestart, ufp.ContainerRef{Project: projectName, ContainerID: containerID})
+}
+
 func (p *Pipeline) dispatchProject(runners []models.Agent, method, project string) error {
 	failures := make([]error, len(runners))
 	var group sync.WaitGroup

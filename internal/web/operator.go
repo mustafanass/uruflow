@@ -48,6 +48,10 @@ type Operator interface {
 	ResolveAlert(string) error
 	RecentAlerts() ([]models.Alert, error)
 	Container(string, string) (*models.Container, error)
+	RestartContainer(string, string) error
+	OpenTerminal(context.Context, string, string, string, int, int, func(ufp.TerminalOutput) error) error
+	TerminalInput(string, string, []byte) error
+	ResizeTerminal(string, string, int, int) error
 	FollowReleaseLogs(context.Context, string, int64, func(models.LogLine) error) error
 	FollowContainerLogs(context.Context, string, string, string, func(ufp.ContainerLog) error) error
 }

@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import '@fontsource-variable/public-sans'
 import '@fontsource/ibm-plex-mono/400.css'
 import '@xyflow/react/dist/style.css'
+import '@xterm/xterm/css/xterm.css'
 
 import { App } from './app/App'
 import { PageError } from './app/PageError'

@@ -2,7 +2,7 @@
 
 UFP is URUFLOW's persistent, bidirectional server-agent protocol. It carries instructions, acceptance responses, status, logs and observations over TLS. Browser traffic uses the operator HTTP API and SSE instead.
 
-This is the wire reference for contributors. URUFLOW 3.0.2 uses UFP frame version `0x04`.
+This is the wire reference for contributors. URUFLOW 3.0.4 uses UFP frame version `0x04`.
 
 ## Transport and framing
 
@@ -89,14 +89,19 @@ Requests acknowledge acceptance. Build and release completion arrives through `j
 
 These methods travel from server to agent:
 
-| Method           | Work                                                                       |
-| ---------------- | -------------------------------------------------------------------------- |
-| `build.run`      | Resolve Git sources, build targets and publish image digests               |
-| `release.run`    | Prepare resources, pull images, execute jobs and replace services          |
-| `release.stop`   | Stop a project's managed containers                                        |
-| `release.remove` | Remove a project's managed containers while retaining persistent resources |
-| `logs.follow`    | Follow a container's Docker output                                         |
-| `logs.stop`      | Stop a selected log viewer                                                 |
+| Method              | Work                                                                       |
+| ------------------- | -------------------------------------------------------------------------- |
+| `build.run`         | Resolve Git sources, build targets and publish image digests               |
+| `release.run`       | Prepare resources, pull images, execute jobs and replace services          |
+| `release.stop`      | Stop a project's managed containers                                        |
+| `release.remove`    | Remove a project's managed containers while retaining persistent resources |
+| `logs.follow`       | Follow a container's Docker output                                         |
+| `logs.stop`         | Stop a selected log viewer                                                 |
+| `container.restart` | Restart one managed project container through Docker                       |
+| `terminal.open`     | Start an interactive shell in a managed project container                  |
+| `terminal.input`    | Write browser keystrokes to an open shell                                  |
+| `terminal.resize`   | Resize an open shell                                                       |
+| `terminal.close`    | End an open shell                                                          |
 
 Payloads include job and project identity where appropriate. Build requests carry source and target definitions. Release requests carry the remaining deadline, per-service image references, dependencies, jobs, mounts, networks, runtime controls and readiness policy.
 
@@ -112,6 +117,7 @@ The server checks enrolled roles before dispatch. Agents independently reject me
 | Agent → server | `job.status`      | Job identity, stage, status, messages and resulting artifacts |
 | Agent → server | `metrics.push`    | Host samples and managed container inventory                  |
 | Agent → server | `container.log`   | Output or completion for a log viewer                         |
+| Agent → server | `terminal.output` | Output or completion for a terminal session                   |
 
 Job stages are `build` and `release`; status events use `running`, `success` and `failed`. The server correlates job identity and reporting agent with persisted work before applying outcomes.
 
@@ -134,6 +140,12 @@ An unavailable sample is not a zero reading. The server and browser preserve thi
 The agent echoes the stream ID in acceptance and each `container.log`; `logs.stop` closes only that viewer. The server checks the echoed ID before accepting an independent browser stream. Requests without it use the container identity as the stream key.
 
 When Docker output ends, an entry with `complete: true` ends the viewer. An optional `error` describes collection failure. The server turns these into browser completion or failure events. The existing topic and frame version stay unchanged.
+
+### Container terminals and restarts
+
+`terminal.open` carries a server-generated `session_id`, the owning project, the container ID and the browser's columns and rows. The agent opens a shell only when the container carries the managed label for that project. It prefers `bash` and falls back to `sh`. Output returns as `terminal.output` events with that session ID; an event with `complete: true` ends the session, with an optional `error`. `terminal.input`, `terminal.resize` and `terminal.close` address the same session ID. Closing the browser view, losing the browser session or disconnecting the agent closes the shell.
+
+`container.restart` carries the project and container ID. The server reserves the project as it does for a stop, so a restart cannot overlap a release. The agent checks the project label again and asks Docker to restart the container with its configured stop timeout.
 
 ## Connection lifecycle
 
@@ -159,7 +171,7 @@ The read loop answers `PING` with `PONG`. On disconnect, the agent cancels in-fl
 | Unknown event topic or unexpected frame type | Connection error            |
 | Unknown response ID                          | Ignored                     |
 
-The product version and frame version serve different purposes. `3.0.2` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
+The product version and frame version serve different purposes. `3.0.4` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
 
 Keep `internal/ufp` independent of other repository packages. Preserve ordered events, correlated requests, role enforcement and the acceptance/completion distinction. Update this page and contract tests in the same change as the wire code.
 

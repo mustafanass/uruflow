@@ -90,6 +90,16 @@ func (s *Session) HandleEvent(event *ufp.Event) error {
 		}
 		s.server.notify(func(events Events) { events.ContainerLog(s.identity.AgentID, entry) })
 
+	case ufp.TopicTerminalOutput:
+		if !ufp.HasRole(s.identity.Roles, ufp.RoleRunner) {
+			return fmt.Errorf("ufp: role does not allow terminal output")
+		}
+		var output ufp.TerminalOutput
+		if err := event.Decode(&output); err != nil {
+			return err
+		}
+		s.server.notify(func(events Events) { events.TerminalOutput(s.identity.AgentID, output) })
+
 	default:
 		return fmt.Errorf("ufp: unsupported event topic %q", event.Topic)
 	}

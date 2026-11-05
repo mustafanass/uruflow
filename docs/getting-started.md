@@ -61,7 +61,7 @@ The project opens on its **Overview** tab. Review services, ports, placement and
 
 Choose **Deploy**. The release page shows progress, artifacts, runner outcomes and logs. Follow the result there; starting a release and completing it are separate events.
 
-Open the project's **Graph** tab for its runtime or delivery graph. The fleet graph is on **Overview**. Open a container to inspect its resources, networking, storage, health and logs. A release continues when you close the browser.
+A project's **Overview** is its runtime or delivery graph. The fleet graph is on **Overview**. Open a container to inspect its resources, networking, storage, health and logs. A release continues when you close the browser.
 
 After a successful release, the project history provides artifacts for a later restore. See [Deployments](deployments.md) for readiness, replacement and rollback.
 
