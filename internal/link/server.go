@@ -44,6 +44,7 @@ type Events interface {
 	JobLog(agentID string, entry ufp.JobLog)
 	JobStatus(agentID string, status ufp.JobStatus)
 	ContainerLog(agentID string, entry ufp.ContainerLog)
+	TerminalOutput(agentID string, output ufp.TerminalOutput)
 }
 
 type Server struct {

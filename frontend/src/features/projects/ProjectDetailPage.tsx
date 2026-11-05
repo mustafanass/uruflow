@@ -23,7 +23,6 @@ import {
 import { count, services } from '@/shared/utils'
 
 import { ProjectInfrastructure } from './ProjectInfrastructure'
-import { ProjectOverview } from './ProjectOverview'
 import { currentRelease } from './release-state'
 import { DeployProject } from './DeployProject'
 
@@ -37,19 +36,12 @@ export default function ProjectDetailPage() {
   const [params, setParams] = useSearchParams()
   const tabs = [
     'Overview',
-    'Graph',
     'Releases',
     ...(canOperate ? ['Configuration'] : []),
     'Activity',
   ]
   const legacyTab = params.get('tab') || ''
-  const requestedTab = ['Infrastructure', 'Services'].includes(legacyTab)
-    ? 'Graph'
-    : legacyTab === 'Variables'
-      ? 'Configuration'
-      : legacyTab === 'Metrics'
-        ? 'Overview'
-        : legacyTab
+  const requestedTab = legacyTab === 'Variables' ? 'Configuration' : legacyTab
   const tab = tabs.includes(requestedTab) ? requestedTab : 'Overview'
   const [rolling, setRolling] = useState(false)
   const [deploying, setDeploying] = useState(false)
@@ -165,10 +157,7 @@ export default function ProjectDetailPage() {
         }
       />
       <TabPanel value={tab}>
-        {tab === 'Overview' && (
-          <ProjectOverview project={p} showMetrics={legacyTab === 'Metrics'} />
-        )}
-        {tab === 'Graph' && <ProjectInfrastructure p={p} />}
+        {tab === 'Overview' && <ProjectInfrastructure p={p} />}
         {tab === 'Releases' && <ProjectReleases name={p.name} />}
         {tab === 'Configuration' &&
           (canOperate ? (

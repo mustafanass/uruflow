@@ -41,12 +41,17 @@ const (
 )
 
 const (
-	MethodBuildRun      = "build.run"
-	MethodReleaseRun    = "release.run"
-	MethodReleaseStop   = "release.stop"
-	MethodReleaseRemove = "release.remove"
-	MethodLogsFollow    = "logs.follow"
-	MethodLogsStop      = "logs.stop"
+	MethodBuildRun         = "build.run"
+	MethodReleaseRun       = "release.run"
+	MethodReleaseStop      = "release.stop"
+	MethodReleaseRemove    = "release.remove"
+	MethodLogsFollow       = "logs.follow"
+	MethodLogsStop         = "logs.stop"
+	MethodContainerRestart = "container.restart"
+	MethodTerminalOpen     = "terminal.open"
+	MethodTerminalInput    = "terminal.input"
+	MethodTerminalResize   = "terminal.resize"
+	MethodTerminalClose    = "terminal.close"
 )
 
 const (
@@ -56,6 +61,7 @@ const (
 	TopicJobStatus      = "job.status"
 	TopicMetrics        = "metrics.push"
 	TopicContainerLog   = "container.log"
+	TopicTerminalOutput = "terminal.output"
 )
 
 const (
@@ -74,10 +80,20 @@ const (
 	StreamStderr = "stderr"
 )
 
+const (
+	MaxTerminalColumns = 500
+	MaxTerminalRows    = 200
+	MaxTerminalInput   = 64 * 1024
+)
+
 type LogFunc func(stream, line string)
 
 func (r Role) Valid() bool {
 	return r == RoleBuilder || r == RoleRunner
+}
+
+func ValidTerminalSize(columns, rows int) bool {
+	return columns > 0 && columns <= MaxTerminalColumns && rows > 0 && rows <= MaxTerminalRows
 }
 
 func HasRole(roles []Role, want Role) bool {

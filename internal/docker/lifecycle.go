@@ -79,6 +79,10 @@ func (c *Client) Stop(ctx context.Context, id string, timeout time.Duration) err
 	return c.post(ctx, fmt.Sprintf("/containers/%s/stop?t=%d", id, int(timeout.Seconds())), nil, nil)
 }
 
+func (c *Client) Restart(ctx context.Context, id string) error {
+	return c.post(ctx, "/containers/"+id+"/restart", nil, nil)
+}
+
 func (c *Client) Remove(ctx context.Context, id string, force bool) error {
 	return c.delete(ctx, fmt.Sprintf("/containers/%s?force=%t&v=true", id, force))
 }

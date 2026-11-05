@@ -65,6 +65,9 @@ type Daemon struct {
 	streams  map[string]*logStream
 	streamMu sync.Mutex
 
+	terminals  map[string]*terminalSession
+	terminalMu sync.Mutex
+
 	stop chan struct{}
 	once sync.Once
 }
@@ -88,12 +91,13 @@ func New(cfg *config.Config) (*Daemon, error) {
 	}
 
 	daemon := &Daemon{
-		cfg:     cfg,
-		docker:  engine,
-		metrics: metrics.NewCollector(),
-		streams: make(map[string]*logStream),
-		jobs:    make(map[string]*activeJob),
-		stop:    make(chan struct{}),
+		cfg:       cfg,
+		docker:    engine,
+		metrics:   metrics.NewCollector(),
+		streams:   make(map[string]*logStream),
+		terminals: make(map[string]*terminalSession),
+		jobs:      make(map[string]*activeJob),
+		stop:      make(chan struct{}),
 	}
 	daemon.runner = runner.New(engine, daemon.registryAuth)
 

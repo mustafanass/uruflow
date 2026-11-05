@@ -9,19 +9,18 @@ export function ProjectReleases({ name }: { name: string }) {
   const { data, error, loading, reload } = useLoad<Release[]>(
     '/api/projects/' + segment(name) + '/releases',
   )
-  const merged = [...(data || [])]
-  for (const r of snapshot?.releases || [])
+  const byID = new Map((data || []).map((r) => [r.id, r]))
+  for (const r of snapshot?.releases || []) {
     if (r.project === name) {
-      const index = merged.findIndex((old) => old.id === r.id)
-      if (index < 0) {
-        merged.unshift(r)
-      } else {
-        merged[index] = r
-      }
+      byID.set(r.id, r)
     }
+  }
+  const merged = [...byID.values()].sort(
+    (a, b) => Date.parse(b.started_at) - Date.parse(a.started_at),
+  )
   return error ? (
     <ErrorState message={error} retry={reload} />
-  ) : loading && !merged.length ? (
+  ) : loading && !data ? (
     <Spinner />
   ) : (
     <Panel>

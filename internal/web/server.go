@@ -60,6 +60,7 @@ type Handler struct {
 	latest      *observe.Snapshot
 	subscribers map[chan observe.Snapshot]struct{}
 	streams     map[string]int
+	terminals   map[string]terminalOwner
 }
 
 func New(operations Operator, accounts storage.ConsoleStore, dataDir string, secureCookies bool) (*Handler, error) {
@@ -68,7 +69,7 @@ func New(operations Operator, accounts storage.ConsoleStore, dataDir string, sec
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &Handler{operations: operations, accounts: accounts, auth: auth, ctx: ctx, cancel: cancel, subscribers: map[chan observe.Snapshot]struct{}{}, streams: map[string]int{}}
+	h := &Handler{operations: operations, accounts: accounts, auth: auth, ctx: ctx, cancel: cancel, subscribers: map[chan observe.Snapshot]struct{}{}, streams: map[string]int{}, terminals: map[string]terminalOwner{}}
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
 	router.RedirectTrailingSlash = false

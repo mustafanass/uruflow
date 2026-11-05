@@ -3,9 +3,9 @@ import { RelativeTime } from '@/shared/ui/RelativeTime'
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
-import { ArrowUpRight, Server } from 'lucide-react'
+import { ArrowUpRight, RotateCw, Server } from 'lucide-react'
 
-import { segment } from '@/shared/api'
+import { api, segment } from '@/shared/api'
 import { useWorkspace } from '@/shared/hooks'
 import { type Container } from '@/shared/types'
 import {
@@ -26,10 +26,11 @@ import { ContainerMetrics } from './ContainerMetrics'
 import { ContainerNetwork } from './ContainerNetwork'
 import { ContainerOverview } from './ContainerOverview'
 import { ContainerStorage } from './ContainerStorage'
+import { ContainerTerminal } from './ContainerTerminal'
 
 export default function ContainerDetailPage() {
   const { agent = '', id = '' } = useParams()
-  const { snapshot } = useWorkspace()
+  const { snapshot, canOperate, confirm } = useWorkspace()
   const [params, setParams] = useSearchParams()
   const observed = snapshot?.containers.find(
     (container) => container.agent_id === agent && container.id === id,
@@ -38,10 +39,6 @@ export default function ContainerDetailPage() {
   useEffect(() => {
     if (observed) setLastKnown(observed)
   }, [observed])
-  const tabs = ['Overview', 'Logs', 'Metrics', 'Inspect']
-  const tab = tabs.includes(params.get('tab') || '')
-    ? params.get('tab')!
-    : 'Overview'
   if (!snapshot) {
     return <Spinner />
   }
@@ -63,11 +60,26 @@ export default function ContainerDetailPage() {
       />
     )
   }
+  const tabs = [
+    'Overview',
+    'Logs',
+    ...(canOperate && c.project ? ['Terminal'] : []),
+    'Metrics',
+    'Inspect',
+  ]
+  const tab = tabs.includes(params.get('tab') || '')
+    ? params.get('tab')!
+    : 'Overview'
   const host = snapshot.agents.find((a) => a.id === agent)
   const current = !!observed && fresh(host, c.observed_at)
   const valid = c.stats_available && current
   const details = c.details
   const observation = JSON.stringify(c, null, 2)
+  const releasing = snapshot.releases.some(
+    (r) =>
+      r.project === c.project &&
+      !['succeeded', 'failed', 'skipped'].includes(r.status),
+  )
   return (
     <>
       <PageHeader
@@ -99,6 +111,34 @@ export default function ContainerDetailPage() {
               <Server size={15} />
               Open host
             </Link>
+            {canOperate && c.project && observed && (
+              <button
+                className="button"
+                disabled={releasing || host?.status !== 'online'}
+                title={
+                  releasing
+                    ? 'A release is in progress for this project'
+                    : undefined
+                }
+                onClick={() =>
+                  confirm({
+                    title: 'Restart ' + c.name,
+                    description:
+                      'Docker stops this container gracefully, then starts it again with the same configuration and data. Open connections and terminal sessions end.',
+                    label: 'Restart container',
+                    success: 'Container restarted',
+                    run: () =>
+                      api(
+                        `/api/containers/${segment(agent)}/${segment(id)}/restart`,
+                        { method: 'POST' },
+                      ),
+                  })
+                }
+              >
+                <RotateCw size={15} />
+                Restart
+              </button>
+            )}
           </>
         }
       />
@@ -134,6 +174,15 @@ export default function ContainerDetailPage() {
             <ContainerHealth details={details} />
           </>
         )}
+        {tab === 'Terminal' &&
+          (observed && c.state === 'running' ? (
+            <ContainerTerminal agent={agent} id={id} />
+          ) : (
+            <EmptyState
+              title="Terminal unavailable"
+              detail="A shell opens only in a running container from the current inventory."
+            />
+          ))}
         {tab === 'Metrics' && <ContainerMetrics c={c} host={host} />}
         {tab === 'Logs' && (
           <LogViewer

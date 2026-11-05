@@ -165,6 +165,49 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		}
 		d.stopFollow(key)
 		return ufp.Accepted{}, nil
+
+	case ufp.MethodContainerRestart:
+		var payload ufp.ContainerRef
+		if err := request.Decode(&payload); err != nil {
+			return nil, err
+		}
+		if !d.cfg.HasRole(ufp.RoleRunner) {
+			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleRunner)
+		}
+		if payload.Project == "" || payload.ContainerID == "" {
+			return nil, fmt.Errorf("container reference is incomplete")
+		}
+		job, start, err := d.beginJob(payload.Project, ufp.MethodContainerRestart)
+		if err != nil {
+			return nil, err
+		}
+		if !start {
+			return nil, fmt.Errorf("project %s already has a restart operation running", payload.Project)
+		}
+		defer d.endJob(payload.Project, job)
+		ctx, cancel := context.WithTimeout(job.ctx, actionTimeout)
+		defer cancel()
+		_, owned, err := d.docker.ContainerOwnership(ctx, payload.ContainerID, payload.Project)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, fmt.Errorf("container is not managed by project %s", payload.Project)
+		}
+		if err := d.docker.Restart(ctx, payload.ContainerID); err != nil {
+			return nil, err
+		}
+		logger.Info("[AGENT] restarted %s in %s", shortID(payload.ContainerID), payload.Project)
+		return ufp.Accepted{}, nil
+
+	case ufp.MethodTerminalOpen, ufp.MethodTerminalInput, ufp.MethodTerminalResize, ufp.MethodTerminalClose:
+		if !d.cfg.HasRole(ufp.RoleRunner) {
+			return nil, fmt.Errorf("agent does not carry the %s role", ufp.RoleRunner)
+		}
+		if err := d.handleTerminal(request); err != nil {
+			return nil, err
+		}
+		return ufp.Accepted{}, nil
 	}
 
 	return nil, fmt.Errorf("unsupported method %q", request.Method)

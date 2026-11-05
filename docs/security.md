@@ -18,11 +18,11 @@ Restrict host access to the server and agent machines. The server controls fleet
 
 The first administrator is created with the private `<data_dir>/web-setup-token` file. Bootstrap works only before any account exists, and its token is removed after setup. Administrators manage accounts in **System → Access**.
 
-| Role          | Actions                                                                                            |
-| ------------- | -------------------------------------------------------------------------------------------------- |
-| Viewer        | Read granted projects, runtime observations, releases and logs                                     |
-| Operator      | Viewer actions plus editing, deployment, restoration, stopping and alert resolution within scope   |
-| Administrator | Fleet access, agent enrollment and removal, account management, audit access and registry deletion |
+| Role          | Actions                                                                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Viewer        | Read granted projects, runtime observations, releases and logs                                                                            |
+| Operator      | Viewer actions plus editing, deployment, restoration, stopping, container restarts, container terminals and alert resolution within scope |
+| Administrator | Fleet access, agent enrollment and removal, account management, audit access and registry deletion                                        |
 
 Non-admin accounts receive explicit project names; `*` grants fleet access. Creating projects and reloading definitions require fleet access as well as an operator role. Registry inspection requires fleet access. Changing a browser URL or resource ID does not bypass server checks.
 
@@ -78,7 +78,7 @@ Back up the encrypted database and its matching encryption key together. The cer
 
 GitHub requests use HMAC-SHA256 over the raw body. GitLab requests use a constant-time token comparison. The webhook listener verifies event headers and claims delivery IDs before handling a push. [Configuration](configuration.md#webhook-listener) owns setup and routing behavior.
 
-Operator mutations require an audit intent record before execution and then record their outcome. Authentication attempts, access changes and local administrator recovery also leave audit records. Administrators inspect them in **System → Audit log**.
+Operator mutations require an audit intent record before execution and then record their outcome. Container terminal sessions record the same intent when they open and their outcome when they end. Authentication attempts, access changes and local administrator recovery also leave audit records. Administrators inspect them in **System → Audit log**.
 
 ## Implementation
 

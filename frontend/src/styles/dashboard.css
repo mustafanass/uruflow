@@ -87,31 +87,6 @@
   font-size: 12px;
   margin: 0 0 18px 2px;
 }
-.state-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--muted);
-  width: 9px;
-  height: 9px;
-}
-.state-mark i {
-  display: block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.state-mark.good {
-  color: var(--good);
-}
-.state-mark.bad {
-  color: var(--bad);
-}
-.state-mark.warn {
-  color: var(--warn);
-}
 @media (max-width: 1150px) {
   .fleet-summary > a {
     padding: 0 16px;

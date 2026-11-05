@@ -8,7 +8,6 @@ import {
 } from 'react-router-dom'
 import { Activity, Trash2 } from 'lucide-react'
 import { ContainerTable } from '@/features/containers/ContainerTable'
-import { ReleaseTable } from '@/features/releases/ReleaseTable'
 import { api, segment } from '@/shared/api'
 import { useWorkspace } from '@/shared/hooks'
 import {
@@ -20,16 +19,14 @@ import {
   Tabs,
   TabPanel,
 } from '@/shared/ui'
-import { AgentMetrics } from './AgentMetrics'
 import { AgentOverview } from './AgentOverview'
-import { AgentProjects } from './AgentProjects'
 
 export default function AgentDetailPage() {
   const { id = '' } = useParams()
   const { snapshot, canAdmin, confirm } = useWorkspace()
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
-  const tabs = ['Overview', 'Containers', 'Metrics']
+  const tabs = ['Overview', 'Containers']
   const requested = ['Projects', 'Workloads'].includes(params.get('tab') || '')
     ? 'Containers'
     : params.get('tab') || ''
@@ -93,7 +90,11 @@ export default function AgentDetailPage() {
                   <p>
                     Revoke this machine’s enrollment. Running containers remain
                     on the host.
-                    {projects.length ? ' Unassign its projects first.' : ''}
+                    {projects.length
+                      ? ' Unassign it from ' +
+                        projects.map((project) => project.name).join(', ') +
+                        ' first.'
+                      : ''}
                   </p>
                   <button
                     className="button danger-subtle"
@@ -123,23 +124,10 @@ export default function AgentDetailPage() {
           </>
         )}
         {tab === 'Containers' && (
-          <>
-            <AgentProjects projects={projects} a={agent} />
-            <Panel title="Runtime containers">
-              <ContainerTable containers={containers} />
-            </Panel>
-            {agent.roles.includes('builder') && (
-              <Panel title="Build work">
-                <ReleaseTable
-                  releases={snapshot.releases.filter(
-                    (release) => release.builder === id,
-                  )}
-                />
-              </Panel>
-            )}
-          </>
+          <Panel title="Runtime containers">
+            <ContainerTable containers={containers} />
+          </Panel>
         )}
-        {tab === 'Metrics' && <AgentMetrics a={agent} />}
       </TabPanel>
     </>
   )
