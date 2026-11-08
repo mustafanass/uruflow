@@ -191,21 +191,6 @@
   border-top: 1px solid var(--border);
 }
 
-.dependency-detail {
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-
-.dependency-detail > span {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--muted);
-}
-
 .react-flow__handle {
   width: 5px !important;
   height: 5px !important;

@@ -76,6 +76,15 @@ func (e *Engine) RestartContainer(agentID, containerID string) error {
 	if container.Project == "" {
 		return errors.New("only project containers can be restarted")
 	}
+	key := agentID + "/" + containerID
+	e.restartMu.Lock()
+	e.restarting[key] = true
+	e.restartMu.Unlock()
+	defer func() {
+		e.restartMu.Lock()
+		delete(e.restarting, key)
+		e.restartMu.Unlock()
+	}()
 	return e.server.Pipeline().Restart(container.Project, agentID, containerID)
 }
 func (e *Engine) FollowContainerLogs(ctx context.Context, agentID, containerID, after string, emit func(ufp.ContainerLog) error) error {

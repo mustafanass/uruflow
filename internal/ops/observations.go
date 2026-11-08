@@ -24,6 +24,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/mustafanass/uruflow/internal/docker"
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/observe"
 	"github.com/mustafanass/uruflow/internal/version"
@@ -45,6 +46,13 @@ func (e *Engine) Snapshot(ctx context.Context) (observe.Snapshot, error) {
 	if s.Containers, err = store.ListContainers(); err != nil {
 		return s, err
 	}
+	e.restartMu.Lock()
+	for i := range s.Containers {
+		if e.restarting[s.Containers[i].AgentID+"/"+s.Containers[i].ID] {
+			s.Containers[i].State = docker.StateRestarting
+		}
+	}
+	e.restartMu.Unlock()
 	e.releaseMu.Lock()
 	revision, releaseErr := store.ReleaseRevision()
 	if releaseErr == nil && (e.releaseCache == nil || e.releaseRevision != revision) {

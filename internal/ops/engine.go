@@ -38,8 +38,10 @@ type Engine struct {
 	releaseMu       sync.Mutex
 	releaseRevision int64
 	releaseCache    []models.Release
+	restartMu       sync.Mutex
+	restarting      map[string]bool
 }
 
 func New(server *api.Server) *Engine {
-	return &Engine{server: server, hostCollector: metrics.NewCollector()}
+	return &Engine{server: server, hostCollector: metrics.NewCollector(), restarting: map[string]bool{}}
 }

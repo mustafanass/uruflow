@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="internal/version/version.go"><img src="https://img.shields.io/badge/version-v3.0.4-2DD4BF?style=flat-square" alt="source version 3.0.4"></a>
+  <a href="internal/version/version.go"><img src="https://img.shields.io/badge/version-v3.0.5-2DD4BF?style=flat-square" alt="source version 3.0.5"></a>
   <a href="https://github.com/mustafanass/uruflow/actions/workflows/quality.yml"><img src="https://img.shields.io/github/actions/workflow/status/mustafanass/uruflow/quality.yml?branch=main&style=flat-square&label=quality" alt="quality"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-2DD4BF?style=flat-square" alt="license"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.25.13-00ADD8?style=flat-square" alt="go"></a>
@@ -17,6 +17,12 @@
   <a href="docs/security.md">Security</a> ·
   <a href="https://github.com/mustafanass/uruflow/releases">Releases</a>
 </p>
+
+<p align="center">
+  <img src="assets/uruflow-demo.gif" width="960" alt="URUFLOW demo: the live fleet graph and a host's containers, a reviewed YAML change, a deploy that rebuilds only the changed service, a readiness-checked rollout, and a failed release that restores the previous containers.">
+</p>
+
+<p align="center"><sub>Recorded on a real URUFLOW 3.0.4 installation with one server, one builder and two runners. <a href="assets/uruflow-demo.mp4">Narrated walkthrough (MP4, 95 s)</a></sub></p>
 
 <br>
 
@@ -64,12 +70,12 @@ their hosts.
 The server and runners need Docker Engine and socket access. Builders also need Git, the Docker
 CLI and access to their source repositories.
 
-### Download v3.0.4
+### Download v3.0.5
 
 Choose `amd64` for x86-64 or `arm64` for ARM64. Each archive contains one binary, its service unit and the license.
 
 ```sh
-version=3.0.4
+version=3.0.5
 arch=amd64
 binary=uruflow
 archive="$binary-$version-linux-$arch.tar.gz"
@@ -88,7 +94,7 @@ On builder and runner hosts, set `binary=uruflow-agent` to download and install 
 Use the Go version in [go.mod](go.mod), Node.js 24, npm and a C compiler for SQLite:
 
 ```sh
-git clone --branch v3.0.4 --depth 1 https://github.com/mustafanass/uruflow.git
+git clone --branch v3.0.5 --depth 1 https://github.com/mustafanass/uruflow.git
 cd uruflow
 make build
 sudo install -m 0755 build/uruflow /usr/local/bin/uruflow

@@ -46,11 +46,12 @@ const dialTimeout = 10 * time.Second
 var _ ufp.Handler = (*Daemon)(nil)
 
 type Daemon struct {
-	cfg     *config.Config
-	docker  *docker.Client
-	metrics *metrics.Collector
-	builder *builder.Builder
-	runner  *runner.Runner
+	cfg       *config.Config
+	docker    *docker.Client
+	metrics   *metrics.Collector
+	metricsMu sync.Mutex
+	builder   *builder.Builder
+	runner    *runner.Runner
 
 	conn       *ufp.Conn
 	connMu     sync.RWMutex

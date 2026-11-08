@@ -15,12 +15,12 @@ make build
 
 Run the pass after implementation. Fix failures before repeating the affected checks. CI runs the same `make check` and `make build` commands.
 
-| Command      | Checks                                                                  |
-| ------------ | ----------------------------------------------------------------------- |
-| `make fmt`   | Format Go and frontend files                                            |
-| `make test`  | Deterministic Go and frontend behavior tests                            |
-| `make check` | Go formatting, vet and tests; TypeScript, frontend tests and formatting |
-| `make build` | Production frontend plus server and agent binaries                      |
+| Command      | Checks                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------- |
+| `make fmt`   | Format Go and frontend files                                                                            |
+| `make test`  | Deterministic Go and frontend behavior tests                                                            |
+| `make check` | Production frontend build, then Go formatting, vet and tests; TypeScript, frontend tests and formatting |
+| `make build` | Production frontend plus server and agent binaries                                                      |
 
 Dependency installation may fetch packages. The deterministic tests themselves must not require Docker, external network access, root, fixed ports or operator input. Temporary files, SQLite databases and test-assigned loopback listeners are allowed.
 

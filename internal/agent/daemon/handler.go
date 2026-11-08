@@ -194,8 +194,10 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		if !owned {
 			return nil, fmt.Errorf("container is not managed by project %s", payload.Project)
 		}
-		if err := d.docker.Restart(ctx, payload.ContainerID); err != nil {
-			return nil, err
+		restartErr := d.docker.Restart(ctx, payload.ContainerID)
+		d.publishMetrics(ctx)
+		if restartErr != nil {
+			return nil, restartErr
 		}
 		logger.Info("[AGENT] restarted %s in %s", shortID(payload.ContainerID), payload.Project)
 		return ufp.Accepted{}, nil

@@ -1,6 +1,6 @@
 # Upgrading to URUFLOW 3
 
-URUFLOW 3.0.4 uses the browser for operator work and keeps TLS UFP for server-agent communication. Build and install the server, agents and embedded frontend from the same release.
+URUFLOW 3.0.5 uses the browser for operator work and keeps TLS UFP for server-agent communication. Build and install the server, agents and embedded frontend from the same release.
 
 ## Prepare
 
@@ -16,7 +16,7 @@ build/uruflow version
 build/uruflow-agent version
 ```
 
-Both commands should report `3.0.4`. The frontend package uses the same release version; the running workspace displays the server's reported version.
+Both commands should report `3.0.5`. The frontend package uses the same release version; the running workspace displays the server's reported version.
 
 ## Replace a current UFP installation
 
@@ -41,7 +41,7 @@ Project editing, deployment, restoration, agent enrollment, observations and log
 
 Check sign-in, account scope, agent connectivity, registry access, project definitions, historical release details and container observations. Verify a safe deployment and restore in staging before routine production changes.
 
-Valid persisted browser sessions survive later server restarts, and streams reconnect. Fresh server and agent reports should show `3.0.4`.
+Valid persisted browser sessions survive later server restarts, and streams reconnect. Fresh server and agent reports should show `3.0.5`.
 
 ## Earlier protocol generations
 

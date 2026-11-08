@@ -156,25 +156,3 @@
 .infra-node:has(.node-expand) .node-runtime-line {
   padding-right: 90px;
 }
-.inspector-instance {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 13px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-}
-.inspector-instance > div {
-  flex: 1;
-  min-width: 0;
-}
-.inspector-instance strong,
-.inspector-instance span {
-  display: block;
-}
-.inspector-instance > div > span {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 4px;
-  overflow-wrap: anywhere;
-}
