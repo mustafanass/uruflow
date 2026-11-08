@@ -53,6 +53,8 @@ func (d *Daemon) reportMetrics(ctx context.Context) {
 }
 
 func (d *Daemon) publishMetrics(ctx context.Context) {
+	d.metricsMu.Lock()
+	defer d.metricsMu.Unlock()
 	sampledAt := time.Now()
 	system, err := d.metrics.Collect()
 	if err != nil {

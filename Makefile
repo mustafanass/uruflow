@@ -40,7 +40,7 @@ test-preview: frontend
 vet:
 	go vet ./...
 
-check: frontend-deps
+check: frontend
 	@unformatted="$$(gofmt -l cmd internal pkg)"; \
 	if [ -n "$$unformatted" ]; then \
 		echo "Go files need formatting:"; \

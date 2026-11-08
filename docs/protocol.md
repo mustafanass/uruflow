@@ -2,7 +2,7 @@
 
 UFP is URUFLOW's persistent, bidirectional server-agent protocol. It carries instructions, acceptance responses, status, logs and observations over TLS. Browser traffic uses the operator HTTP API and SSE instead.
 
-This is the wire reference for contributors. URUFLOW 3.0.4 uses UFP frame version `0x04`.
+This is the wire reference for contributors. URUFLOW 3.0.5 uses UFP frame version `0x04`.
 
 ## Transport and framing
 
@@ -145,7 +145,7 @@ When Docker output ends, an entry with `complete: true` ends the viewer. An opti
 
 `terminal.open` carries a server-generated `session_id`, the owning project, the container ID and the browser's columns and rows. The agent opens a shell only when the container carries the managed label for that project. It prefers `bash` and falls back to `sh`. Output returns as `terminal.output` events with that session ID; an event with `complete: true` ends the session, with an optional `error`. `terminal.input`, `terminal.resize` and `terminal.close` address the same session ID. Closing the browser view, losing the browser session or disconnecting the agent closes the shell.
 
-`container.restart` carries the project and container ID. The server reserves the project as it does for a stop, so a restart cannot overlap a release. The agent checks the project label again and asks Docker to restart the container with its configured stop timeout.
+`container.restart` carries the project and container ID. The server reserves the project as it does for a stop, so a restart cannot overlap a release. The agent checks the project label again and asks Docker to restart the container with its configured stop timeout. It sends a fresh `metrics.push` before replying, so the server observes the outcome as soon as the request completes. Until then, the server reports the container as `restarting`.
 
 ## Connection lifecycle
 
@@ -171,7 +171,7 @@ The read loop answers `PING` with `PONG`. On disconnect, the agent cancels in-fl
 | Unknown event topic or unexpected frame type | Connection error            |
 | Unknown response ID                          | Ignored                     |
 
-The product version and frame version serve different purposes. `3.0.4` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
+The product version and frame version serve different purposes. `3.0.5` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
 
 Keep `internal/ufp` independent of other repository packages. Preserve ordered events, correlated requests, role enforcement and the acceptance/completion distinction. Update this page and contract tests in the same change as the wire code.
 

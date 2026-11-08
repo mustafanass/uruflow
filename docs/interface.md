@@ -34,7 +34,7 @@ Select a node to open its inspector without changing zoom or pan. Click the canv
 
 The project directory also provides fleet release history. Each project has **Overview**, **Releases**, **Configuration** and **Activity**, according to permissions.
 
-Overview is the project graph, with runtime and delivery views. Runtime connects service intent, runner placement and observed containers. Delivery shows build and release relationships. The inspector includes service definitions, limits, dependencies, storage and observed instances, and opens each container for its logs, terminal and trends.
+Overview is the project graph, with runtime and delivery views. Runtime connects service intent, runner placement and observed containers. Delivery shows build and release relationships. The inspector adds only what the graph does not show: a service's definition and limits, or a container's live usage, image and release. Its final action opens the container, agent or project page.
 
 **Deploy** starts a release of the saved configuration. **Rollback** selects an eligible successful release. **Stop** stops managed project containers. Actions are disabled when their required state is absent or another release owns the project.
 
@@ -58,7 +58,7 @@ The Agents directory provides machine inventory and a fleet Containers view. An 
 
 A container has **Overview**, **Logs**, **Terminal**, **Metrics** and **Inspect**. Overview brings together identity, state, ports, networks, storage and health probes. Direct project and host links keep related resources within reach.
 
-Operators with access to the project see **Terminal** and **Restart** on project containers. Terminal opens a shell inside the running container; leaving the tab ends it. Restart asks Docker to stop the container gracefully and start it again with the same configuration, and is unavailable while a release owns the project. Both actions are recorded in the audit log.
+Operators with access to the project see **Terminal** and **Restart** on project containers. Terminal opens a shell inside the running container; leaving the tab ends it. Restart asks Docker to stop the container gracefully and start it again with the same configuration, and is unavailable while a release owns the project. The container shows **restarting** until Docker finishes, then its newly observed state. Both actions are recorded in the audit log.
 
 Enrollment displays its setup command once. Save it, then confirm **I saved the enrollment command** before closing an unconnected agent's setup. The dialog also closes after the agent connects. The CA download remains available on Agents.
 

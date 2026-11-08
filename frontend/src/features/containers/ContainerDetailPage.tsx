@@ -75,6 +75,7 @@ export default function ContainerDetailPage() {
   const valid = c.stats_available && current
   const details = c.details
   const observation = JSON.stringify(c, null, 2)
+  const state = containerState(c, snapshot)
   const releasing = snapshot.releases.some(
     (r) =>
       r.project === c.project &&
@@ -100,7 +101,7 @@ export default function ContainerDetailPage() {
         }
         actions={
           <>
-            <Badge value={containerState(c, snapshot)} />
+            <Badge value={state} />
             {c.project && (
               <Link className="button" to={'/projects/' + segment(c.project)}>
                 Open project
@@ -114,11 +115,17 @@ export default function ContainerDetailPage() {
             {canOperate && c.project && observed && (
               <button
                 className="button"
-                disabled={releasing || host?.status !== 'online'}
+                disabled={
+                  releasing ||
+                  state === 'restarting' ||
+                  host?.status !== 'online'
+                }
                 title={
                   releasing
                     ? 'A release is in progress for this project'
-                    : undefined
+                    : state === 'restarting'
+                      ? 'A restart is in progress'
+                      : undefined
                 }
                 onClick={() =>
                   confirm({
