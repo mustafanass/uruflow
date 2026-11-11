@@ -50,6 +50,8 @@ func (h *Handler) routes(router *gin.Engine) {
 	documents.PUT("/configuration", h.saveProjectDocument)
 	documents.Match([]string{"GET", "HEAD"}, "/variables", h.getProjectDocument)
 	documents.PUT("/variables", h.saveProjectDocument)
+	documents.Match([]string{"GET", "HEAD"}, "/push", h.getPushSettings)
+	documents.PUT("/push", h.setPushSource)
 	documents.POST("/deploy", h.projectAction)
 	documents.POST("/rollback", h.projectAction)
 	documents.POST("/stop", h.projectAction)

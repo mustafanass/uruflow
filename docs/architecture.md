@@ -47,6 +47,7 @@ The operator, webhook, UFP and registry listeners have separate addresses. The [
 | Desired project configuration                      | `internal/projects`; YAML and variable files beside server configuration | Operations, pipeline, browser editors  |
 | Loaded project model                               | Server; SQLite projection of validated files                             | Pipeline and observations              |
 | Users, grants, session hashes and audit            | `internal/web` through SQLite                                            | Protected API and stream handlers      |
+| Deploy-on-push sources                             | `internal/ops` through SQLite                                            | Webhook matching, project settings     |
 | Agent enrollment and observations                  | Server link and SQLite                                                   | Pipeline, scoped browser views         |
 | Release specification, artifacts, targets and logs | Pipeline and SQLite                                                      | Release details, history and rollback  |
 | Registry image content                             | Managed registry and its data directory                                  | Builders and runners                   |

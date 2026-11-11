@@ -62,6 +62,10 @@ func (h *WebhookHandler) Handle(c *gin.Context) {
 		return
 	}
 
+	if provider == services.ProviderGitHub && r.Header.Get("X-GitHub-Event") == "ping" {
+		helper.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
 	deliveryID, ok := webhookHeaders(r, provider)
 	if !ok {
 		helper.WriteError(w, http.StatusBadRequest, "invalid webhook headers")
@@ -86,8 +90,12 @@ func (h *WebhookHandler) Handle(c *gin.Context) {
 
 	triggered := make([]map[string]string, 0, len(result.Outcomes))
 	for _, outcome := range result.Outcomes {
-		entry := map[string]string{"project": outcome.Project, "release": outcome.Release}
+		entry := map[string]string{"project": outcome.Project, "release": outcome.Release, "status": "started"}
+		if outcome.Queued {
+			entry["status"] = "queued"
+		}
 		if outcome.Err != nil {
+			entry["status"] = "failed"
 			entry["error"] = outcome.Err.Error()
 		}
 		triggered = append(triggered, entry)

@@ -163,7 +163,7 @@ func (e *Engine) Deploy(name, sourceRelease string, rollback, rebuild bool) (*mo
 			release, err = e.server.Pipeline().Rollback(name, "")
 		}
 	} else {
-		release, err = e.server.Pipeline().Trigger(name, "", models.TriggerManual, rebuild)
+		release, err = e.server.Pipeline().Trigger(name, nil, models.TriggerManual, rebuild)
 	}
 	if err != nil {
 		return nil, err

@@ -25,6 +25,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/mustafanass/uruflow/internal/config"
@@ -64,6 +66,7 @@ type Push struct {
 type Outcome struct {
 	Project string
 	Release string
+	Queued  bool
 	Err     error
 }
 
@@ -94,14 +97,17 @@ func (s *WebhookService) Handle(provider string, payload []byte) (*Result, error
 		provider, push.Repository, shortCommit(push.Commit), push.Branch, len(matches))
 
 	result := &Result{Push: *push}
-	for _, project := range matches {
-		outcome := Outcome{Project: project.Name}
+	for _, name := range slices.Sorted(maps.Keys(matches)) {
+		outcome := Outcome{Project: name}
 
-		release, err := s.pipeline.Trigger(project.Name, push.Commit, models.TriggerWebhook, false)
-		if err != nil {
+		release, err := s.pipeline.Push(name, matches[name])
+		switch {
+		case errors.Is(err, pipeline.ErrQueued):
+			outcome.Queued = true
+		case err != nil:
 			outcome.Err = err
-			logger.Warn("[WEBHOOK] %s: %v", project.Name, err)
-		} else {
+			logger.Warn("[WEBHOOK] %s: %v", name, err)
+		default:
 			outcome.Release = release.ID
 		}
 
@@ -111,19 +117,29 @@ func (s *WebhookService) Handle(provider string, payload []byte) (*Result, error
 	return result, nil
 }
 
-func (s *WebhookService) match(push *Push) ([]models.Project, error) {
-	projects, err := s.store.ListProjects()
+func (s *WebhookService) match(push *Push) (map[string]map[string]string, error) {
+	sources, err := s.store.ListPushSources()
 	if err != nil {
 		return nil, err
 	}
 
-	matches := make([]models.Project, 0, 1)
-	for _, project := range projects {
-		if !project.AutoDeploy || project.Branch != push.Branch {
+	matches := make(map[string]map[string]string)
+	for _, source := range sources {
+		if source.Branch != push.Branch || !sameRepository(source.Repository, push.Identities) {
 			continue
 		}
-		if sameRepository(project.GitURL, push.Identities) {
-			matches = append(matches, project)
+		project, err := s.store.GetProject(source.Project)
+		if err != nil {
+			return nil, err
+		}
+		for _, service := range project.ServiceList() {
+			if !service.Built() || service.GitURL != source.Repository || service.Branch != source.Branch {
+				continue
+			}
+			if matches[project.Name] == nil {
+				matches[project.Name] = make(map[string]string)
+			}
+			matches[project.Name][service.Name] = push.Commit
 		}
 	}
 

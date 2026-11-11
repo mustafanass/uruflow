@@ -264,6 +264,15 @@ func (c *Config) HTTPAddr() string {
 	return fmt.Sprintf("%s:%d", c.webhookHost(), c.Server.HTTPPort)
 }
 
+func (c *Config) WebhookURL() string {
+	scheme := "https"
+	if !c.Webhook.TLS {
+		scheme = "http"
+	}
+	host := net.JoinHostPort(c.Server.Advertise, fmt.Sprint(c.Server.HTTPPort))
+	return (&url.URL{Scheme: scheme, Host: host, Path: c.Webhook.Path}).String()
+}
+
 func (c *Config) WebhookCertificatePaths() (string, string) {
 	if c.Webhook.Cert != "" {
 		return c.Webhook.Cert, c.Webhook.Key

@@ -120,6 +120,12 @@ type Project struct {
 	CreatedAt  time.Time                  `json:"created_at"`
 }
 
+type PushSource struct {
+	Project    string `json:"project"`
+	Repository string `json:"repository"`
+	Branch     string `json:"branch"`
+}
+
 type Service struct {
 	Name        string              `json:"name"`
 	Image       string              `json:"image,omitempty"`

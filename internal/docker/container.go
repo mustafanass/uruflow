@@ -68,11 +68,17 @@ type Container struct {
 	Managed      bool
 	RestartCount int
 	StartedAt    int64
-	CPUPercent   float64
+	CPU          CPUCounters
 	MemoryUsage  uint64
 	MemoryLimit  uint64
 	NetworkRx    uint64
 	NetworkTx    uint64
+}
+
+type CPUCounters struct {
+	Container uint64
+	System    uint64
+	Cores     int
 }
 
 type Spec struct {
@@ -335,12 +341,6 @@ func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
 			SystemUsage uint64 `json:"system_cpu_usage"`
 			OnlineCPUs  int    `json:"online_cpus"`
 		} `json:"cpu_stats"`
-		PreCPUStats struct {
-			CPUUsage struct {
-				TotalUsage uint64 `json:"total_usage"`
-			} `json:"cpu_usage"`
-			SystemUsage uint64 `json:"system_cpu_usage"`
-		} `json:"precpu_stats"`
 		MemoryStats struct {
 			Usage uint64 `json:"usage"`
 			Limit uint64 `json:"limit"`
@@ -360,7 +360,7 @@ func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
 		} `json:"networks"`
 	}
 
-	if err := c.get(ctx, "/containers/"+id+"/stats?stream=false", &stats); err != nil {
+	if err := c.get(ctx, "/containers/"+id+"/stats?stream=false&one-shot=true", &stats); err != nil {
 		return nil, err
 	}
 
@@ -368,16 +368,11 @@ func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
 		MemoryUsage: stats.MemoryStats.Usage,
 		PIDs:        stats.PIDsStats.Current,
 		MemoryLimit: stats.MemoryStats.Limit,
-	}
-
-	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage) - float64(stats.PreCPUStats.CPUUsage.TotalUsage)
-	systemDelta := float64(stats.CPUStats.SystemUsage) - float64(stats.PreCPUStats.SystemUsage)
-	if cpuDelta > 0 && systemDelta > 0 {
-		cores := stats.CPUStats.OnlineCPUs
-		if cores == 0 {
-			cores = 1
-		}
-		container.CPUPercent = cpuDelta / systemDelta * float64(cores) * 100
+		CPU: CPUCounters{
+			Container: stats.CPUStats.CPUUsage.TotalUsage,
+			System:    stats.CPUStats.SystemUsage,
+			Cores:     stats.CPUStats.OnlineCPUs,
+		},
 	}
 
 	for _, network := range stats.Networks {
@@ -394,6 +389,17 @@ func (c *Client) Stats(ctx context.Context, id string) (*Container, error) {
 		}
 	}
 	return container, nil
+}
+
+func (c CPUCounters) Percent(previous CPUCounters) (float64, bool) {
+	if previous.System == 0 || c.System <= previous.System || c.Container < previous.Container {
+		return 0, false
+	}
+	cores := c.Cores
+	if cores == 0 {
+		cores = 1
+	}
+	return float64(c.Container-previous.Container) / float64(c.System-previous.System) * float64(cores) * 100, true
 }
 
 func runtimeDetails(details *inspectResult) *ufp.ContainerDetails {

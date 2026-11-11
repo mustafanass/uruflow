@@ -69,3 +69,13 @@ export interface Project {
   volumes?: Record<string, unknown>
   created_at: string
 }
+export interface PushSource {
+  repository: string
+  branch: string
+  services: string[]
+  enabled: boolean
+}
+export interface PushSettings {
+  endpoint: string
+  sources: PushSource[]
+}

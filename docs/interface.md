@@ -32,7 +32,7 @@ Select a node to open its inspector without changing zoom or pan. Click the canv
 
 ## Projects
 
-The project directory also provides fleet release history. Each project has **Overview**, **Releases**, **Configuration** and **Activity**, according to permissions.
+The project directory also provides fleet release history. Each project has **Overview**, **Releases**, **Configuration**, **Settings** and **Activity**, according to permissions.
 
 Overview is the project graph, with runtime and delivery views. Runtime connects service intent, runner placement and observed containers. Delivery shows build and release relationships. The inspector adds only what the graph does not show: a service's definition and limits, or a container's live usage, image and release. Its final action opens the container, agent or project page.
 
@@ -45,6 +45,8 @@ Configuration uses the full content width, with **YAML** and **Secrets & variabl
 If a save conflicts with another revision, use **Copy unsaved edits** if needed, then **Load latest**. Confirming loads the new file and revision so you can apply changes again. During a conflict, **Discard edits** uses the same recovery path.
 
 Saving does not deploy. [Projects](projects.md) owns file layout and variable syntax.
+
+**Settings** shows the webhook URL and enables deploy on push for each repository and branch the project builds from.
 
 ## Releases
 

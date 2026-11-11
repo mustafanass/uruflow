@@ -6,6 +6,7 @@ import { Play, RotateCcw, Square } from 'lucide-react'
 
 import { ActivityTable } from '@/features/activity/ActivityTable'
 import { ProjectConfiguration } from './ProjectConfiguration'
+import { ProjectPush } from '@/features/projects/ProjectPush'
 import { ProjectReleases } from '@/features/projects/ProjectReleases'
 import { RollbackProject } from '@/features/projects/RollbackProject'
 import { api, segment } from '@/shared/api'
@@ -37,7 +38,7 @@ export default function ProjectDetailPage() {
   const tabs = [
     'Overview',
     'Releases',
-    ...(canOperate ? ['Configuration'] : []),
+    ...(canOperate ? ['Configuration', 'Settings'] : []),
     'Activity',
   ]
   const legacyTab = params.get('tab') || ''
@@ -172,6 +173,7 @@ export default function ProjectDetailPage() {
               detail="Configuration and variable values are available to operators and administrators."
             />
           ))}
+        {tab === 'Settings' && <ProjectPush key={p.name} name={p.name} />}
         {tab === 'Activity' && (
           <Panel
             title="Project activity"

@@ -30,7 +30,7 @@ import (
 func TestBuildStatusFromAnotherAgentIsRejected(t *testing.T) {
 	harness := newHarness(t)
 	harness.agent.holdBuild = make(chan struct{})
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
+	release, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestBuildStatusFromAnotherAgentIsRejected(t *testing.T) {
 func TestMutableBuilderArtifactIsRejected(t *testing.T) {
 	harness := newHarness(t)
 	harness.agent.holdBuild = make(chan struct{})
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
+	release, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestMutableBuilderArtifactIsRejected(t *testing.T) {
 func TestReleaseUsesTheClaimedProjectSnapshot(t *testing.T) {
 	harness := newHarness(t)
 	harness.agent.holdBuild = make(chan struct{})
-	release, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
+	release, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestOfflineConfiguredRunnerRejectsTheRelease(t *testing.T) {
 	if err := harness.store.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false); !errors.Is(err, ErrRunnerOffline) {
+	if _, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false); !errors.Is(err, ErrRunnerOffline) {
 		t.Fatalf("error = %v, want ErrRunnerOffline", err)
 	}
 	releases, _ := harness.store.ListReleases(10)

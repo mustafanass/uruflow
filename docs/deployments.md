@@ -108,7 +108,7 @@ The runner follows the same preparation, readiness and replacement sequence. Ret
 
 ## Triggering and observation
 
-The current service-based project schema selects sources per service and is deployed explicitly from the browser. The separate webhook listener validates provider requests and delivery IDs; its configuration and response behavior are documented in [Configuration](configuration.md#webhook-listener).
+Releases start from **Deploy** in the browser or from a Git push. Deploy on push is enabled per repository and branch in the project's **Settings** tab. A matching push builds the services from that source at exactly the pushed commit, with trigger `webhook`; other services keep their usual source and reuse rules. Listener setup and responses are documented in [Configuration](configuration.md#webhook-listener).
 
 Open a release to inspect progress, runner targets, artifacts, its saved specification and logs. Open the project to compare that result with current runtime observations. Closing a browser tab leaves the release running.
 

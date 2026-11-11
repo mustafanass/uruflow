@@ -27,6 +27,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/storage"
 )
 
@@ -145,6 +146,34 @@ func (s *Store) ClaimWebhookDelivery(provider, deliveryID string) (bool, error) 
 		return false, err
 	}
 	return rows == 1, nil
+}
+
+func (s *Store) ListPushSources() ([]models.PushSource, error) {
+	rows, err := s.db.Query(`SELECT project, repository, branch FROM push_sources ORDER BY project, repository, branch`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	sources := make([]models.PushSource, 0)
+	for rows.Next() {
+		var source models.PushSource
+		if err := rows.Scan(&source.Project, &source.Repository, &source.Branch); err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
+}
+
+func (s *Store) SetPushSource(source models.PushSource, enabled bool) error {
+	if !enabled {
+		_, err := s.db.Exec(`DELETE FROM push_sources WHERE project = ? AND repository = ? AND branch = ?`,
+			source.Project, source.Repository, source.Branch)
+		return err
+	}
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO push_sources (project, repository, branch) VALUES (?, ?, ?)`,
+		source.Project, source.Repository, source.Branch)
+	return err
 }
 
 func encodeJSON(value any) string {
