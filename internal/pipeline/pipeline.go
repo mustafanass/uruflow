@@ -21,6 +21,7 @@ package pipeline
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,7 @@ var (
 	ErrNotRunner           = errors.New("agent does not have the runner role")
 	ErrNothingToRun        = errors.New("no successful release to roll back to")
 	ErrNotBuilder          = errors.New("agent does not have the builder role")
+	ErrQueued              = errors.New("push queued until the running release finishes")
 )
 
 type Pipeline struct {
@@ -64,13 +66,14 @@ type Pipeline struct {
 	activity        *activity.Feed
 	mu              sync.Mutex
 	busy            map[string]struct{}
+	queued          map[string]map[string]string
 	maintenance     bool
 	referenceEdits  int
 	maintenanceDone chan struct{}
 }
 
 func New(store storage.Store, links *link.Server, images *registry.Registry, vault *secrets.Vault) *Pipeline {
-	return &Pipeline{store: store, link: links, registry: images, vault: vault, busy: make(map[string]struct{})}
+	return &Pipeline{store: store, link: links, registry: images, vault: vault, busy: make(map[string]struct{}), queued: make(map[string]map[string]string)}
 }
 
 func (p *Pipeline) SetActivity(feed *activity.Feed) {
@@ -108,10 +111,7 @@ func (p *Pipeline) checkSecrets(project *models.Project) error {
 	return nil
 }
 
-func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger, rebuild bool) (*models.Release, error) {
-	if commit != "" && !models.ValidGitCommit(commit) {
-		return nil, fmt.Errorf("invalid git commit %q", commit)
-	}
+func (p *Pipeline) Trigger(projectName string, commits map[string]string, trigger models.Trigger, rebuild bool) (*models.Release, error) {
 	project, err := p.store.GetProject(projectName)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", projectName, ErrProjectNotFound)
@@ -126,11 +126,11 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger, r
 	if err := p.validateProject(project); err != nil {
 		return nil, err
 	}
-	if commit != "" {
-		return nil, fmt.Errorf("project %s sources are selected per service; project-level commits are not supported", project.Name)
-	}
 
 	targets := p.buildTargets(project)
+	if err := pinCommits(targets, commits); err != nil {
+		return nil, fmt.Errorf("%s: %w", project.Name, err)
+	}
 	workflow := project.EffectiveWorkflow()
 	var runners []models.Agent
 	if project.NeedsRunners() {
@@ -210,6 +210,48 @@ func (p *Pipeline) Trigger(projectName, commit string, trigger models.Trigger, r
 	}
 
 	return release, nil
+}
+
+func (p *Pipeline) Push(projectName string, commits map[string]string) (*models.Release, error) {
+	release, err := p.Trigger(projectName, commits, models.TriggerWebhook, false)
+	if err == nil {
+		return release, nil
+	}
+	if !errors.Is(err, ErrReleaseInFlight) && !errors.Is(err, ErrProjectBusy) {
+		p.publishProject(projectName, "error", "push did not start · "+err.Error())
+		return nil, err
+	}
+	p.mu.Lock()
+	queued := p.queued[projectName]
+	if queued == nil {
+		queued = make(map[string]string, len(commits))
+		p.queued[projectName] = queued
+	}
+	maps.Copy(queued, commits)
+	p.mu.Unlock()
+	p.publishProject(projectName, "info", "push queued until the running release finishes")
+	if p.idle(projectName) {
+		go p.startQueued(projectName)
+	}
+	return nil, ErrQueued
+}
+
+func (p *Pipeline) startQueued(projectName string) {
+	p.mu.Lock()
+	commits, ok := p.queued[projectName]
+	delete(p.queued, projectName)
+	p.mu.Unlock()
+	if ok {
+		p.Push(projectName, commits)
+	}
+}
+
+func (p *Pipeline) idle(projectName string) bool {
+	p.mu.Lock()
+	_, reserved := p.busy[projectName]
+	p.mu.Unlock()
+	active, err := p.store.ProjectHasActiveRelease(projectName)
+	return err == nil && !active && !reserved
 }
 
 func (p *Pipeline) Rollback(projectName, imageRef string) (*models.Release, error) {

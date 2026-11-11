@@ -20,6 +20,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -83,6 +84,25 @@ func (p *Pipeline) buildTargets(project *models.Project) []ufp.BuildTarget {
 	}
 
 	return targets
+}
+
+func pinCommits(targets []ufp.BuildTarget, commits map[string]string) error {
+	pinned := 0
+	for i := range targets {
+		commit, ok := commits[targets[i].Service]
+		if !ok {
+			continue
+		}
+		if !models.ValidGitCommit(commit) {
+			return fmt.Errorf("invalid git commit %q for service %q", commit, targets[i].Service)
+		}
+		targets[i].Commit = commit
+		pinned++
+	}
+	if pinned != len(commits) {
+		return errors.New("commits name services that are not built from source")
+	}
+	return nil
 }
 
 func (p *Pipeline) imageRepository(project *models.Project, service models.Service) string {
@@ -285,6 +305,7 @@ func (p *Pipeline) releaseReservation(project string) {
 	p.mu.Lock()
 	delete(p.busy, project)
 	p.mu.Unlock()
+	go p.startQueued(project)
 }
 
 func (p *Pipeline) ensureIdle(project string) error {

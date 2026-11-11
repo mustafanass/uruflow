@@ -54,3 +54,11 @@ func (p *Pipeline) publishLog(line *models.LogLine) {
 	p.activity.Publish(activity.Entry{Kind: activity.KindLog, Time: line.Timestamp, Level: level,
 		Operation: line.ReleaseID, Source: line.AgentName, Message: line.Line})
 }
+
+func (p *Pipeline) publishProject(project, level, message string) {
+	if p.activity == nil {
+		return
+	}
+	p.activity.Publish(activity.Entry{Kind: activity.KindMessage, Time: time.Now(), Level: level,
+		Source: project, Message: project + " · " + message})
+}

@@ -290,6 +290,7 @@ func (p *Pipeline) completeRelease(release *models.Release, status models.Status
 	if p.registry != nil {
 		p.registry.RefreshCatalog()
 	}
+	go p.startQueued(release.Project)
 }
 
 func (p *Pipeline) agentName(agentID string) string {

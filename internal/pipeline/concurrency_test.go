@@ -20,6 +20,7 @@ package pipeline
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -29,13 +30,13 @@ import (
 
 func TestConcurrentReleasesAreRejected(t *testing.T) {
 	harness := newHarness(t)
-	first, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
+	first, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false)
 	if err != nil {
 		t.Fatalf("first trigger: %v", err)
 	}
 	<-harness.agent.builds
 
-	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false); !errors.Is(err, ErrReleaseInFlight) {
+	if _, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false); !errors.Is(err, ErrReleaseInFlight) {
 		t.Fatalf("second trigger error = %v, want ErrReleaseInFlight", err)
 	}
 	if _, err := harness.pipeline.Rollback("api", ""); !errors.Is(err, ErrReleaseInFlight) {
@@ -44,7 +45,7 @@ func TestConcurrentReleasesAreRejected(t *testing.T) {
 
 	<-harness.agent.releases
 	harness.await(t, first.ID, models.StatusSucceeded)
-	second, err := harness.pipeline.Trigger("api", "", models.TriggerManual, true)
+	second, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, true)
 	if err != nil {
 		t.Fatalf("trigger once the first settled: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestConcurrentTriggersOnlyOneWins(t *testing.T) {
 	results := make(chan error, attempts)
 	for range attempts {
 		go func() {
-			_, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false)
+			_, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false)
 			results <- err
 		}()
 	}
@@ -77,9 +78,50 @@ func TestConcurrentTriggersOnlyOneWins(t *testing.T) {
 	}
 }
 
+func TestPushPinsCommitsAndQueuesTheNewestWhileBusy(t *testing.T) {
+	harness := newHarness(t)
+	registryForReuse(t, harness, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Docker-Content-Digest", builtDigest)
+	})
+	harness.agent.holdBuild = make(chan struct{})
+	const second, third = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+	if _, err := harness.pipeline.Push("api", map[string]string{"web": builtCommit}); err == nil || errors.Is(err, ErrQueued) {
+		t.Fatalf("push naming an unknown service = %v", err)
+	}
+	first, err := harness.pipeline.Push("api", map[string]string{"": builtCommit})
+	if err != nil {
+		t.Fatalf("first push: %v", err)
+	}
+	if build := <-harness.agent.builds; build.Targets[0].Commit != builtCommit {
+		t.Fatalf("build commit = %q, want the pushed commit", build.Targets[0].Commit)
+	}
+	for _, commit := range []string{second, third} {
+		if _, err := harness.pipeline.Push("api", map[string]string{"": commit}); !errors.Is(err, ErrQueued) {
+			t.Fatalf("push during a release = %v, want ErrQueued", err)
+		}
+	}
+
+	close(harness.agent.holdBuild)
+	<-harness.agent.releases
+	harness.await(t, first.ID, models.StatusSucceeded)
+	select {
+	case build := <-harness.agent.builds:
+		if build.Targets[0].Commit != third {
+			t.Fatalf("queued build commit = %q, want the newest push", build.Targets[0].Commit)
+		}
+	case <-time.After(settleWindow):
+		t.Fatal("the queued push did not start")
+	}
+	<-harness.agent.releases
+	waitFor(t, "the queued release to settle", func() bool {
+		active, err := harness.store.ProjectHasActiveRelease("api")
+		return err == nil && !active
+	})
+}
+
 func TestTriggerRejectsUnknownProject(t *testing.T) {
 	harness := newHarness(t)
-	if _, err := harness.pipeline.Trigger("ghost", "", models.TriggerManual, false); !errors.Is(err, ErrProjectNotFound) {
+	if _, err := harness.pipeline.Trigger("ghost", nil, models.TriggerManual, false); !errors.Is(err, ErrProjectNotFound) {
 		t.Fatalf("error = %v, want ErrProjectNotFound", err)
 	}
 }
@@ -111,7 +153,7 @@ func TestStopReleasesFleetMutexDuringAgentRoundTrip(t *testing.T) {
 		t.Fatal("stop held the fleet mutex during the agent round-trip")
 	}
 
-	if _, err := harness.pipeline.Trigger("api", "", models.TriggerManual, false); !errors.Is(err, ErrProjectBusy) {
+	if _, err := harness.pipeline.Trigger("api", nil, models.TriggerManual, false); !errors.Is(err, ErrProjectBusy) {
 		t.Fatalf("trigger during stop = %v, want ErrProjectBusy", err)
 	}
 	close(harness.agent.holdOperation)

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/agent/runner"
+	"github.com/mustafanass/uruflow/internal/docker"
 	"github.com/mustafanass/uruflow/internal/ufp"
 	"github.com/mustafanass/uruflow/pkg/logger"
 )
@@ -117,6 +118,28 @@ func (d *Daemon) collectContainers(ctx context.Context) ([]ufp.ContainerStatus, 
 		reported = append(reported, status)
 	}
 
+	counters := d.collectStats(ctx, reported)
+	previous := d.containerCPU
+	d.containerCPU = make(map[string]docker.CPUCounters, len(reported))
+	for index := range reported {
+		if counters[index].System == 0 {
+			continue
+		}
+		status := &reported[index]
+		d.containerCPU[status.ID] = counters[index]
+		percent, ok := counters[index].Percent(previous[status.ID])
+		if !ok {
+			continue
+		}
+		status.CPUPercent = percent
+		status.StatsAvailable = true
+	}
+
+	return reported, true
+}
+
+func (d *Daemon) collectStats(ctx context.Context, reported []ufp.ContainerStatus) []docker.CPUCounters {
+	counters := make([]docker.CPUCounters, len(reported))
 	statsCtx, stopAll := context.WithTimeout(ctx, statsTimeout)
 	defer stopAll()
 	var wg sync.WaitGroup
@@ -129,7 +152,7 @@ func (d *Daemon) collectContainers(ctx context.Context) ([]ufp.ContainerStatus, 
 		case slots <- struct{}{}:
 		case <-statsCtx.Done():
 			wg.Wait()
-			return reported, true
+			return counters
 		}
 		wg.Add(1)
 		go func(index int) {
@@ -140,15 +163,15 @@ func (d *Daemon) collectContainers(ctx context.Context) ([]ufp.ContainerStatus, 
 				return
 			}
 			status := &reported[index]
-			status.StatsAvailable = true
-			status.CPUPercent, status.MemoryUsage, status.MemoryLimit = stats.CPUPercent, stats.MemoryUsage, stats.MemoryLimit
+			status.MemoryUsage, status.MemoryLimit = stats.MemoryUsage, stats.MemoryLimit
 			status.NetworkRx, status.NetworkTx = stats.NetworkRx, stats.NetworkTx
 			status.PIDs, status.BlockRead, status.BlockWrite = stats.PIDs, stats.BlockRead, stats.BlockWrite
+			counters[index] = stats.CPU
 		}(index)
 	}
 	wg.Wait()
 
-	return reported, true
+	return counters
 }
 
 func shortID(id string) string {

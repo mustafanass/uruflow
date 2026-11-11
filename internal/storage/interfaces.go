@@ -77,6 +77,8 @@ type Store interface {
 	GetSecret(name string) ([]byte, error)
 	ListSecrets() ([]models.Secret, error)
 	ClaimWebhookDelivery(provider, deliveryID string) (bool, error)
+	ListPushSources() ([]models.PushSource, error)
+	SetPushSource(source models.PushSource, enabled bool) error
 
 	SetAllAgentsOffline() error
 	FailUnfinishedReleases(message string) error

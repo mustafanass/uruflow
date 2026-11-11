@@ -79,7 +79,7 @@ func TestBuildReuseRequiresMatchingInputsAndSuccessfulArtifacts(t *testing.T) {
 	}
 	request := func(rebuild bool) ufp.BuildRequest {
 		t.Helper()
-		release, err := h.pipeline.Trigger(project.Name, "", models.TriggerManual, rebuild)
+		release, err := h.pipeline.Trigger(project.Name, nil, models.TriggerManual, rebuild)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -181,7 +181,7 @@ func TestRegistryFailuresDoNotDispatchUnnecessaryBuilds(t *testing.T) {
 	if err := h.store.CreateRelease(previous); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.pipeline.Trigger(project.Name, "", models.TriggerManual, false); !errors.Is(err, ErrRegistryUnavailable) {
+	if _, err := h.pipeline.Trigger(project.Name, nil, models.TriggerManual, false); !errors.Is(err, ErrRegistryUnavailable) {
 		t.Fatalf("registry failure was not reported: %v", err)
 	}
 	select {

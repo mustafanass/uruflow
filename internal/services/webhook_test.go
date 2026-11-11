@@ -49,26 +49,36 @@ func TestNormalizeGitURLTreatsEveryFormAsOneRepository(t *testing.T) {
 	}
 }
 
-func TestWebhookDoesNotMatchAProjectByNameAlone(t *testing.T) {
+func TestWebhookMatchesOnlyEnabledSources(t *testing.T) {
 	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if err := store.SaveProject(&models.Project{
-		Name: "api", GitURL: "https://github.com/other/api.git", Branch: "main", AutoDeploy: true,
-	}); err != nil {
+	const repository, commit = "git@github.com:acme/api.git", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if err := store.SaveProject(&models.Project{Name: "api", Services: []models.Service{
+		{Name: "api", GitURL: repository, Branch: "main"},
+		{Name: "worker", GitURL: repository, Branch: "develop"},
+		{Name: "cache", Image: "redis:7"},
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	service := NewWebhookService(config.Default(), store, nil)
-	matches, err := service.match(&Push{
-		Repository: "api", Branch: "main", Identities: []string{"https://github.com/acme/api.git"},
-	})
-	if err != nil {
+	push := &Push{Repository: "api", Branch: "main", Commit: commit, Identities: []string{"https://github.com/acme/api.git"}}
+
+	if matches, err := service.match(push); err != nil || len(matches) != 0 {
+		t.Fatalf("matched a source that is not enabled: %+v %v", matches, err)
+	}
+	if err := store.SetPushSource(models.PushSource{Project: "api", Repository: repository, Branch: "main"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if len(matches) != 0 {
-		t.Fatalf("matched unrelated repository: %+v", matches)
+	matches, err := service.match(push)
+	if err != nil || len(matches) != 1 || len(matches["api"]) != 1 || matches["api"]["api"] != commit {
+		t.Fatalf("matches = %+v %v, want only service api pinned to the pushed commit", matches, err)
+	}
+	push.Identities = []string{"https://github.com/other/api.git"}
+	if matches, err := service.match(push); err != nil || len(matches) != 0 {
+		t.Fatalf("matched an unrelated repository by name: %+v %v", matches, err)
 	}
 }
 

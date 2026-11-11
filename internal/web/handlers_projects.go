@@ -108,6 +108,41 @@ func (h *Handler) saveProjectDocument(c *gin.Context) {
 	})
 }
 
+func (h *Handler) getPushSettings(c *gin.Context) {
+	w := c.Writer
+	u := currentUser(c)
+	if !requireProject(w, u, c.Param("name")) {
+		return
+	}
+	settings, err := h.operations.PushSettings(c.Param("name"))
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, settings)
+}
+
+func (h *Handler) setPushSource(c *gin.Context) {
+	w := c.Writer
+	r := c.Request
+	u := currentUser(c)
+	name := c.Param("name")
+	if !requireProject(w, u, name) {
+		return
+	}
+	var body struct {
+		Repository string `json:"repository"`
+		Branch     string `json:"branch"`
+		Enabled    bool   `json:"enabled"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	h.mutation(w, r, u, "project.push.update", name, func() (any, error) {
+		return h.operations.SetPushSource(name, body.Repository, body.Branch, body.Enabled)
+	})
+}
+
 func (h *Handler) projectAction(c *gin.Context) {
 	w := c.Writer
 	r := c.Request

@@ -109,7 +109,7 @@ The listener exposes `POST <webhook.path>` and `GET /health`. Public Git provide
 
 GitHub uses a push event, `application/json`, a delivery ID and `X-Hub-Signature-256`. GitLab uses a push event, event UUID and `X-Gitlab-Token`. Repeated delivery IDs are retained for 30 days and acknowledged without another attempt. Branch references use `refs/heads/*`.
 
-Projects created from the current service-based file schema are deployed explicitly from the browser. A webhook acknowledgement records request handling; inspect its response before treating it as a release. [Deployments](deployments.md) describes how releases start.
+Each project's **Settings** tab shows the webhook URL and enables deploy on push per repository and branch. A matching push releases exactly the pushed commit. A push that arrives while the project is busy is queued, the newest commit wins, and it starts when the project becomes idle; the queue does not survive a server restart. The response lists each matched project as `started`, `queued` or `failed`. GitHub `ping` events are acknowledged. [Deployments](deployments.md) describes how releases start.
 
 ## Agent settings
 

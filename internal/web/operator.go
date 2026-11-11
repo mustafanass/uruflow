@@ -38,6 +38,8 @@ type Operator interface {
 	SaveProjectDocument(string, bool, string, string, func(models.Project) error) (ops.Document, error)
 	Deploy(string, string, bool, bool) (*models.Release, error)
 	StopProject(string) error
+	PushSettings(string) (ops.PushSettings, error)
+	SetPushSource(string, string, string, bool) (ops.PushSettings, error)
 	ProjectReleases(string) ([]models.Release, error)
 	Release(string) (*models.Release, error)
 	Images(context.Context) (models.ImageCatalog, error)

@@ -181,6 +181,15 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 	PRIMARY KEY (provider, delivery_id)
 );
 
+CREATE TABLE IF NOT EXISTS push_sources (
+	project    TEXT NOT NULL,
+	repository TEXT NOT NULL,
+	branch     TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (project, repository, branch),
+	FOREIGN KEY (project) REFERENCES projects(name) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project);
 CREATE TRIGGER IF NOT EXISTS release_observe_insert AFTER INSERT ON releases BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
 CREATE TRIGGER IF NOT EXISTS release_observe_update AFTER UPDATE ON releases BEGIN UPDATE observation_revisions SET revision=revision+1 WHERE name='releases'; END;
