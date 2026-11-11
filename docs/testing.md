@@ -111,7 +111,7 @@ For this workspace, regression review includes:
 - Independent filtering, sorting and pagination when a page contains several tables.
 - Page scrolling with the pointer over a table, log following across buffer trimming, and pausing to read older output without moving the surrounding page.
 - Amber rollout progress despite temporary missing or stopped containers, with actual container failures and post-release degradation still visible.
-- Five primary destinations, ownership of direct resource links and redirects from retired index pages.
+- Primary destinations (Settings only for administrators), ownership of direct resource links and redirects from retired index pages, including `/system?tab=Settings`.
 - Full-width YAML and Secrets & variables tabs, large-file scrolling, modified-tab indicators, and independent edits retained while switching.
 - Simultaneous configuration and variable edits: saving or discarding one must preserve the other’s navigation guard.
 - Combined release overview, first and subsequent release diffs, saved-definition access and stable tab selection during live progress.
@@ -121,6 +121,8 @@ For this workspace, regression review includes:
 - Selective deployment and the Rebuild all images option; complete release records and live-release identification when unchanged containers keep running.
 - Compressed asset negotiation, identity fallback, HEAD responses and matching decoded content.
 - Empty fleets, unavailable metrics and state-dependent actions.
+- Administrator-only Settings sections and their direct addresses: show-once webhook secrets and the previous secret's overlap, listener and certificate changes, delivery history, registry cleanup and password rotation, agent reporting, and recovery after a revision conflict.
+- Administrator-only project deletion: refusal while a release runs or a runner is offline, the volume and image choices, and return to Projects with the project gone.
 
 Use controlled responses to force browser error states when needed. Use real Docker and authenticated UFP agents for claims about deployment execution; browser fixtures verify presentation and interaction.
 
@@ -130,4 +132,4 @@ Record the affected behavior, success and failure cases, commands, environment a
 
 Related: [Contributing](../CONTRIBUTING.md), [Architecture](architecture.md), [Upgrading](upgrading.md).
 
-Registry changes also verify bounded concurrent tag listing without manifest requests, partial results, cached reads during refresh, OCI index sizes and shared children. Retention tests cover pinned and observed images, distinct per-service history, expired restore rejection, and exclusion of releases and project edits during maintenance. The focused live registry test proves that garbage collection removes obsolete blobs while retained OCI images remain readable.
+Registry changes also verify bounded concurrent tag listing without manifest requests, partial results, cached reads during refresh, OCI index sizes and shared children. Retention tests cover pinned and observed images, distinct per-service history, expired restore rejection, and exclusion of releases and project edits during maintenance. The focused live registry test proves that garbage collection removes obsolete blobs while retained OCI images remain readable. Password rotation is refused while releases run, and the live rotation test proves the previous login stops working while the server's own client follows the new one.

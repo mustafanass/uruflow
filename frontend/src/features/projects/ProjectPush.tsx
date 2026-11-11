@@ -1,35 +1,46 @@
-import { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+import { Power } from 'lucide-react'
 
 import { api, segment } from '@/shared/api'
 import { useLoad, useWorkspace } from '@/shared/hooks'
 import type { PushSettings, PushSource } from '@/shared/types'
-import { Code, DataTable, ErrorState, Facts, Panel, Spinner } from '@/shared/ui'
-import { errorText } from '@/shared/utils'
+import {
+  Badge,
+  Code,
+  DataTable,
+  ErrorState,
+  Facts,
+  Panel,
+  Spinner,
+} from '@/shared/ui'
 
 export function ProjectPush({ name }: { name: string }) {
-  const { notify } = useWorkspace()
+  const { canAdmin, confirm } = useWorkspace()
   const url = '/api/projects/' + segment(name) + '/push'
   const { data, error, loading, reload, setData } = useLoad<PushSettings>(url)
-  const [saving, setSaving] = useState(false)
-  async function toggle(source: PushSource, enabled: boolean) {
-    setSaving(true)
-    try {
-      setData(
-        await api<PushSettings>(url, {
-          method: 'PUT',
-          body: {
-            repository: source.repository,
-            branch: source.branch,
-            enabled,
-          },
-        }),
-      )
-      notify(enabled ? 'Deploy on push enabled' : 'Deploy on push disabled')
-    } catch (failure) {
-      notify(errorText(failure), 'error')
-    } finally {
-      setSaving(false)
-    }
+  function toggle(source: PushSource) {
+    const enabled = !source.enabled
+    confirm({
+      title: enabled ? 'Enable deploy on push' : 'Disable deploy on push',
+      description: enabled
+        ? `Every signed push to ${source.branch} builds and releases the exact commit that was pushed.`
+        : `Pushes to ${source.branch} no longer start releases. Running containers stay as they are.`,
+      label: enabled ? 'Enable' : 'Disable',
+      danger: !enabled,
+      success: enabled ? 'Deploy on push enabled' : 'Deploy on push disabled',
+      run: async () =>
+        setData(
+          await api<PushSettings>(url, {
+            method: 'PUT',
+            body: {
+              repository: source.repository,
+              branch: source.branch,
+              enabled,
+            },
+          }),
+        ),
+    })
   }
   return error ? (
     <ErrorState message={error} retry={reload} />
@@ -42,9 +53,18 @@ export function ProjectPush({ name }: { name: string }) {
     >
       <Facts
         items={[
-          ['Webhook URL', <Code value={data.endpoint} copy />],
-          ['Secret', <Code value="webhook.secret" />],
-          ['Events', 'Push'],
+          [
+            'Push deliveries',
+            <Badge value={data.receiving ? 'enabled' : 'disabled'} />,
+          ],
+          [
+            'Webhook',
+            canAdmin ? (
+              <Link to="/settings/webhooks">Manage in Settings → Webhooks</Link>
+            ) : (
+              'Managed by administrators in Settings → Webhooks'
+            ),
+          ],
         ]}
       />
       <DataTable
@@ -72,16 +92,16 @@ export function ProjectPush({ name }: { name: string }) {
           {
             key: 'enabled',
             title: 'Deploy on push',
+            render: (s) => <Badge value={s.enabled ? 'enabled' : 'disabled'} />,
+          },
+          {
+            key: 'actions',
+            title: '',
             render: (s) => (
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={s.enabled}
-                  disabled={saving}
-                  onChange={(event) => toggle(s, event.target.checked)}
-                />
-                {s.enabled ? 'Enabled' : 'Disabled'}
-              </label>
+              <button className="button small" onClick={() => toggle(s)}>
+                <Power size={14} />
+                {s.enabled ? 'Disable' : 'Enable'}
+              </button>
             ),
           },
         ]}

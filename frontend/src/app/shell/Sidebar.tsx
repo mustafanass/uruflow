@@ -9,7 +9,7 @@ import { useWorkspace } from '@/shared/hooks'
 import { Brand } from './Brand'
 
 export function Sidebar({ open, close }: { open: boolean; close: () => void }) {
-  const { snapshot, stale, connection } = useWorkspace()
+  const { snapshot, stale, connection, canAdmin } = useWorkspace()
   const state = stale
     ? 'Data stale'
     : connection === 'live'
@@ -86,21 +86,23 @@ export function Sidebar({ open, close }: { open: boolean; close: () => void }) {
           </div>
         </div>
         <nav aria-label="Main navigation">
-          {navigation.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              title={item.label}
-              aria-current={section === item.to ? 'page' : undefined}
-              className={section === item.to ? 'active' : ''}
-            >
-              <item.icon size={18} />
-              <span>{item.label}</span>
-              {item.to === '/' && !!snapshot?.alerts.length && (
-                <em>{snapshot.alerts.length}</em>
-              )}
-            </Link>
-          ))}
+          {navigation
+            .filter((item) => canAdmin || !item.admin)
+            .map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                title={item.label}
+                aria-current={section === item.to ? 'page' : undefined}
+                className={section === item.to ? 'active' : ''}
+              >
+                <item.icon size={18} />
+                <span>{item.label}</span>
+                {item.to === '/' && !!snapshot?.alerts.length && (
+                  <em>{snapshot.alerts.length}</em>
+                )}
+              </Link>
+            ))}
         </nav>
         <div className="sidebar-bottom">
           <Link

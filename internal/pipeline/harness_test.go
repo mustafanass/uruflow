@@ -54,6 +54,7 @@ type fakeAgent struct {
 	builds        chan ufp.BuildRequest
 	releases      chan ufp.ReleaseRequest
 	operations    chan string
+	removals      chan ufp.ProjectRemoval
 }
 
 func (a *fakeAgent) HandleRequest(request *ufp.Request) (any, error) {
@@ -74,7 +75,14 @@ func (a *fakeAgent) HandleRequest(request *ufp.Request) (any, error) {
 		a.releases <- payload
 		go a.finishRelease(payload)
 		return ufp.Accepted{JobID: payload.JobID}, nil
-	case ufp.MethodReleaseStop, ufp.MethodReleaseRemove:
+	case ufp.MethodReleaseRemove:
+		var payload ufp.ProjectRemoval
+		if err := request.Decode(&payload); err != nil {
+			return nil, err
+		}
+		a.removals <- payload
+		return ufp.Accepted{}, nil
+	case ufp.MethodReleaseStop:
 		a.operations <- request.Method
 		if a.holdOperation != nil {
 			<-a.holdOperation
@@ -220,7 +228,7 @@ func newHarness(t *testing.T) *harness {
 
 	agent := &fakeAgent{
 		conn: conn, builds: make(chan ufp.BuildRequest, 4), releases: make(chan ufp.ReleaseRequest, 4),
-		operations: make(chan string, 4),
+		operations: make(chan string, 4), removals: make(chan ufp.ProjectRemoval, 4),
 	}
 	go conn.Serve(context.Background(), agent)
 	if err := conn.SendEvent(ufp.TopicRegistryReady, ufp.Accepted{}); err != nil {

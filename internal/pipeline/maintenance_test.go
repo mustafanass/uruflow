@@ -93,6 +93,9 @@ func TestMaintenanceGateExcludesReleasesAndReservations(t *testing.T) {
 	if ran || err != nil {
 		t.Fatal(ran, err)
 	}
+	if err = pipeline.RegistryExclusive(func() error { t.Fatal("registry change entered active release"); return nil }); !errors.Is(err, ErrRegistryBusy) {
+		t.Fatalf("registry change during release: %v", err)
+	}
 }
 func TestExpiredArtifactsCannotBeRestored(t *testing.T) {
 	store, err := sqlite.New(":memory:")

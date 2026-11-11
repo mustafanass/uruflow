@@ -28,8 +28,9 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/pipeline"
 	"github.com/mustafanass/uruflow/internal/storage"
@@ -51,9 +52,21 @@ var (
 )
 
 type WebhookService struct {
-	cfg      *config.Config
 	store    storage.Store
 	pipeline *pipeline.Pipeline
+
+	mu            sync.RWMutex
+	enabled       bool
+	secret        string
+	previous      string
+	previousUntil time.Time
+	rejection     Rejection
+}
+
+type Rejection struct {
+	At       time.Time `json:"at"`
+	Provider string    `json:"provider"`
+	Reason   string    `json:"reason"`
 }
 
 type Push struct {
@@ -75,8 +88,53 @@ type Result struct {
 	Outcomes []Outcome
 }
 
-func NewWebhookService(cfg *config.Config, store storage.Store, releases *pipeline.Pipeline) *WebhookService {
-	return &WebhookService{cfg: cfg, store: store, pipeline: releases}
+func NewWebhookService(store storage.Store, releases *pipeline.Pipeline) *WebhookService {
+	return &WebhookService{store: store, pipeline: releases}
+}
+
+func (s *WebhookService) Apply(enabled bool, secret, previous string, previousUntil time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.enabled = enabled
+	s.secret = secret
+	s.previous = previous
+	s.previousUntil = previousUntil
+}
+
+func (s *WebhookService) Enabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.enabled
+}
+
+func (s *WebhookService) Reject(provider, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rejection = Rejection{At: time.Now(), Provider: provider, Reason: reason}
+}
+
+func (s *WebhookService) LastRejection() (Rejection, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rejection, !s.rejection.At.IsZero()
+}
+
+func (s *WebhookService) Record(provider, deliveryID string, result *Result, failure error) {
+	delivery := models.WebhookDelivery{Provider: provider, DeliveryID: deliveryID}
+	if result != nil {
+		delivery.Repository, delivery.Branch, delivery.Commit = result.Repository, result.Branch, result.Commit
+	}
+	switch {
+	case errors.Is(failure, ErrNoMatch):
+		delivery.Result, delivery.Detail = models.DeliveryIgnored, failure.Error()
+	case failure != nil:
+		delivery.Result, delivery.Detail = models.DeliveryFailed, failure.Error()
+	default:
+		delivery.Result, delivery.Detail = summarize(result.Outcomes)
+	}
+	if err := s.store.RecordWebhookDelivery(delivery); err != nil {
+		logger.Warn("[WEBHOOK] record delivery %s: %v", deliveryID, err)
+	}
 }
 
 func (s *WebhookService) Handle(provider string, payload []byte) (*Result, error) {
@@ -90,7 +148,7 @@ func (s *WebhookService) Handle(provider string, payload []byte) (*Result, error
 		return nil, err
 	}
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("%s on %s: %w", push.Repository, push.Branch, ErrNoMatch)
+		return &Result{Push: *push}, fmt.Errorf("%s on %s: %w", push.Repository, push.Branch, ErrNoMatch)
 	}
 
 	logger.Info("[WEBHOOK] %s pushed %s@%s on %s, matching %d project(s)",
@@ -146,26 +204,62 @@ func (s *WebhookService) match(push *Push) (map[string]map[string]string, error)
 	return matches, nil
 }
 
-func (s *WebhookService) VerifyGitHub(payload []byte, signature string) bool {
-	if s.cfg.Webhook.Secret == "" {
-		return false
+func summarize(outcomes []Outcome) (string, string) {
+	result := models.DeliveryFailed
+	details := make([]string, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		switch {
+		case outcome.Err != nil:
+			details = append(details, outcome.Project+" failed: "+outcome.Err.Error())
+		case outcome.Queued:
+			details = append(details, outcome.Project+" queued")
+			if result == models.DeliveryFailed {
+				result = models.DeliveryQueued
+			}
+		default:
+			details = append(details, outcome.Project+" started")
+			result = models.DeliveryStarted
+		}
 	}
+	return result, strings.Join(details, ", ")
+}
+
+func (s *WebhookService) VerifyGitHub(payload []byte, signature string) bool {
 	if !strings.HasPrefix(signature, signaturePrefix) {
 		return false
 	}
 
-	mac := hmac.New(sha256.New, []byte(s.cfg.Webhook.Secret))
-	mac.Write(payload)
-	expected := hex.EncodeToString(mac.Sum(nil))
-
-	return hmac.Equal([]byte(strings.TrimPrefix(signature, signaturePrefix)), []byte(expected))
+	for _, secret := range s.secrets() {
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(payload)
+		expected := hex.EncodeToString(mac.Sum(nil))
+		if hmac.Equal([]byte(strings.TrimPrefix(signature, signaturePrefix)), []byte(expected)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *WebhookService) VerifyGitLab(token string) bool {
-	if s.cfg.Webhook.Secret == "" {
-		return false
+	for _, secret := range s.secrets() {
+		if hmac.Equal([]byte(token), []byte(secret)) {
+			return true
+		}
 	}
-	return hmac.Equal([]byte(token), []byte(s.cfg.Webhook.Secret))
+	return false
+}
+
+func (s *WebhookService) secrets() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	secrets := make([]string, 0, 2)
+	if s.secret != "" {
+		secrets = append(secrets, s.secret)
+	}
+	if s.previous != "" && time.Now().Before(s.previousUntil) {
+		secrets = append(secrets, s.previous)
+	}
+	return secrets
 }
 
 func (s *WebhookService) ClaimDelivery(provider, deliveryID string) (bool, error) {

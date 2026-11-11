@@ -61,6 +61,7 @@ const (
 	TopicJobStatus      = "job.status"
 	TopicMetrics        = "metrics.push"
 	TopicContainerLog   = "container.log"
+	TopicAgentConfig    = "agent.config"
 	TopicTerminalOutput = "terminal.output"
 )
 
@@ -81,6 +82,17 @@ const (
 )
 
 const (
+	AgentConfigSince     = "3.0.6"
+	ResourceRemovalSince = "3.0.6"
+	DefaultMetricsSec    = 10
+	DefaultReconnectSec  = 5
+	MinMetricsSec        = 2
+	MaxMetricsSec        = 300
+	MinReconnectSec      = 1
+	MaxReconnectSec      = 60
+)
+
+const (
 	MaxTerminalColumns = 500
 	MaxTerminalRows    = 200
 	MaxTerminalInput   = 64 * 1024
@@ -90,6 +102,11 @@ type LogFunc func(stream, line string)
 
 func (r Role) Valid() bool {
 	return r == RoleBuilder || r == RoleRunner
+}
+
+func ValidAgentConfig(config AgentConfig) bool {
+	return config.MetricsSec >= MinMetricsSec && config.MetricsSec <= MaxMetricsSec &&
+		config.ReconnectSec >= MinReconnectSec && config.ReconnectSec <= MaxReconnectSec
 }
 
 func ValidTerminalSize(columns, rows int) bool {

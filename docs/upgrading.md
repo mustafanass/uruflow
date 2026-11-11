@@ -25,7 +25,7 @@ Both commands should report `3.0.6`. The frontend package uses the same release 
 3. Replace and restart each builder and runner agent with the matching `build/uruflow-agent` binary.
 4. Confirm recent agent samples and registry readiness before deploying.
 
-SQLite creates the current tables and adds missing columns when opened. Preserve the existing project definitions, CA and encryption key. Server startup closes interrupted releases as failed and refreshes observations as agents reconnect.
+SQLite creates the current tables and adds missing columns when opened. The first start moves webhook settings, the registry password and the registry cleanup window from `config.yaml` into the database, so existing repository webhooks and agent logins keep working. Manage them afterwards in **Settings** and remove the `webhook` section, `server.http_port`, `registry.password` and `registry.retain_releases` from the file. Preserve the existing project definitions, CA and encryption key. Server startup closes interrupted releases as failed and refreshes observations as agents reconnect.
 
 URUFLOW 3 keeps UFP frame version `0x04`. Update agents for independent browser log streams and completion messages. The product major version does not renumber the protocol byte.
 

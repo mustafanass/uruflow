@@ -57,11 +57,20 @@ func TestMissingKeyMaterialFailsClosed(t *testing.T) {
 	if err := validateKeyMaterial(cfg, store); err == nil || !strings.Contains(err.Error(), "secret encryption key") {
 		t.Fatal("missing vault key was replaced while encrypted secrets existed")
 	}
+	if err := store.UpdateSecrets(nil, []string{"token"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(&models.Setting{Name: models.SettingRegistry, Value: "{}"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateKeyMaterial(cfg, store); err == nil || !strings.Contains(err.Error(), "encrypted settings") {
+		t.Fatal("missing vault key was replaced while encrypted settings existed")
+	}
 }
 
 func TestWebhookListenerDoesNotExposeOperatorRoutes(t *testing.T) {
 	server := &Server{cfg: config.Default()}
-	handler := server.routes()
+	handler := server.routes("/webhook")
 	for _, path := range []string{"/", "/api/session", "/api/snapshot", "/projects"} {
 		req := httptest.NewRequest("GET", path, nil)
 		response := httptest.NewRecorder()

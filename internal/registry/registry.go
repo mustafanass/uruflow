@@ -69,6 +69,7 @@ type Registry struct {
 	clientErr     error
 	catalogCache  catalogCache
 	maintaining   atomic.Bool
+	credentialsMu sync.RWMutex
 }
 
 func New(options Options, engine *docker.Client) *Registry {
@@ -190,28 +191,55 @@ func (r *Registry) waitHealthy(ctx context.Context) error {
 	return fmt.Errorf("registry did not become healthy on %s: %w", r.options.Address, lastErr)
 }
 
+func (r *Registry) SetPassword(ctx context.Context, password string) error {
+	if !r.maintaining.CompareAndSwap(false, true) {
+		return fmt.Errorf("registry maintenance is already running")
+	}
+	defer r.maintaining.Store(false)
+	r.credentialsMu.Lock()
+	r.options.Password = password
+	r.credentialsMu.Unlock()
+	if err := r.writeHtpasswd(); err != nil {
+		return fmt.Errorf("registry credentials: %w", err)
+	}
+	if err := r.Stop(ctx); err != nil {
+		return err
+	}
+	if err := r.docker.Start(ctx, r.containerName); err != nil {
+		return fmt.Errorf("start registry: %w", err)
+	}
+	return r.waitHealthy(ctx)
+}
+
+func (r *Registry) credentials() (string, string) {
+	r.credentialsMu.RLock()
+	defer r.credentialsMu.RUnlock()
+	return r.options.Username, r.options.Password
+}
+
 func (r *Registry) writeHtpasswd() error {
+	username, password := r.credentials()
 	if current, err := os.ReadFile(r.options.HtpasswdPath); err == nil {
-		if r.credentialsMatch(current) {
+		if credentialsMatch(current, username, password) {
 			return nil
 		}
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(r.options.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 
-	line := fmt.Sprintf("%s:%s\n", r.options.Username, hash)
+	line := fmt.Sprintf("%s:%s\n", username, hash)
 	return os.WriteFile(r.options.HtpasswdPath, []byte(line), 0o600)
 }
 
-func (r *Registry) credentialsMatch(current []byte) bool {
+func credentialsMatch(current []byte, username, password string) bool {
 	user, hash, found := strings.Cut(strings.TrimSpace(string(current)), ":")
-	if !found || user != r.options.Username {
+	if !found || user != username {
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.options.Password)) == nil
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 func (r *Registry) Maintaining() bool { return r.maintaining.Load() }

@@ -20,7 +20,6 @@ package config
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -29,7 +28,6 @@ func TestLoadDoesNotRegenerateMissingCredentials(t *testing.T) {
 	cfg.Server.Advertise = "127.0.0.1"
 	cfg.Registry.Host = "127.0.0.1"
 	cfg.Registry.Password = ""
-	cfg.Webhook.Secret = ""
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := cfg.Save(path); err != nil {
 		t.Fatal(err)
@@ -40,14 +38,7 @@ func TestLoadDoesNotRegenerateMissingCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	if loaded.Registry.Password != "" || loaded.Webhook.Secret != "" {
-		t.Fatalf("missing credentials were regenerated: password=%q secret=%q", loaded.Registry.Password, loaded.Webhook.Secret)
-	}
-	if err := loaded.Validate(); err == nil || !strings.Contains(err.Error(), "registry.password") {
-		t.Fatalf("validation error = %v", err)
-	}
-	loaded.Registry.Password = strings.Repeat("p", 32)
-	if err := loaded.Validate(); err == nil || !strings.Contains(err.Error(), "webhook.secret") {
-		t.Fatalf("validation error = %v", err)
+		t.Fatalf("missing credentials were generated into the file: password=%q secret=%q", loaded.Registry.Password, loaded.Webhook.Secret)
 	}
 }
 
@@ -69,9 +60,9 @@ func TestWebInterfaceIsPrivateUnlessTLSExplicitlyEnabled(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Web.Port = cfg.Server.HTTPPort
+	cfg.Web.Port = cfg.Server.UFPPort
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("webhook and operator ports overlap")
+		t.Fatal("UFP and operator ports overlap")
 	}
 }
 

@@ -215,7 +215,8 @@ func (r *Registry) call(ctx context.Context, method, path string) (*http.Respons
 	if err != nil {
 		return nil, err
 	}
-	request.SetBasicAuth(r.options.Username, r.options.Password)
+	username, password := r.credentials()
+	request.SetBasicAuth(username, password)
 	request.Header.Set("Accept", strings.Join([]string{ociIndexMediaType, ociManifestMediaType, dockerListMediaType, manifestMediaType}, ", "))
 
 	return client.Do(request)

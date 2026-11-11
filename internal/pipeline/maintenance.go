@@ -28,10 +28,7 @@ import (
 	"github.com/mustafanass/uruflow/pkg/logger"
 )
 
-func (p *Pipeline) StartRegistryMaintenance(ctx context.Context, retain int) {
-	if retain <= 0 {
-		return
-	}
+func (p *Pipeline) StartRegistryMaintenance(ctx context.Context, retain func() int) {
 	p.maintenanceDone = make(chan struct{})
 	go func() {
 		defer close(p.maintenanceDone)
@@ -43,8 +40,13 @@ func (p *Pipeline) StartRegistryMaintenance(ctx context.Context, retain int) {
 				return
 			case <-timer.C:
 			}
+			window := retain()
+			if window <= 0 {
+				timer.Reset(15 * time.Minute)
+				continue
+			}
 			pass, cancel := context.WithTimeout(ctx, 5*time.Minute)
-			ran, err := p.maintainRegistry(pass, retain)
+			ran, err := p.maintainRegistry(pass, window)
 			cancel()
 			delay := 24 * time.Hour
 			if err != nil {
@@ -199,6 +201,17 @@ func retentionReferences(releases []models.Release, projects []models.Project, c
 		keep = append(keep, reference)
 	}
 	return old, keep
+}
+
+func (p *Pipeline) RegistryExclusive(run func() error) error {
+	ran, err := p.registryMaintenance(run)
+	if err != nil {
+		return err
+	}
+	if !ran {
+		return ErrRegistryBusy
+	}
+	return nil
 }
 
 func (p *Pipeline) BeginRegistryUpdate() (func(), error) {

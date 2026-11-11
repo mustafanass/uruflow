@@ -160,3 +160,48 @@ func TestLiveRegistryRejectsAnonymousAndUntrustedCallers(t *testing.T) {
 		t.Errorf("a plaintext request was served with %s, want a rejection", plain.Status)
 	}
 }
+
+func TestLiveRegistryPasswordRotationRevokesTheOldLogin(t *testing.T) {
+	registry := liveRegistry(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	if err := registry.Ensure(ctx, nil); err != nil {
+		t.Fatalf("bring the registry up: %v", err)
+	}
+	previous := registry.Options().Password
+	if err := registry.SetPassword(ctx, "rotated-live-password"); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if registry.Maintaining() {
+		t.Error("the registry still reports maintenance after rotating")
+	}
+
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM([]byte(registry.Options().CACert))
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}},
+	}
+
+	for password, want := range map[string]int{previous: http.StatusUnauthorized, "rotated-live-password": http.StatusOK} {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+registry.Options().Address+"/v2/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.SetBasicAuth(registry.Options().Username, password)
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatalf("login request: %v", err)
+		}
+		response.Body.Close()
+		if response.StatusCode != want {
+			t.Errorf("login with %q got %s, want %d", password, response.Status, want)
+		}
+	}
+
+	if err := registry.Health(ctx); err != nil {
+		t.Fatalf("the server's own registry client kept the old login: %v", err)
+	}
+}

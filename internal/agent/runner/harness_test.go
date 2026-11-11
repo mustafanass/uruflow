@@ -42,6 +42,8 @@ type fakeEngine struct {
 	waitReadyCalls int
 	networks       []docker.NetworkResource
 	volumes        []docker.VolumeResource
+	listed         []docker.Container
+	deleted        []string
 	state          *docker.State
 	jobLogs        int
 	streamLogID    string
@@ -110,7 +112,15 @@ func (f *fakeEngine) Start(_ context.Context, name string) error {
 	return nil
 }
 func (f *fakeEngine) ListContainers(context.Context, bool) ([]docker.Container, error) {
-	return nil, nil
+	return f.listed, nil
+}
+func (f *fakeEngine) RemoveNetwork(_ context.Context, name string) error {
+	f.deleted = append(f.deleted, "network:"+name)
+	return nil
+}
+func (f *fakeEngine) RemoveVolume(_ context.Context, name string) error {
+	f.deleted = append(f.deleted, "volume:"+name)
+	return nil
 }
 func (f *fakeEngine) EnsureNetwork(_ context.Context, resource docker.NetworkResource) error {
 	f.networks = append(f.networks, resource)

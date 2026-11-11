@@ -4,13 +4,13 @@ The browser workspace is the operator interface for URUFLOW. Its pages share liv
 
 ## Navigation
 
-| Page     | Work                                                                                  |
-| -------- | ------------------------------------------------------------------------------------- |
-| Overview | Check fleet status, open active alerts and explore the live infrastructure graph      |
-| Projects | Manage project environments and follow releases across the fleet                      |
-| Agents   | Enroll machines, inspect host resources and browse container inventory                |
-| Activity | Follow deployment, connectivity and alert events; inspect alert history               |
-| System   | Inspect the server and registry, manage access and review the administrator audit log |
+| Page     | Work                                                                                                |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| Overview | Check fleet status, open active alerts and explore the live infrastructure graph                    |
+| Projects | Manage project environments and follow releases across the fleet                                    |
+| Agents   | Enroll machines, inspect host resources and browse container inventory                              |
+| Activity | Follow deployment, connectivity and alert events; inspect alert history                             |
+| System   | Inspect the server and registry, manage settings and access, and review the administrator audit log |
 
 Use **Ctrl/⌘ K** to find projects, agents, containers and releases directly. Resource detail URLs remain stable. Existing index links for Infrastructure, Releases, Containers, Alerts and Registry open their new locations.
 
@@ -46,7 +46,7 @@ If a save conflicts with another revision, use **Copy unsaved edits** if needed,
 
 Saving does not deploy. [Projects](projects.md) owns file layout and variable syntax.
 
-**Settings** shows the webhook URL and enables deploy on push for each repository and branch the project builds from.
+**Settings** shows whether push deliveries are on and enables deploy on push for each repository and branch the project builds from. Administrators manage the webhook itself in **Settings → Webhooks**, and delete the project from **Delete project**, choosing whether its data volumes and registry images go too.
 
 ## Releases
 
@@ -64,11 +64,13 @@ Operators with access to the project see **Terminal** and **Restart** on project
 
 Enrollment displays its setup command once. Save it, then confirm **I saved the enrollment command** before closing an unconnected agent's setup. The dialog also closes after the agent connects. The CA download remains available on Agents.
 
-## Activity and System
+## Activity, System and Settings
 
 Activity combines the live event feed with release records and durable alert history. Filter the timeline by event type or resource. The Alerts view includes active and resolved conditions. Operators can resolve alerts within their project scope.
 
 System groups **Server**, **Access** and **Audit log**. Server includes host resources and the cached registry catalogue. Repository names and tags appear first; opening an image loads its digest and size. A partial manifest reports **Size unknown**. Fleet access is required for registry data. Access and Audit log are administrator-only; shared Activity does not expose administrative audit records.
+
+**Settings** is a separate administrator-only destination with a grouped section menu. **Deployments** holds **Webhooks** (receiving on or off, listener, certificate and secret) and **Deliveries**; **Infrastructure** holds **Registry** (image cleanup and password rotation) and **Agent reporting**. Each section has its own address, such as `/settings/registry`, and the menu becomes a scrolling row on narrow screens. Older `/system?tab=Settings` links open Settings.
 
 The live event feed is a bounded server buffer. Release records, alert history and the administrative audit use persistent storage. [Security](security.md) explains roles, project grants and the local account recovery command.
 

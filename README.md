@@ -58,7 +58,7 @@ their hosts.
 | :------------------ | :--------------- | :------------------------------------------------------------- |
 | Web workspace       | `127.0.0.1:9002` | Browser API, sessions and live streams; HTTPS outside loopback |
 | UFP                 | `9001`           | Agents, over TLS 1.3                                           |
-| Webhooks and health | `9000`           | GitHub, GitLab and monitors                                    |
+| Webhooks and health | `9000`           | GitHub, GitLab and monitors; set in **Settings → Webhooks**    |
 | Registry            | `5000`           | Agents, with TLS and authentication                            |
 
 ## Installation

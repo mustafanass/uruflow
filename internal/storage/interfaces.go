@@ -24,7 +24,10 @@ import (
 	"github.com/mustafanass/uruflow/internal/models"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound = errors.New("not found")
+	ErrConflict = errors.New("changed since it was read")
+)
 
 type Store interface {
 	CreateAgent(agent *models.Agent) error
@@ -77,6 +80,10 @@ type Store interface {
 	GetSecret(name string) ([]byte, error)
 	ListSecrets() ([]models.Secret, error)
 	ClaimWebhookDelivery(provider, deliveryID string) (bool, error)
+	RecordWebhookDelivery(delivery models.WebhookDelivery) error
+	ListWebhookDeliveries(limit int) ([]models.WebhookDelivery, error)
+	GetSetting(name string) (*models.Setting, error)
+	SaveSetting(setting *models.Setting) error
 	ListPushSources() ([]models.PushSource, error)
 	SetPushSource(source models.PushSource, enabled bool) error
 

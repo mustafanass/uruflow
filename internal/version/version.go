@@ -18,4 +18,42 @@
 
 package version
 
+import (
+	"strconv"
+	"strings"
+)
+
 const Current = "3.0.6"
+
+func AtLeast(current, minimum string) bool {
+	have, ok := parse(current)
+	if !ok {
+		return false
+	}
+	want, ok := parse(minimum)
+	if !ok {
+		return false
+	}
+	for index := range have {
+		if have[index] != want[index] {
+			return have[index] > want[index]
+		}
+	}
+	return true
+}
+
+func parse(value string) ([3]int, bool) {
+	var parts [3]int
+	fields := strings.SplitN(strings.TrimPrefix(value, "v"), ".", 3)
+	if len(fields) != 3 {
+		return parts, false
+	}
+	for index, field := range fields {
+		number, err := strconv.Atoi(field)
+		if err != nil || number < 0 {
+			return parts, false
+		}
+		parts[index] = number
+	}
+	return parts, true
+}

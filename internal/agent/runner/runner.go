@@ -60,6 +60,8 @@ type engine interface {
 type resourceEngine interface {
 	EnsureNetwork(context.Context, docker.NetworkResource) error
 	EnsureVolume(context.Context, docker.VolumeResource) error
+	RemoveNetwork(context.Context, string) error
+	RemoveVolume(context.Context, string) error
 }
 
 type logEngine interface {
@@ -374,24 +376,36 @@ func (r *Runner) Stop(ctx context.Context, project string) error {
 	return errors.Join(failures...)
 }
 
-func (r *Runner) Remove(ctx context.Context, project string) error {
+func (r *Runner) Remove(ctx context.Context, removal ufp.ProjectRemoval) error {
 	containers, err := r.docker.ListContainers(ctx, true)
 	if err != nil {
 		return err
 	}
 	var failures []error
-	found := false
 	for _, container := range containers {
-		if container.Project != project {
+		if container.Project != removal.Project {
 			continue
 		}
-		found = true
 		if err := r.docker.Remove(ctx, container.Name, true); err != nil {
 			failures = append(failures, err)
 		}
 	}
-	if !found {
-		return nil
+	if len(failures) > 0 || len(removal.Networks) == 0 && len(removal.Volumes) == 0 {
+		return errors.Join(failures...)
+	}
+	engine, ok := r.docker.(resourceEngine)
+	if !ok {
+		return fmt.Errorf("docker engine cannot manage declared resources")
+	}
+	for _, network := range removal.Networks {
+		if err := engine.RemoveNetwork(ctx, network); err != nil {
+			failures = append(failures, fmt.Errorf("remove network %s: %w", network, err))
+		}
+	}
+	for _, volume := range removal.Volumes {
+		if err := engine.RemoveVolume(ctx, volume); err != nil {
+			failures = append(failures, fmt.Errorf("remove volume %s: %w", volume, err))
+		}
 	}
 	return errors.Join(failures...)
 }

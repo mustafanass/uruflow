@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mustafanass/uruflow/internal/ufp"
+	"github.com/mustafanass/uruflow/internal/version"
 )
 
 type Session struct {
@@ -127,4 +128,15 @@ func (s *Session) pushRegistry() error {
 		return nil
 	}
 	return s.conn.SendEvent(ufp.TopicRegistryConfig, registry)
+}
+
+func (s *Session) pushAgentConfig() error {
+	s.server.mu.RLock()
+	config := s.server.agents
+	s.server.mu.RUnlock()
+
+	if config == nil || !version.AtLeast(s.identity.Version, ufp.AgentConfigSince) {
+		return nil
+	}
+	return s.conn.SendEvent(ufp.TopicAgentConfig, *config)
 }

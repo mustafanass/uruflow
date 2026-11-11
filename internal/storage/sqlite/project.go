@@ -81,14 +81,32 @@ func (s *Store) ListProjects() ([]models.Project, error) {
 }
 
 func (s *Store) DeleteProject(name string) error {
-	result, err := s.db.Exec(`DELETE FROM projects WHERE name = ?`, name)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`DELETE FROM projects WHERE name = ?`, name)
 	if err != nil {
 		return err
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
 		return storage.ErrNotFound
 	}
-	return nil
+	for _, table := range []string{"releases", "alerts", "containers"} {
+		if _, err = tx.Exec(`DELETE FROM `+table+` WHERE project = ?`, name); err != nil {
+			return err
+		}
+	}
+	prefix := name + "."
+	if _, err = tx.Exec(`DELETE FROM secrets WHERE substr(name, 1, ?) = ?`, len(prefix), prefix); err != nil {
+		return err
+	}
+	if err = removeProjectGrants(tx, name); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func scanProject(row scanner) (*models.Project, error) {

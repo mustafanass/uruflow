@@ -51,6 +51,7 @@ type Server struct {
 	cfg      *config.Config
 	store    storage.Store
 	registry ufp.RegistryConfig
+	agents   *ufp.AgentConfig
 	activity *activity.Feed
 
 	listener net.Listener
@@ -79,6 +80,40 @@ func (s *Server) SetRegistry(registry ufp.RegistryConfig) {
 	s.mu.Lock()
 	s.registry = registry
 	s.mu.Unlock()
+}
+
+func (s *Server) SetAgentConfig(config ufp.AgentConfig) {
+	s.mu.Lock()
+	s.agents = &config
+	s.mu.Unlock()
+}
+
+func (s *Server) UpdateRegistry(registry ufp.RegistryConfig) {
+	s.SetRegistry(registry)
+	for _, session := range s.currentSessions() {
+		if err := session.pushRegistry(); err != nil {
+			logger.Warn("[LINK] registry update to %s failed: %v", session.identity.Name, err)
+		}
+	}
+}
+
+func (s *Server) UpdateAgentConfig(config ufp.AgentConfig) {
+	s.SetAgentConfig(config)
+	for _, session := range s.currentSessions() {
+		if err := session.pushAgentConfig(); err != nil {
+			logger.Warn("[LINK] reporting update to %s failed: %v", session.identity.Name, err)
+		}
+	}
+}
+
+func (s *Server) currentSessions() []*Session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sessions := make([]*Session, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		sessions = append(sessions, session)
+	}
+	return sessions
 }
 
 func (s *Server) SetActivity(feed *activity.Feed) {
@@ -223,6 +258,11 @@ func (s *Server) handshake(netConn net.Conn) {
 
 	if err := session.pushRegistry(); err != nil {
 		logger.Warn("[LINK] registry handoff to %s failed: %v", identity.Name, err)
+		conn.Close()
+		return
+	}
+	if err := session.pushAgentConfig(); err != nil {
+		logger.Warn("[LINK] reporting handoff to %s failed: %v", identity.Name, err)
 		conn.Close()
 		return
 	}

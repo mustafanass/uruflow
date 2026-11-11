@@ -33,8 +33,8 @@ type PushSource struct {
 }
 
 type PushSettings struct {
-	Endpoint string       `json:"endpoint"`
-	Sources  []PushSource `json:"sources"`
+	Receiving bool         `json:"receiving"`
+	Sources   []PushSource `json:"sources"`
 }
 
 func (e *Engine) PushSettings(name string) (PushSettings, error) {
@@ -50,7 +50,7 @@ func (e *Engine) PushSettings(name string) (PushSettings, error) {
 	for _, source := range stored {
 		enabled[source] = true
 	}
-	settings := PushSettings{Endpoint: e.server.Config().WebhookURL(), Sources: []PushSource{}}
+	settings := PushSettings{Receiving: e.server.Webhooks().Enabled(), Sources: []PushSource{}}
 	positions := make(map[models.PushSource]int)
 	for _, service := range project.ServiceList() {
 		if !service.Built() {

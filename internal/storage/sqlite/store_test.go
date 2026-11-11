@@ -19,12 +19,14 @@
 package sqlite
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/mustafanass/uruflow/internal/models"
+	"github.com/mustafanass/uruflow/internal/storage"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -311,6 +313,67 @@ func TestDeleteAgentCascadesContainers(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectRemovesOnlyWhatItOwns(t *testing.T) {
+	store := newTestStore(t)
+
+	store.CreateAgent(&models.Agent{ID: "a1", Name: "runner-01", Key: "key",
+		Roles: []models.Role{models.RoleRunner}})
+	for _, name := range []string{"api-production", "api-production-eu"} {
+		if err := store.SaveProject(&models.Project{Name: name, Runners: []string{"a1"}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CreateRelease(&models.Release{ID: name + "-release", Project: name, Status: models.StatusSucceeded, StartedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		store.AppendLog(&models.LogLine{ReleaseID: name + "-release", Stage: "build", Stream: "stdout", Line: "built", Timestamp: time.Now()})
+		if err := store.SetPushSource(models.PushSource{Project: name, Repository: "git@host:api.git", Branch: "main"}, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CreateAlert(&models.Alert{ID: name + "-alert", Project: name, Message: "down"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SetSecret(name+".TOKEN", []byte("sealed")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store.ReplaceContainers("a1", []models.Container{{ID: "c1", Name: "api", Project: "api-production"}, {ID: "c2", Name: "api-eu", Project: "api-production-eu"}})
+	if err := store.CreateConsoleUser(&storage.ConsoleUser{Username: "operator", Role: "operator", PasswordHash: []byte("hash"), Projects: []string{"api-production", "api-production-eu"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.DeleteProject("api-production"); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+	if _, err := store.GetProject("api-production"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("project survived: %v", err)
+	}
+	if _, err := store.GetRelease("api-production-release"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("release history survived: %v", err)
+	}
+	if logs, _ := store.ListLogs("api-production-release", 0, 10); len(logs) != 0 {
+		t.Fatalf("release logs survived: %+v", logs)
+	}
+	if _, err := store.GetSecret("api-production.TOKEN"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("secret survived: %v", err)
+	}
+	user, err := store.GetConsoleUser("operator")
+	if err != nil || len(user.Projects) != 1 || user.Projects[0] != "api-production-eu" {
+		t.Fatalf("grant survived: %+v %v", user, err)
+	}
+	sources, _ := store.ListPushSources()
+	alerts, _ := store.ListRecentAlerts(10)
+	containers, _ := store.ListContainers()
+	if len(sources) != 1 || sources[0].Project != "api-production-eu" || len(alerts) != 1 || alerts[0].Project != "api-production-eu" || len(containers) != 1 || containers[0].Project != "api-production-eu" {
+		t.Fatalf("deletion crossed projects: %+v %+v %+v", sources, alerts, containers)
+	}
+	if _, err := store.GetSecret("api-production-eu.TOKEN"); err != nil {
+		t.Fatalf("a similarly named project lost its secret: %v", err)
+	}
+	if err := store.DeleteProject("api-production"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("second delete = %v, want not found", err)
+	}
+}
+
 func TestWebhookDeliveriesAreClaimedOnce(t *testing.T) {
 	store := newTestStore(t)
 	claimed, err := store.ClaimWebhookDelivery("github", "delivery-1")
@@ -324,6 +387,51 @@ func TestWebhookDeliveriesAreClaimedOnce(t *testing.T) {
 	claimed, err = store.ClaimWebhookDelivery("gitlab", "delivery-1")
 	if err != nil || !claimed {
 		t.Fatalf("provider-specific claim = %v, %v", claimed, err)
+	}
+}
+
+func TestWebhookDeliveriesKeepTheirOutcomeNewestFirst(t *testing.T) {
+	store := newTestStore(t)
+	for _, id := range []string{"delivery-1", "delivery-2"} {
+		if claimed, err := store.ClaimWebhookDelivery("github", id); err != nil || !claimed {
+			t.Fatalf("claim %s = %v, %v", id, claimed, err)
+		}
+	}
+	if err := store.RecordWebhookDelivery(models.WebhookDelivery{Provider: "github", DeliveryID: "delivery-2", Repository: "api", Branch: "main", Commit: "abc", Result: models.DeliveryIgnored, Detail: "no project"}); err != nil {
+		t.Fatal(err)
+	}
+	deliveries, err := store.ListWebhookDeliveries(2)
+	if err != nil || len(deliveries) != 2 {
+		t.Fatalf("deliveries = %+v, %v", deliveries, err)
+	}
+	if latest := deliveries[0]; latest.DeliveryID != "delivery-2" || latest.Result != models.DeliveryIgnored || latest.Repository != "api" || latest.Branch != "main" || latest.Detail != "no project" {
+		t.Fatalf("latest delivery = %+v", latest)
+	}
+	if pending := deliveries[1]; pending.DeliveryID != "delivery-1" || pending.Result != "" {
+		t.Fatalf("an unrecorded delivery = %+v", pending)
+	}
+}
+
+func TestSettingsRejectStaleRevisions(t *testing.T) {
+	store := newTestStore(t)
+	setting := &models.Setting{Name: models.SettingWebhook, Value: `{"enabled":true}`}
+	if err := store.SaveSetting(setting); err != nil || setting.Revision != 1 {
+		t.Fatalf("create = %v, revision %d", err, setting.Revision)
+	}
+	stale := *setting
+	setting.Value = `{"enabled":false}`
+	if err := store.SaveSetting(setting); err != nil || setting.Revision != 2 {
+		t.Fatalf("update = %v, revision %d", err, setting.Revision)
+	}
+	if err := store.SaveSetting(&stale); !errors.Is(err, storage.ErrConflict) {
+		t.Fatalf("stale write = %v, want conflict", err)
+	}
+	if err := store.SaveSetting(&models.Setting{Name: models.SettingWebhook, Value: "{}"}); !errors.Is(err, storage.ErrConflict) {
+		t.Fatalf("duplicate create = %v, want conflict", err)
+	}
+	loaded, err := store.GetSetting(models.SettingWebhook)
+	if err != nil || loaded.Value != `{"enabled":false}` || loaded.Revision != 2 {
+		t.Fatalf("loaded = %+v, %v", loaded, err)
 	}
 }
 

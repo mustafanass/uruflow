@@ -76,6 +76,6 @@ export interface PushSource {
   enabled: boolean
 }
 export interface PushSettings {
-  endpoint: string
+  receiving: boolean
   sources: PushSource[]
 }

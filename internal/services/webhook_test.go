@@ -19,10 +19,11 @@
 package services
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/mustafanass/uruflow/internal/config"
 	"github.com/mustafanass/uruflow/internal/models"
 	"github.com/mustafanass/uruflow/internal/storage/sqlite"
 )
@@ -63,7 +64,7 @@ func TestWebhookMatchesOnlyEnabledSources(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	service := NewWebhookService(config.Default(), store, nil)
+	service := NewWebhookService(store, nil)
 	push := &Push{Repository: "api", Branch: "main", Commit: commit, Identities: []string{"https://github.com/acme/api.git"}}
 
 	if matches, err := service.match(push); err != nil || len(matches) != 0 {
@@ -83,11 +84,21 @@ func TestWebhookMatchesOnlyEnabledSources(t *testing.T) {
 }
 
 func TestEmptyWebhookSecretRejectsAuthentication(t *testing.T) {
-	cfg := config.Default()
-	cfg.Webhook.Secret = ""
-	service := NewWebhookService(cfg, nil, nil)
+	service := NewWebhookService(nil, nil)
 	if service.VerifyGitHub([]byte("payload"), "") || service.VerifyGitLab("") {
 		t.Fatal("an empty secret disabled webhook authentication")
+	}
+}
+
+func TestRotatedWebhookSecretOverlapsOnlyUntilItExpires(t *testing.T) {
+	service := NewWebhookService(nil, nil)
+	service.Apply(true, "current-secret-value", "previous-secret-value", time.Now().Add(time.Hour))
+	if !service.VerifyGitLab("current-secret-value") || !service.VerifyGitLab("previous-secret-value") {
+		t.Fatal("a secret inside its overlap window was rejected")
+	}
+	service.Apply(true, "current-secret-value", "previous-secret-value", time.Now().Add(-time.Second))
+	if !service.VerifyGitLab("current-secret-value") || service.VerifyGitLab("previous-secret-value") {
+		t.Fatal("an expired previous secret was still accepted")
 	}
 }
 
@@ -169,5 +180,46 @@ func TestParsePushReadsGitLab(t *testing.T) {
 	}
 	if !sameRepository("https://gitlab.com/acme/api", push.Identities) {
 		t.Error("gitlab identities did not match")
+	}
+}
+
+func TestIgnoredDeliveryKeepsItsRepositoryAndBranch(t *testing.T) {
+	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := NewWebhookService(store, nil)
+	payload := []byte(`{"ref":"refs/heads/main","project":{"name":"api","git_http_url":"https://gitlab.com/acme/api.git"},"checkout_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`)
+	if claimed, err := service.ClaimDelivery(ProviderGitLab, "delivery-1"); err != nil || !claimed {
+		t.Fatalf("claim = %v, %v", claimed, err)
+	}
+	result, err := service.Handle(ProviderGitLab, payload)
+	if !errors.Is(err, ErrNoMatch) {
+		t.Fatalf("handle = %v, want no match", err)
+	}
+	service.Record(ProviderGitLab, "delivery-1", result, err)
+	deliveries, err := store.ListWebhookDeliveries(1)
+	if err != nil || len(deliveries) != 1 {
+		t.Fatalf("deliveries = %+v, %v", deliveries, err)
+	}
+	if delivery := deliveries[0]; delivery.Result != models.DeliveryIgnored || delivery.Repository != "api" || delivery.Branch != "main" || delivery.Detail == "" {
+		t.Fatalf("ignored delivery lost why it was ignored: %+v", delivery)
+	}
+}
+
+func TestDeliverySummaryReportsTheMostProgressedOutcome(t *testing.T) {
+	for _, test := range []struct {
+		outcomes []Outcome
+		result   string
+		detail   string
+	}{
+		{[]Outcome{{Project: "api", Queued: true}, {Project: "web"}}, models.DeliveryStarted, "api queued, web started"},
+		{[]Outcome{{Project: "api", Err: errors.New("busy")}, {Project: "web", Queued: true}}, models.DeliveryQueued, "api failed: busy, web queued"},
+		{[]Outcome{{Project: "api", Err: errors.New("busy")}}, models.DeliveryFailed, "api failed: busy"},
+	} {
+		if result, detail := summarize(test.outcomes); result != test.result || detail != test.detail {
+			t.Errorf("summarize(%+v) = %q %q, want %q %q", test.outcomes, result, detail, test.result, test.detail)
+		}
 	}
 }

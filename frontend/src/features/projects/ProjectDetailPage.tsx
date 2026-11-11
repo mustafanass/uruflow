@@ -6,6 +6,7 @@ import { Play, RotateCcw, Square } from 'lucide-react'
 
 import { ActivityTable } from '@/features/activity/ActivityTable'
 import { ProjectConfiguration } from './ProjectConfiguration'
+import { ProjectDelete } from '@/features/projects/ProjectDelete'
 import { ProjectPush } from '@/features/projects/ProjectPush'
 import { ProjectReleases } from '@/features/projects/ProjectReleases'
 import { RollbackProject } from '@/features/projects/RollbackProject'
@@ -29,7 +30,7 @@ import { DeployProject } from './DeployProject'
 
 export default function ProjectDetailPage() {
   const { name = '' } = useParams()
-  const { snapshot, canOperate, confirm, dirty } = useWorkspace()
+  const { snapshot, canOperate, canAdmin, confirm, dirty } = useWorkspace()
   const { data: history } = useLoad<Release[]>(
     '/api/projects/' + segment(name) + '/releases',
     canOperate,
@@ -173,7 +174,12 @@ export default function ProjectDetailPage() {
               detail="Configuration and variable values are available to operators and administrators."
             />
           ))}
-        {tab === 'Settings' && <ProjectPush key={p.name} name={p.name} />}
+        {tab === 'Settings' && (
+          <>
+            <ProjectPush key={p.name} name={p.name} />
+            {canAdmin && <ProjectDelete name={p.name} />}
+          </>
+        )}
         {tab === 'Activity' && (
           <Panel
             title="Project activity"

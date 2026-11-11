@@ -21,6 +21,8 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"slices"
+
 	"github.com/mustafanass/uruflow/internal/storage"
 )
 
@@ -177,6 +179,38 @@ func (s *Store) ChangeConsoleProjects(name string, projects []string) error {
 	}
 	if count == 0 {
 		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func removeProjectGrants(tx *sql.Tx, project string) error {
+	rows, err := tx.Query(`SELECT username, projects FROM console_users`)
+	if err != nil {
+		return err
+	}
+	granted := map[string][]string{}
+	for rows.Next() {
+		var username, encoded string
+		if err = rows.Scan(&username, &encoded); err != nil {
+			rows.Close()
+			return err
+		}
+		var projects []string
+		decodeJSON(encoded, &projects)
+		if slices.Contains(projects, project) {
+			granted[username] = slices.DeleteFunc(projects, func(name string) bool { return name == project })
+		}
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for username, projects := range granted {
+		if _, err = tx.Exec(`UPDATE console_users SET projects=? WHERE username=?`, encodeJSON(projects), username); err != nil {
+			return err
+		}
 	}
 	return nil
 }

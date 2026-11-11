@@ -61,6 +61,19 @@ func (e *Engine) createProject(project, environment, input string) error {
 	return nil
 }
 
+func (e *Engine) deleteProject(project *models.Project) error {
+	if project.Managed() && project.Env != "" {
+		if err := e.server.Loader().Remove(project.Base(), project.Env); err != nil {
+			return fmt.Errorf("remove %s files: %w", project.Name, err)
+		}
+	}
+	if err := e.server.Store().DeleteProject(project.Name); err != nil {
+		return err
+	}
+	e.server.ReloadProjects()
+	return nil
+}
+
 func pathWithin(directory, path string) bool {
 	relative, err := filepath.Rel(directory, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))
