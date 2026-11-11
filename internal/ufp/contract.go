@@ -82,8 +82,8 @@ const (
 )
 
 const (
-	AgentConfigSince     = "3.0.6"
-	ResourceRemovalSince = "3.0.6"
+	AgentConfigSince     = "3.1.0"
+	ResourceRemovalSince = "3.1.0"
 	DefaultMetricsSec    = 10
 	DefaultReconnectSec  = 5
 	MinMetricsSec        = 2

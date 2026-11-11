@@ -46,4 +46,5 @@ export interface AgentReporting {
   managed: boolean
   metrics_sec: number
   reconnect_sec: number
+  since: string
 }

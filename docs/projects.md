@@ -113,7 +113,7 @@ Administrators delete one environment from **Settings → Delete project**. Othe
 
 Deletion waits until no release is running anywhere and every runner of the project is online, so nothing is left running on a machine the server cannot reach. It then removes the project's containers and its own networks from every runner, its environment and variable files, its release history and logs, its secrets, deploy-on-push sources and alerts, and the project from every account's assignments. The audit log records `project.delete`.
 
-Data volumes and registry images are kept unless they are selected in the dialog. Selected volumes are removed from every runner and need agents on 3.0.6 or later. Selected images are removed from the registry, and their unreferenced layers are collected. Volumes, networks and images that another project also uses are always kept, as are external resources and manually tagged images. A failed deletion can be repeated; files are removed before database records, so a partial deletion never restores the project.
+Data volumes and registry images are kept unless they are selected in the dialog. Selected volumes are removed from every runner and need agents on 3.1.0 or later. Selected images are removed from the registry, and their unreferenced layers are collected. Volumes, networks and images that another project also uses are always kept, as are external resources and manually tagged images. A failed deletion can be repeated; files are removed before database records, so a partial deletion never restores the project.
 
 ## Implementation
 

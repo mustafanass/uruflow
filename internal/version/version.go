@@ -23,7 +23,7 @@ import (
 	"strings"
 )
 
-const Current = "3.0.6"
+const Current = "3.1.0"
 
 func AtLeast(current, minimum string) bool {
 	have, ok := parse(current)

@@ -95,7 +95,7 @@ A non-local public origin must use HTTPS. Direct HTTPS supports HTTP/2. Built as
 | Report interval | Each agent's file, or set | How often agents report; `2`–`300` seconds                                                     |
 | Reconnect delay | Each agent's file, or set | How long agents wait before reconnecting; `1`–`60` seconds                                     |
 
-On first start, the server imports `registry.password` and `registry.retain_releases` from this file; remove them afterwards. Agent reporting stays with each agent's `agent.yaml` until an administrator saves it once; from then on, connected agents on 3.0.6 or later apply the shared values immediately. Rotating the registry password waits until no release is running, restarts the registry for a few seconds and blocks new releases until it finishes.
+On first start, the server imports `registry.password` and `registry.retain_releases` from this file; remove them afterwards. Agent reporting stays with each agent's `agent.yaml` until an administrator saves it once; from then on, connected agents on 3.1.0 or later apply the shared values immediately. Rotating the registry password waits until no release is running, restarts the registry for a few seconds and blocks new releases until it finishes.
 
 ### Webhooks
 

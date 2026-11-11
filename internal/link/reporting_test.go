@@ -79,7 +79,7 @@ func TestAgentConfigReachesOnlyAgentsThatUnderstandIt(t *testing.T) {
 	server.SetAgentConfig(ufp.AgentConfig{MetricsSec: 30, ReconnectSec: 10})
 
 	current := connectReporter(t, server, store, caPEM, "current", ufp.AgentConfigSince)
-	older := connectReporter(t, server, store, caPEM, "older", "3.0.5")
+	older := connectReporter(t, server, store, caPEM, "older", "3.0.6")
 	awaitRegistry(t, current, "secret")
 	awaitRegistry(t, older, "secret")
 	awaitAgentConfig(t, current, ufp.AgentConfig{MetricsSec: 30, ReconnectSec: 10})

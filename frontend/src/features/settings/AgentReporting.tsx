@@ -41,7 +41,10 @@ export function AgentReporting() {
                 ? `${data.reconnect_sec} seconds`
                 : `Each agent's own file (default ${data.reconnect_sec} seconds)`,
             ],
-            ['Applies to', 'Connected agents on 3.0.6 or later, immediately'],
+            [
+              'Applies to',
+              `Connected agents on ${data.since} or later, immediately`,
+            ],
           ]}
         />
       </Panel>

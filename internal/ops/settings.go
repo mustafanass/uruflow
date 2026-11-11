@@ -357,10 +357,11 @@ func registryView(revision int64, settings models.RegistrySettings) RegistryView
 }
 
 type AgentReportingView struct {
-	Revision     int64 `json:"revision"`
-	Managed      bool  `json:"managed"`
-	MetricsSec   int   `json:"metrics_sec"`
-	ReconnectSec int   `json:"reconnect_sec"`
+	Revision     int64  `json:"revision"`
+	Managed      bool   `json:"managed"`
+	MetricsSec   int    `json:"metrics_sec"`
+	ReconnectSec int    `json:"reconnect_sec"`
+	Since        string `json:"since"`
 }
 
 type AgentReportingChange struct {
@@ -372,12 +373,12 @@ type AgentReportingChange struct {
 func (e *Engine) AgentReporting() (AgentReportingView, error) {
 	setting, settings, err := e.server.AgentSettings()
 	if errors.Is(err, storage.ErrNotFound) {
-		return AgentReportingView{MetricsSec: ufp.DefaultMetricsSec, ReconnectSec: ufp.DefaultReconnectSec}, nil
+		return AgentReportingView{MetricsSec: ufp.DefaultMetricsSec, ReconnectSec: ufp.DefaultReconnectSec, Since: ufp.AgentConfigSince}, nil
 	}
 	if err != nil {
 		return AgentReportingView{}, err
 	}
-	return AgentReportingView{Revision: setting.Revision, Managed: true, MetricsSec: settings.MetricsSec, ReconnectSec: settings.ReconnectSec}, nil
+	return AgentReportingView{Revision: setting.Revision, Managed: true, MetricsSec: settings.MetricsSec, ReconnectSec: settings.ReconnectSec, Since: ufp.AgentConfigSince}, nil
 }
 
 func (e *Engine) SaveAgentReporting(change AgentReportingChange) (AgentReportingView, error) {
@@ -401,5 +402,5 @@ func (e *Engine) SaveAgentReporting(change AgentReportingChange) (AgentReporting
 		return AgentReportingView{}, err
 	}
 	e.server.ApplyAgentSettings(settings)
-	return AgentReportingView{Revision: setting.Revision, Managed: true, MetricsSec: settings.MetricsSec, ReconnectSec: settings.ReconnectSec}, nil
+	return AgentReportingView{Revision: setting.Revision, Managed: true, MetricsSec: settings.MetricsSec, ReconnectSec: settings.ReconnectSec, Since: ufp.AgentConfigSince}, nil
 }
