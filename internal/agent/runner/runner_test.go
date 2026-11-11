@@ -103,6 +103,27 @@ func TestReleaseCreatesDeclaredResources(t *testing.T) {
 	}
 }
 
+func TestRemoveDeletesProjectContainersBeforeItsResources(t *testing.T) {
+	engine := &fakeEngine{exists: map[string]bool{}, listed: []docker.Container{
+		{Name: "api-web", Project: "api"},
+		{Name: "billing-web", Project: "billing"},
+	}}
+	runner := New(engine, nil)
+	if err := runner.Remove(context.Background(), ufp.ProjectRemoval{Project: "api"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(engine.removed) != 1 || engine.removed[0] != "api-web" || len(engine.deleted) != 0 {
+		t.Fatalf("containers-only removal touched %v and %v", engine.removed, engine.deleted)
+	}
+	engine.removed = nil
+	if err := runner.Remove(context.Background(), ufp.ProjectRemoval{Project: "api", Networks: []string{"api_edge"}, Volumes: []string{"api_data"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(engine.removed) != 1 || strings.Join(engine.deleted, ",") != "network:api_edge,volume:api_data" {
+		t.Fatalf("removal = %v then %v", engine.removed, engine.deleted)
+	}
+}
+
 func TestJobMustCompleteBeforeReleaseContinues(t *testing.T) {
 	engine := &fakeEngine{state: &docker.State{Status: docker.StateExited, ExitCode: 0}}
 	runner := New(engine, nil)

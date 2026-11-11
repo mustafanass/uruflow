@@ -30,11 +30,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	Version              = version.Current
-	DefaultReconnectSecs = 5
-	DefaultMetricsSecs   = 10
-)
+const Version = version.Current
 
 var (
 	DefaultConfigPath string
@@ -94,8 +90,8 @@ func Default() *Config {
 		Server: ServerConfig{
 			Port:         9001,
 			CACert:       DefaultCACert,
-			ReconnectSec: DefaultReconnectSecs,
-			MetricsSec:   DefaultMetricsSecs,
+			ReconnectSec: ufp.DefaultReconnectSec,
+			MetricsSec:   ufp.DefaultMetricsSec,
 		},
 		Docker: DockerConfig{Socket: docker.DefaultSocket},
 	}

@@ -105,7 +105,7 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		return ufp.Accepted{}, nil
 
 	case ufp.MethodReleaseRemove:
-		var payload ufp.ProjectRef
+		var payload ufp.ProjectRemoval
 		if err := request.Decode(&payload); err != nil {
 			return nil, err
 		}
@@ -125,7 +125,7 @@ func (d *Daemon) HandleRequest(request *ufp.Request) (any, error) {
 		defer d.endJob(payload.Project, job)
 		ctx, cancel := context.WithTimeout(job.ctx, actionTimeout)
 		defer cancel()
-		if err := d.runner.Remove(ctx, payload.Project); err != nil {
+		if err := d.runner.Remove(ctx, payload); err != nil {
 			return nil, err
 		}
 		logger.Info("[AGENT] removed %s", payload.Project)
@@ -292,10 +292,35 @@ func validateReleaseRequest(request ufp.ReleaseRequest) error {
 }
 
 func (d *Daemon) HandleEvent(event *ufp.Event) error {
-	if event.Topic != ufp.TopicRegistryConfig {
-		return fmt.Errorf("unsupported event topic %q", event.Topic)
+	switch event.Topic {
+	case ufp.TopicRegistryConfig:
+		return d.handleRegistry(event)
+	case ufp.TopicAgentConfig:
+		return d.handleAgentConfig(event)
 	}
+	return fmt.Errorf("unsupported event topic %q", event.Topic)
+}
 
+func (d *Daemon) handleAgentConfig(event *ufp.Event) error {
+	var payload ufp.AgentConfig
+	if err := event.Decode(&payload); err != nil {
+		return err
+	}
+	if !ufp.ValidAgentConfig(payload) {
+		logger.Warn("[AGENT] ignored reporting settings outside the supported range")
+		return nil
+	}
+	d.metricsSec.Store(int64(payload.MetricsSec))
+	d.reconnectSec.Store(int64(payload.ReconnectSec))
+	select {
+	case d.reporting <- struct{}{}:
+	default:
+	}
+	logger.Info("[AGENT] reporting every %ds, reconnecting after %ds", payload.MetricsSec, payload.ReconnectSec)
+	return nil
+}
+
+func (d *Daemon) handleRegistry(event *ufp.Event) error {
 	var payload ufp.RegistryConfig
 	if err := event.Decode(&payload); err != nil {
 		return err

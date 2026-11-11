@@ -1,6 +1,6 @@
 import { withTab } from '@/shared/utils/url'
 import { useEffect } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { AccessManagement } from '@/features/system/access/AccessManagement'
 import { RegistryCatalog } from '@/features/registry/RegistryCatalog'
 import { useWorkspace } from '@/shared/hooks'
@@ -23,6 +23,8 @@ export default function SystemPage() {
     )
     return () => cancelAnimationFrame(frame)
   }, [hash, tab])
+  if (params.get('tab') === 'Settings')
+    return <Navigate replace to="/settings" />
   const content =
     tab === 'Access' ? (
       <AccessManagement />

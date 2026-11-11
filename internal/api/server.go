@@ -21,11 +21,13 @@ package api
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -66,8 +68,16 @@ type Server struct {
 	vault         *secrets.Vault
 	activity      *activity.Feed
 	webhook       *services.WebhookService
-	http          *http.Server
 	caCert        string
+
+	webhookMu     sync.Mutex
+	webhookServer *http.Server
+	webhookAddr   string
+	webhookSecure bool
+	webhookRoutes atomic.Pointer[http.Handler]
+	webhookTLS    atomic.Pointer[tls.Certificate]
+
+	registryRetain atomic.Int64
 
 	loader   *projects.Loader
 	problems []projects.Problem
@@ -93,13 +103,26 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 		return nil, fmt.Errorf("uruflow needs docker to host the registry: %w", err)
 	}
 
+	vault, err := secrets.LoadOrCreateVault(cfg.SecretKeyPath())
+	if err != nil {
+		return nil, fmt.Errorf("secret vault: %w", err)
+	}
+	_, registrySettings, err := loadRegistrySettings(cfg, store, vault)
+	if err != nil {
+		return nil, fmt.Errorf("registry settings: %w", err)
+	}
+	password, err := vault.Open(registrySettings.Password)
+	if err != nil {
+		return nil, fmt.Errorf("open registry password: %w", err)
+	}
+
 	images := registry.New(registry.Options{
 		Address:      cfg.Registry.Address(),
 		Hostname:     cfg.Registry.Hostname(),
 		Port:         cfg.Registry.Port,
 		Namespace:    cfg.Registry.Namespace,
 		Username:     cfg.Registry.Username,
-		Password:     cfg.Registry.Password,
+		Password:     password,
 		Image:        cfg.Registry.Image,
 		DataDir:      cfg.RegistryDataDir(),
 		CertPath:     cfg.RegistryCertPath(),
@@ -114,13 +137,14 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 	links.SetRegistry(ufp.RegistryConfig{
 		Host:     cfg.Registry.Address(),
 		Username: cfg.Registry.Username,
-		Password: cfg.Registry.Password,
+		Password: password,
 		CACert:   caCert,
 	})
-
-	vault, err := secrets.LoadOrCreateVault(cfg.SecretKeyPath())
-	if err != nil {
-		return nil, fmt.Errorf("secret vault: %w", err)
+	var agentSettings models.AgentSettings
+	if _, err := readSetting(store, models.SettingAgents, &agentSettings); err == nil {
+		links.SetAgentConfig(ufp.AgentConfig{MetricsSec: agentSettings.MetricsSec, ReconnectSec: agentSettings.ReconnectSec})
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return nil, fmt.Errorf("agent settings: %w", err)
 	}
 
 	releases := pipeline.New(store, links, images, vault)
@@ -131,7 +155,7 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 		return store.GetAgentByName(name)
 	})
 
-	return &Server{
+	server := &Server{
 		cfg:      cfg,
 		store:    store,
 		link:     links,
@@ -139,10 +163,12 @@ func NewServer(cfg *config.Config, store storage.Store) (*Server, error) {
 		pipeline: releases,
 		vault:    vault,
 		activity: feed,
-		webhook:  services.NewWebhookService(cfg, store, releases),
+		webhook:  services.NewWebhookService(store, releases),
 		caCert:   caCert,
 		loader:   loader,
-	}, nil
+	}
+	server.ApplyRegistrySettings(registrySettings)
+	return server, nil
 }
 
 func validateKeyMaterial(cfg *config.Config, store storage.Store) error {
@@ -168,6 +194,13 @@ func validateKeyMaterial(cfg *config.Config, store storage.Store) error {
 		}
 		if len(stored) > 0 {
 			return fmt.Errorf("secret encryption key is missing while encrypted secrets exist")
+		}
+		for _, name := range []string{models.SettingWebhook, models.SettingRegistry} {
+			if _, settingErr := store.GetSetting(name); settingErr == nil {
+				return fmt.Errorf("secret encryption key is missing while encrypted settings exist")
+			} else if !errors.Is(settingErr, storage.ErrNotFound) {
+				return fmt.Errorf("inspect encrypted settings: %w", settingErr)
+			}
 		}
 	} else if err != nil {
 		return err
@@ -197,37 +230,10 @@ func (s *Server) Start() error {
 	catalogCtx, catalogCancel := context.WithCancel(context.Background())
 	s.catalogCancel = catalogCancel
 	s.registry.StartCatalog(catalogCtx)
-	s.pipeline.StartRegistryMaintenance(catalogCtx, s.cfg.Registry.RetainReleases)
+	s.pipeline.StartRegistryMaintenance(catalogCtx, s.retainReleases)
 
-	s.http = &http.Server{
-		Addr:         s.cfg.HTTPAddr(),
-		Handler:      s.routes(),
-		ReadTimeout:  readTimeout,
-		WriteTimeout: writeTimeout,
-		IdleTimeout:  idleTimeout,
-		TLSConfig:    &tls.Config{MinVersion: tls.VersionTLS13},
-	}
-
-	scheme := "https"
-	if !s.cfg.Webhook.TLS {
-		scheme = "http"
-	}
-	logger.Info("[HTTP] webhooks on %s://%s%s", scheme, s.cfg.HTTPAddr(), s.cfg.Webhook.Path)
-
-	go func() {
-		var err error
-		if s.cfg.Webhook.TLS {
-			certPath, keyPath := s.cfg.WebhookCertificatePaths()
-			err = s.http.ListenAndServeTLS(certPath, keyPath)
-		} else {
-			err = s.http.ListenAndServe()
-		}
-		if err != nil && err != http.ErrServerClosed {
-			logger.Error("[HTTP] %v", err)
-		}
-	}()
-
-	return nil
+	s.warnImportedConfig()
+	return s.startWebhooks()
 }
 
 func (s *Server) reconcile() error {
@@ -251,8 +257,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	s.link.Stop()
 
-	if s.http != nil {
-		return s.http.Shutdown(ctx)
+	s.webhookMu.Lock()
+	defer s.webhookMu.Unlock()
+	if s.webhookServer != nil {
+		return s.webhookServer.Shutdown(ctx)
 	}
 	return nil
 }
@@ -334,7 +342,7 @@ func (s *Server) Link() *link.Server           { return s.link }
 func (s *Server) Registry() *registry.Registry { return s.registry }
 func (s *Server) Pipeline() *pipeline.Pipeline { return s.pipeline }
 
-func (s *Server) routes() http.Handler {
+func (s *Server) routes(path string) http.Handler {
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
 	router.RedirectTrailingSlash = false
@@ -342,7 +350,7 @@ func (s *Server) routes() http.Handler {
 	router.Use(middleware.Logging(), middleware.Recovery())
 	webhook := handlers.NewWebhookHandler(s.webhook)
 
-	router.POST(s.cfg.Webhook.Path, webhook.Handle)
+	router.POST(path, webhook.Handle)
 	router.GET("/health", handlers.Health)
 	router.HEAD("/health", handlers.Health)
 

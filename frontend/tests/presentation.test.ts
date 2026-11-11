@@ -59,3 +59,10 @@ test('identifies the current release from containers even when the project is de
   assert.equal(currentRelease(snapshot, release), false)
   assert.equal(currentRelease(null, release), false)
 })
+
+test('webhook delivery results reuse the shared status tones', () => {
+  assert.equal(statusTone('started'), 'good')
+  assert.equal(statusTone('queued'), 'warn')
+  assert.equal(statusTone('failed'), 'bad')
+  assert.equal(statusTone('ignored'), 'neutral')
+})

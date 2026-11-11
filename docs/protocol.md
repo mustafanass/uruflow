@@ -2,7 +2,7 @@
 
 UFP is URUFLOW's persistent, bidirectional server-agent protocol. It carries instructions, acceptance responses, status, logs and observations over TLS. Browser traffic uses the operator HTTP API and SSE instead.
 
-This is the wire reference for contributors. URUFLOW 3.0.6 uses UFP frame version `0x04`.
+This is the wire reference for contributors. URUFLOW 3.1.0 uses UFP frame version `0x04`.
 
 ## Transport and framing
 
@@ -89,21 +89,21 @@ Requests acknowledge acceptance. Build and release completion arrives through `j
 
 These methods travel from server to agent:
 
-| Method              | Work                                                                       |
-| ------------------- | -------------------------------------------------------------------------- |
-| `build.run`         | Resolve Git sources, build targets and publish image digests               |
-| `release.run`       | Prepare resources, pull images, execute jobs and replace services          |
-| `release.stop`      | Stop a project's managed containers                                        |
-| `release.remove`    | Remove a project's managed containers while retaining persistent resources |
-| `logs.follow`       | Follow a container's Docker output                                         |
-| `logs.stop`         | Stop a selected log viewer                                                 |
-| `container.restart` | Restart one managed project container through Docker                       |
-| `terminal.open`     | Start an interactive shell in a managed project container                  |
-| `terminal.input`    | Write browser keystrokes to an open shell                                  |
-| `terminal.resize`   | Resize an open shell                                                       |
-| `terminal.close`    | End an open shell                                                          |
+| Method              | Work                                                                  |
+| ------------------- | --------------------------------------------------------------------- |
+| `build.run`         | Resolve Git sources, build targets and publish image digests          |
+| `release.run`       | Prepare resources, pull images, execute jobs and replace services     |
+| `release.stop`      | Stop a project's managed containers                                   |
+| `release.remove`    | Remove a project's containers, then the networks and volumes it names |
+| `logs.follow`       | Follow a container's Docker output                                    |
+| `logs.stop`         | Stop a selected log viewer                                            |
+| `container.restart` | Restart one managed project container through Docker                  |
+| `terminal.open`     | Start an interactive shell in a managed project container             |
+| `terminal.input`    | Write browser keystrokes to an open shell                             |
+| `terminal.resize`   | Resize an open shell                                                  |
+| `terminal.close`    | End an open shell                                                     |
 
-Payloads include job and project identity where appropriate. Build requests carry source and target definitions. Release requests carry the remaining deadline, per-service image references, dependencies, jobs, mounts, networks, runtime controls and readiness policy.
+Payloads include job and project identity where appropriate. Build requests carry source and target definitions. Release requests carry the remaining deadline, per-service image references, dependencies, jobs, mounts, networks, runtime controls and readiness policy. `release.remove` carries the project and the exact network and volume names to delete; the agent removes them only after every container is gone. Agents before 3.1.0 ignore the names and remove containers only, so the server refuses volume deletion on those runners.
 
 The server checks enrolled roles before dispatch. Agents independently reject methods outside their roles and validate deployment payloads before execution.
 
@@ -112,12 +112,15 @@ The server checks enrolled roles before dispatch. Agents independently reject me
 | Direction      | Topic             | Content                                                       |
 | -------------- | ----------------- | ------------------------------------------------------------- |
 | Server → agent | `registry.config` | Registry address, credentials and CA                          |
+| Server → agent | `agent.config`    | Report interval and reconnect delay set by administrators     |
 | Agent → server | `registry.ready`  | Registry trust and required login applied                     |
 | Agent → server | `job.log`         | Build or release output                                       |
 | Agent → server | `job.status`      | Job identity, stage, status, messages and resulting artifacts |
 | Agent → server | `metrics.push`    | Host samples and managed container inventory                  |
 | Agent → server | `container.log`   | Output or completion for a log viewer                         |
 | Agent → server | `terminal.output` | Output or completion for a terminal session                   |
+
+The server sends `registry.config` after authentication and again to every connected agent when the registry password is rotated. It sends `agent.config` after `registry.config` once administrators manage agent reporting, and again when they change it. Agents apply both without reconnecting; agents ignore `agent.config` values outside `2`–`300` and `1`–`60` seconds. Because an agent closes the link on an unknown topic, the server sends `agent.config` only to agents that report version 3.1.0 or later.
 
 Job stages are `build` and `release`; status events use `running`, `success` and `failed`. The server correlates job identity and reporting agent with persisted work before applying outcomes.
 
@@ -171,7 +174,7 @@ The read loop answers `PING` with `PONG`. On disconnect, the agent cancels in-fl
 | Unknown event topic or unexpected frame type | Connection error            |
 | Unknown response ID                          | Ignored                     |
 
-The product version and frame version serve different purposes. `3.0.6` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
+The product version and frame version serve different purposes. `3.1.0` identifies the application release; `0x04` identifies this wire contract. Optional observation and log-viewer fields are additive. Changes to required behavior need coordinated peer support, and incompatible frame or message semantics require a protocol-version decision.
 
 Keep `internal/ufp` independent of other repository packages. Preserve ordered events, correlated requests, role enforcement and the acceptance/completion distinction. Update this page and contract tests in the same change as the wire code.
 

@@ -78,3 +78,17 @@ func (c *Client) EnsureVolume(ctx context.Context, volume VolumeResource) error 
 	}
 	return c.post(ctx, "/volumes/create", body, nil)
 }
+
+func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
+	if err := c.delete(ctx, "/networks/"+url.PathEscape(name)); err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) RemoveVolume(ctx context.Context, name string) error {
+	if err := c.delete(ctx, "/volumes/"+url.PathEscape(name)); err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	return nil
+}

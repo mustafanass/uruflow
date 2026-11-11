@@ -49,15 +49,22 @@ func (r *recorder) TerminalOutput(string, ufp.TerminalOutput) {}
 
 type clientHandler struct {
 	registry chan ufp.RegistryConfig
+	agents   chan ufp.AgentConfig
 }
 
 func (c *clientHandler) HandleRequest(*ufp.Request) (any, error) { return ufp.Accepted{}, nil }
 
 func (c *clientHandler) HandleEvent(event *ufp.Event) error {
-	if event.Topic == ufp.TopicRegistryConfig {
+	switch event.Topic {
+	case ufp.TopicRegistryConfig:
 		var payload ufp.RegistryConfig
 		if event.Decode(&payload) == nil {
 			c.registry <- payload
+		}
+	case ufp.TopicAgentConfig:
+		var payload ufp.AgentConfig
+		if event.Decode(&payload) == nil {
+			c.agents <- payload
 		}
 	}
 	return nil

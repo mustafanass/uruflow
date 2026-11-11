@@ -44,6 +44,7 @@ const (
 var (
 	ErrRegistryMaintenance = errors.New("registry maintenance is in progress; try again shortly")
 	ErrRegistryUnavailable = errors.New("registry is unavailable")
+	ErrRegistryBusy        = errors.New("releases or registry maintenance are running; try again when they finish")
 	ErrSecretMissing       = errors.New("secret is not set")
 	ErrReleaseInFlight     = errors.New("a release is already running for this project")
 	ErrProjectBusy         = errors.New("another project operation is already running")
@@ -368,25 +369,7 @@ func (p *Pipeline) Stop(projectName string) error {
 	if err != nil {
 		return err
 	}
-	return p.dispatchProject(runners, ufp.MethodReleaseStop, project.Name)
-}
-
-func (p *Pipeline) Remove(projectName string) error {
-	if err := p.reserve(projectName); err != nil {
-		return err
-	}
-	defer p.releaseReservation(projectName)
-
-	project, err := p.store.GetProject(projectName)
-	if err != nil {
-		return fmt.Errorf("%s: %w", projectName, ErrProjectNotFound)
-	}
-
-	runners, err := p.resolveRunners(project)
-	if err != nil {
-		return err
-	}
-	return p.dispatchProject(runners, ufp.MethodReleaseRemove, project.Name)
+	return p.dispatchProject(runners, ufp.MethodReleaseStop, ufp.ProjectRef{Project: project.Name})
 }
 
 func (p *Pipeline) Restart(projectName, agentID, containerID string) error {
@@ -408,7 +391,7 @@ func (p *Pipeline) Restart(projectName, agentID, containerID string) error {
 	return p.dispatch(runner.ID, ufp.MethodContainerRestart, ufp.ContainerRef{Project: projectName, ContainerID: containerID})
 }
 
-func (p *Pipeline) dispatchProject(runners []models.Agent, method, project string) error {
+func (p *Pipeline) dispatchProject(runners []models.Agent, method string, payload any) error {
 	failures := make([]error, len(runners))
 	var group sync.WaitGroup
 	for index := range runners {
@@ -416,7 +399,7 @@ func (p *Pipeline) dispatchProject(runners []models.Agent, method, project strin
 		go func(index int) {
 			defer group.Done()
 			runner := runners[index]
-			if err := p.dispatch(runner.ID, method, ufp.ProjectRef{Project: project}); err != nil {
+			if err := p.dispatch(runner.ID, method, payload); err != nil {
 				failures[index] = fmt.Errorf("%s: %w", runner.Name, err)
 			}
 		}(index)

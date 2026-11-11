@@ -1,6 +1,6 @@
 # Upgrading to URUFLOW 3
 
-URUFLOW 3.0.6 uses the browser for operator work and keeps TLS UFP for server-agent communication. Build and install the server, agents and embedded frontend from the same release.
+URUFLOW 3.1.0 uses the browser for operator work and keeps TLS UFP for server-agent communication. Build and install the server, agents and embedded frontend from the same release.
 
 ## Prepare
 
@@ -16,7 +16,7 @@ build/uruflow version
 build/uruflow-agent version
 ```
 
-Both commands should report `3.0.6`. The frontend package uses the same release version; the running workspace displays the server's reported version.
+Both commands should report `3.1.0`. The frontend package uses the same release version; the running workspace displays the server's reported version.
 
 ## Replace a current UFP installation
 
@@ -25,9 +25,11 @@ Both commands should report `3.0.6`. The frontend package uses the same release 
 3. Replace and restart each builder and runner agent with the matching `build/uruflow-agent` binary.
 4. Confirm recent agent samples and registry readiness before deploying.
 
-SQLite creates the current tables and adds missing columns when opened. Preserve the existing project definitions, CA and encryption key. Server startup closes interrupted releases as failed and refreshes observations as agents reconnect.
+SQLite creates the current tables and adds missing columns when opened. The first start moves webhook settings, the registry password and the registry cleanup window from `config.yaml` into the database, so existing repository webhooks and agent logins keep working. Manage them afterwards in **Settings** and remove the `webhook` section, `server.http_port`, `registry.password` and `registry.retain_releases` from the file. Preserve the existing project definitions, CA and encryption key. Server startup closes interrupted releases as failed and refreshes observations as agents reconnect.
 
 URUFLOW 3 keeps UFP frame version `0x04`. Update agents for independent browser log streams and completion messages. The product major version does not renumber the protocol byte.
+
+Agents on 3.0.6 or earlier keep deploying with a 3.1.0 server. They keep the report interval from their own `agent.yaml`, and project deletion cannot remove their volumes, until they are upgraded to 3.1.0.
 
 ## Move operator work to the browser
 
@@ -41,7 +43,7 @@ Project editing, deployment, restoration, agent enrollment, observations and log
 
 Check sign-in, account scope, agent connectivity, registry access, project definitions, historical release details and container observations. Verify a safe deployment and restore in staging before routine production changes.
 
-Valid persisted browser sessions survive later server restarts, and streams reconnect. Fresh server and agent reports should show `3.0.6`.
+Valid persisted browser sessions survive later server restarts, and streams reconnect. Fresh server and agent reports should show `3.1.0`.
 
 ## Earlier protocol generations
 

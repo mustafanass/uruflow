@@ -128,7 +128,7 @@ func signIn(t *testing.T, h *Handler, user string) (*http.Cookie, string) {
 }
 func TestEveryResourceEndpointRequiresAuthentication(t *testing.T) {
 	h, _ := newConsole(t, &fixtureOperator{}, true)
-	routes := []string{"GET /api/snapshot", "GET /api/stream", "GET /api/trust-root", "POST /api/agents", "DELETE /api/agents/a", "POST /api/projects", "POST /api/projects/reload", "GET /api/projects/p/configuration", "GET /api/projects/p/variables", "PUT /api/projects/p/configuration", "PUT /api/projects/p/variables", "POST /api/projects/p/deploy", "POST /api/projects/p/rollback", "POST /api/projects/p/stop", "GET /api/projects/p/releases", "GET /api/releases/r", "GET /api/releases/r/logs", "GET /api/containers/a/c/logs", "GET /api/images", "GET /api/registry/catalog", "GET /api/images/details", "DELETE /api/images", "POST /api/alerts/a/resolve", "GET /api/users", "POST /api/users", "DELETE /api/users/u", "PUT /api/users/u/role", "PUT /api/users/u/projects", "POST /api/account/password", "GET /api/audit", "DELETE /api/session", "POST /api/session/refresh", "PUT /api/users/u/password", "DELETE /api/account/sessions"}
+	routes := []string{"GET /api/snapshot", "GET /api/stream", "GET /api/trust-root", "POST /api/agents", "DELETE /api/agents/a", "POST /api/projects", "POST /api/projects/reload", "DELETE /api/projects/p", "GET /api/projects/p/configuration", "GET /api/projects/p/variables", "PUT /api/projects/p/configuration", "PUT /api/projects/p/variables", "POST /api/projects/p/deploy", "POST /api/projects/p/rollback", "POST /api/projects/p/stop", "GET /api/projects/p/releases", "GET /api/releases/r", "GET /api/releases/r/logs", "GET /api/containers/a/c/logs", "GET /api/images", "GET /api/registry/catalog", "GET /api/images/details", "DELETE /api/images", "POST /api/alerts/a/resolve", "GET /api/users", "POST /api/users", "DELETE /api/users/u", "PUT /api/users/u/role", "PUT /api/users/u/projects", "POST /api/account/password", "GET /api/audit", "DELETE /api/session", "POST /api/session/refresh", "PUT /api/users/u/password", "DELETE /api/account/sessions"}
 	for _, route := range routes {
 		t.Run(route, func(t *testing.T) {
 			method, path, _ := strings.Cut(route, " ")
@@ -142,7 +142,7 @@ func TestEveryResourceEndpointRequiresAuthentication(t *testing.T) {
 func TestRolesAndCSRFEnforcedAtHTTPBoundary(t *testing.T) {
 	h, _ := newConsole(t, &fixtureOperator{}, true)
 	viewer, csrf := signIn(t, h, "viewer")
-	for _, route := range []string{"GET /api/projects/assigned-project/configuration", "GET /api/projects/assigned-project/variables", "POST /api/projects/assigned-project/deploy", "POST /api/projects/assigned-project/rollback", "POST /api/projects/assigned-project/stop", "POST /api/projects", "POST /api/projects/reload", "POST /api/agents", "DELETE /api/agents/a", "GET /api/users", "POST /api/users", "DELETE /api/users/u", "PUT /api/users/u/role", "PUT /api/users/u/projects", "PUT /api/users/u/password", "DELETE /api/images", "POST /api/alerts/a/resolve", "GET /api/audit"} {
+	for _, route := range []string{"GET /api/projects/assigned-project/configuration", "GET /api/projects/assigned-project/variables", "POST /api/projects/assigned-project/deploy", "POST /api/projects/assigned-project/rollback", "POST /api/projects/assigned-project/stop", "POST /api/projects", "POST /api/projects/reload", "DELETE /api/projects/assigned-project", "POST /api/agents", "DELETE /api/agents/a", "GET /api/users", "POST /api/users", "DELETE /api/users/u", "PUT /api/users/u/role", "PUT /api/users/u/projects", "PUT /api/users/u/password", "DELETE /api/images", "POST /api/alerts/a/resolve", "GET /api/audit"} {
 		method, path, _ := strings.Cut(route, " ")
 		if w := request(h, method, path, `{}`, viewer, csrf); w.Code != 403 {
 			t.Fatalf("viewer %s: %d %s", route, w.Code, w.Body.String())
@@ -175,7 +175,7 @@ func TestProjectAssignmentsPreventObjectIDGuessing(t *testing.T) {
 			t.Fatalf("scope escaped %s: %d %s", route, w.Code, w.Body.String())
 		}
 	}
-	for _, route := range []string{"POST /api/projects", "POST /api/projects/reload", "GET /api/images"} {
+	for _, route := range []string{"POST /api/projects", "POST /api/projects/reload", "DELETE /api/projects/assigned-project", "GET /api/images"} {
 		method, path, _ := strings.Cut(route, " ")
 		if w := request(h, method, path, `{}`, cookie, csrf); w.Code != 403 {
 			t.Fatalf("fleet scope escaped %s: %d", route, w.Code)

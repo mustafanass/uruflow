@@ -84,3 +84,29 @@ func TestBuildRequestRejectsSecretArguments(t *testing.T) {
 		t.Fatal("secret build argument accepted by agent")
 	}
 }
+
+func TestAgentConfigAppliesLiveAndIgnoresOutOfRangeValues(t *testing.T) {
+	daemon := &Daemon{reporting: make(chan struct{}, 1)}
+	daemon.metricsSec.Store(10)
+	daemon.reconnectSec.Store(5)
+	event, err := ufp.NewEvent(ufp.TopicAgentConfig, ufp.AgentConfig{MetricsSec: 30, ReconnectSec: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.HandleEvent(event); err != nil {
+		t.Fatal(err)
+	}
+	if daemon.metricsSec.Load() != 30 || daemon.reconnectSec.Load() != 7 || len(daemon.reporting) != 1 {
+		t.Fatalf("settings not applied: metrics=%d reconnect=%d", daemon.metricsSec.Load(), daemon.reconnectSec.Load())
+	}
+	event, err = ufp.NewEvent(ufp.TopicAgentConfig, ufp.AgentConfig{MetricsSec: 1, ReconnectSec: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.HandleEvent(event); err != nil {
+		t.Fatalf("out-of-range settings closed the link: %v", err)
+	}
+	if daemon.metricsSec.Load() != 30 {
+		t.Fatalf("out-of-range settings were applied: metrics=%d", daemon.metricsSec.Load())
+	}
+}

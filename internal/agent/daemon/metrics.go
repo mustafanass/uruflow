@@ -37,9 +37,8 @@ const (
 )
 
 func (d *Daemon) reportMetrics(ctx context.Context) {
-	interval := time.Duration(d.cfg.Server.MetricsSec) * time.Second
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(d.metricsInterval())
+	defer timer.Stop()
 
 	d.publishMetrics(ctx)
 
@@ -47,10 +46,17 @@ func (d *Daemon) reportMetrics(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-d.reporting:
+			timer.Reset(d.metricsInterval())
+		case <-timer.C:
 			d.publishMetrics(ctx)
+			timer.Reset(d.metricsInterval())
 		}
 	}
+}
+
+func (d *Daemon) metricsInterval() time.Duration {
+	return time.Duration(d.metricsSec.Load()) * time.Second
 }
 
 func (d *Daemon) publishMetrics(ctx context.Context) {
@@ -67,7 +73,7 @@ func (d *Daemon) publishMetrics(ctx context.Context) {
 	payload := ufp.Metrics{
 		Timestamp: sampledAt.Unix(),
 		System: ufp.SystemMetrics{
-			MetricsSec: d.cfg.Server.MetricsSec,
+			MetricsSec: int(d.metricsSec.Load()),
 			Available:  system.Available, Errors: system.Errors, CPUCores: system.CPUCores, HostUptime: system.HostUptime,
 			CPUPercent:    system.CPUPercent,
 			MemoryPercent: system.MemoryPercent,

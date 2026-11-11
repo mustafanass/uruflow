@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -51,6 +52,9 @@ type Daemon struct {
 	metrics      *metrics.Collector
 	metricsMu    sync.Mutex
 	containerCPU map[string]docker.CPUCounters
+	metricsSec   atomic.Int64
+	reconnectSec atomic.Int64
+	reporting    chan struct{}
 	builder      *builder.Builder
 	runner       *runner.Runner
 
@@ -99,8 +103,11 @@ func New(cfg *config.Config) (*Daemon, error) {
 		streams:   make(map[string]*logStream),
 		terminals: make(map[string]*terminalSession),
 		jobs:      make(map[string]*activeJob),
+		reporting: make(chan struct{}, 1),
 		stop:      make(chan struct{}),
 	}
+	daemon.metricsSec.Store(int64(cfg.Server.MetricsSec))
+	daemon.reconnectSec.Store(int64(cfg.Server.ReconnectSec))
 	daemon.runner = runner.New(engine, daemon.registryAuth)
 
 	if cfg.HasRole(ufp.RoleBuilder) {
@@ -124,8 +131,6 @@ func (d *Daemon) Run() error {
 		d.shutdown()
 	}()
 
-	reconnect := time.Duration(d.cfg.Server.ReconnectSec) * time.Second
-
 	for {
 		select {
 		case <-d.stop:
@@ -142,7 +147,7 @@ func (d *Daemon) Run() error {
 		case <-d.stop:
 			logger.Info("[AGENT] stopped")
 			return nil
-		case <-time.After(reconnect):
+		case <-time.After(time.Duration(d.reconnectSec.Load()) * time.Second):
 		}
 	}
 }
@@ -188,7 +193,7 @@ func (d *Daemon) session() error {
 	d.connMu.Unlock()
 	d.cancelStreams()
 
-	logger.Warn("[AGENT] link closed, reconnecting in %ds", d.cfg.Server.ReconnectSec)
+	logger.Warn("[AGENT] link closed, reconnecting in %ds", d.reconnectSec.Load())
 	return err
 }
 

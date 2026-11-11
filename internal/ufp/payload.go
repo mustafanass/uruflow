@@ -59,6 +59,11 @@ type Accepted struct {
 	JobID    string `json:"job_id,omitempty"`
 }
 
+type AgentConfig struct {
+	MetricsSec   int `json:"metrics_sec"`
+	ReconnectSec int `json:"reconnect_sec"`
+}
+
 type RegistryConfig struct {
 	Host     string `json:"host"`
 	Username string `json:"username"`
@@ -198,6 +203,12 @@ type VolumeBinding struct {
 type ProjectRef struct {
 	JobID   string `json:"job_id,omitempty"`
 	Project string `json:"project"`
+}
+
+type ProjectRemoval struct {
+	Project  string   `json:"project"`
+	Networks []string `json:"networks,omitempty"`
+	Volumes  []string `json:"volumes,omitempty"`
 }
 
 type JobLog struct {

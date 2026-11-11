@@ -60,6 +60,11 @@ var addedColumns = []column{
 	{table: "releases", name: "commits", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "releases", name: "spec", spec: "TEXT NOT NULL DEFAULT '{}'"},
 	{table: "containers", name: "service", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "webhook_deliveries", name: "repository", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "webhook_deliveries", name: "branch", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "webhook_deliveries", name: "commit_sha", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "webhook_deliveries", name: "result", spec: "TEXT NOT NULL DEFAULT ''"},
+	{table: "webhook_deliveries", name: "detail", spec: "TEXT NOT NULL DEFAULT ''"},
 }
 
 func New(path string) (*Store, error) {
@@ -146,6 +151,33 @@ func (s *Store) ClaimWebhookDelivery(provider, deliveryID string) (bool, error) 
 		return false, err
 	}
 	return rows == 1, nil
+}
+
+func (s *Store) RecordWebhookDelivery(delivery models.WebhookDelivery) error {
+	_, err := s.db.Exec(`UPDATE webhook_deliveries SET repository = ?, branch = ?, commit_sha = ?, result = ?, detail = ?
+		WHERE provider = ? AND delivery_id = ?`,
+		delivery.Repository, delivery.Branch, delivery.Commit, delivery.Result, delivery.Detail,
+		delivery.Provider, delivery.DeliveryID)
+	return err
+}
+
+func (s *Store) ListWebhookDeliveries(limit int) ([]models.WebhookDelivery, error) {
+	rows, err := s.db.Query(`SELECT provider, delivery_id, received_at, repository, branch, commit_sha, result, detail
+		FROM webhook_deliveries ORDER BY received_at DESC, rowid DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	deliveries := make([]models.WebhookDelivery, 0)
+	for rows.Next() {
+		var delivery models.WebhookDelivery
+		if err := rows.Scan(&delivery.Provider, &delivery.DeliveryID, &delivery.ReceivedAt, &delivery.Repository,
+			&delivery.Branch, &delivery.Commit, &delivery.Result, &delivery.Detail); err != nil {
+			return nil, err
+		}
+		deliveries = append(deliveries, delivery)
+	}
+	return deliveries, rows.Err()
 }
 
 func (s *Store) ListPushSources() ([]models.PushSource, error) {

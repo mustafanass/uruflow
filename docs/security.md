@@ -22,7 +22,7 @@ The first administrator is created with the private `<data_dir>/web-setup-token`
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Viewer        | Read granted projects, runtime observations, releases and logs                                                                            |
 | Operator      | Viewer actions plus editing, deployment, restoration, stopping, container restarts, container terminals and alert resolution within scope |
-| Administrator | Fleet access, agent enrollment and removal, account management, audit access and registry deletion                                        |
+| Administrator | Fleet access, agent enrollment and removal, account management, system settings, audit access and registry deletion                       |
 
 Non-admin accounts receive explicit project names; `*` grants fleet access. Creating projects and reloading definitions require fleet access as well as an operator role. Registry inspection requires fleet access. Changing a browser URL or resource ID does not bypass server checks.
 
@@ -76,7 +76,7 @@ Back up the encrypted database and its matching encryption key together. The cer
 
 ## Webhooks and audit
 
-GitHub requests use HMAC-SHA256 over the raw body. GitLab requests use a constant-time token comparison. The webhook listener verifies event headers and claims delivery IDs before handling a push. [Configuration](configuration.md#webhook-listener) owns setup and routing behavior.
+GitHub requests use HMAC-SHA256 over the raw body. GitLab requests use a constant-time token comparison. The webhook listener verifies event headers and claims delivery IDs before handling a push. The webhook secret, any uploaded certificate key and the registry password are encrypted with the secret vault and kept outside project secrets, so project configuration cannot reference them. Rotating the registry password sends the new login to connected agents over UFP. A regenerated secret is shown once; the previous secret is accepted for 24 hours. [Configuration](configuration.md#webhooks) owns setup and routing behavior.
 
 Operator mutations require an audit intent record before execution and then record their outcome. Container terminal sessions record the same intent when they open and their outcome when they end. Authentication attempts, access changes and local administrator recovery also leave audit records. Administrators inspect them in **System → Audit log**.
 

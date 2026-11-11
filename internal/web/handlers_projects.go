@@ -38,6 +38,23 @@ func (h *Handler) createProject(c *gin.Context) {
 	h.mutation(w, r, u, "project.create", body.Name+"/"+body.Environment, func() (any, error) { return h.operations.CreateProject(body.Name, body.Environment, body.Content) })
 }
 
+func (h *Handler) deleteProject(c *gin.Context) {
+	w := c.Writer
+	r := c.Request
+	u := currentUser(c)
+	name := c.Param("name")
+	var body struct {
+		Volumes bool `json:"volumes"`
+		Images  bool `json:"images"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	h.mutation(w, r, u, "project.delete", name, func() (any, error) {
+		return map[string]bool{"deleted": true}, h.operations.DeleteProject(name, body.Volumes, body.Images)
+	})
+}
+
 func (h *Handler) reloadProjects(c *gin.Context) {
 	w := c.Writer
 	r := c.Request

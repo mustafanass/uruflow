@@ -19,6 +19,7 @@
 @import './responsive-compact.css';
 @import './responsive-mobile.css';
 @import './access.css';
+@import './settings.css';
 @import './navigation.css';
 
 @import './graph-responsive.css';

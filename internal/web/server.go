@@ -185,7 +185,7 @@ func (h *Handler) mutation(w http.ResponseWriter, r *http.Request, user *storage
 			status = 503
 			w.Header().Set("Retry-After", "30")
 		}
-		if errors.Is(err, ops.ErrConflict) {
+		if errors.Is(err, ops.ErrConflict) || errors.Is(err, ops.ErrSettingsConflict) || errors.Is(err, pipeline.ErrRegistryBusy) {
 			status = 409
 		}
 		writeError(w, status, err.Error())

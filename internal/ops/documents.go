@@ -171,6 +171,11 @@ func (e *Engine) Deploy(name, sourceRelease string, rollback, rebuild bool) (*mo
 	return e.Release(release.ID)
 }
 func (e *Engine) StopProject(name string) error { return e.server.Pipeline().Stop(name) }
+func (e *Engine) DeleteProject(name string, volumes, images bool) error {
+	e.configurationMu.Lock()
+	defer e.configurationMu.Unlock()
+	return e.server.Pipeline().Delete(name, volumes, images, e.deleteProject)
+}
 func (e *Engine) Images(ctx context.Context) (models.ImageCatalog, error) {
 	return e.server.Registry().Images(ctx)
 }

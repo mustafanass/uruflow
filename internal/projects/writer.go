@@ -19,6 +19,7 @@
 package projects
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -140,8 +141,11 @@ func (l *Loader) Create(draft Draft) error {
 func (l *Loader) Remove(project, env string) error {
 	environmentPath, variablesPath := l.Paths(project, env)
 
-	os.Remove(environmentPath)
-	os.Remove(variablesPath)
+	for _, path := range []string{environmentPath, variablesPath} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 
 	dir := filepath.Dir(environmentPath)
 	entries, err := os.ReadDir(dir)

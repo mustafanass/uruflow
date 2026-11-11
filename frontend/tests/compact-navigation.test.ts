@@ -6,14 +6,20 @@ import { releaseDefinition } from '../src/features/releases/release-definition.t
 import type { Snapshot } from '../src/shared/types/observation.ts'
 import type { Project } from '../src/shared/types/project.ts'
 
-test('five primary destinations retain clear owners for direct resource links', () => {
+test('primary destinations retain clear owners for direct resource links', () => {
   assert.deepEqual(
     navigation.map((item) => item.label),
-    ['Overview', 'Projects', 'Agents', 'Activity', 'System'],
+    ['Overview', 'Projects', 'Agents', 'Activity', 'System', 'Settings'],
+  )
+  assert.deepEqual(
+    navigation.filter((item) => item.admin).map((item) => item.label),
+    ['Settings'],
   )
   assert.equal(navigationSection('/releases/release-1'), '/projects')
   assert.equal(navigationSection('/containers/runner/container-1'), '/agents')
   assert.equal(navigationSection('/registry'), '/system')
+  assert.equal(navigationSection('/settings/registry'), '/settings')
+  assert.equal(navigationSection('/settings-other'), '/')
   assert.equal(navigationSection('/alerts'), '/activity')
   assert.equal(navigationSection('/projects-other'), '/')
 })

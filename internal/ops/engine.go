@@ -30,6 +30,7 @@ import (
 type Engine struct {
 	server          *api.Server
 	configurationMu sync.Mutex
+	settingsMu      sync.Mutex
 	observationMu   sync.Mutex
 	hostCollector   *metrics.Collector
 	hostCache       *models.Metrics

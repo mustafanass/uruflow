@@ -58,7 +58,13 @@ func (h *WebhookHandler) Handle(c *gin.Context) {
 	provider, ok := h.authenticate(r, payload)
 	if !ok {
 		logger.Warn("[WEBHOOK] rejected a request from %s", r.RemoteAddr)
+		h.service.Reject(provider, "invalid signature or token")
 		helper.WriteError(w, http.StatusUnauthorized, "invalid signature")
+		return
+	}
+	if !h.service.Enabled() {
+		h.service.Reject(provider, "deliveries are disabled")
+		helper.WriteError(w, http.StatusForbidden, "webhook deliveries are disabled")
 		return
 	}
 
@@ -82,6 +88,7 @@ func (h *WebhookHandler) Handle(c *gin.Context) {
 		return
 	}
 	result, err := h.service.Handle(provider, payload)
+	h.service.Record(provider, deliveryID, result, err)
 	if err != nil {
 		logger.Warn("[WEBHOOK] %v", err)
 		helper.WriteError(w, http.StatusAccepted, err.Error())

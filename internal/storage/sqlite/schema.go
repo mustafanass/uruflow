@@ -178,7 +178,19 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 	provider    TEXT NOT NULL,
 	delivery_id TEXT NOT NULL,
 	received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	repository  TEXT NOT NULL DEFAULT '',
+	branch      TEXT NOT NULL DEFAULT '',
+	commit_sha  TEXT NOT NULL DEFAULT '',
+	result      TEXT NOT NULL DEFAULT '',
+	detail      TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (provider, delivery_id)
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+	name       TEXT PRIMARY KEY,
+	value      TEXT NOT NULL,
+	revision   INTEGER NOT NULL DEFAULT 1,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS push_sources (

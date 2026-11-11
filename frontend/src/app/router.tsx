@@ -19,6 +19,7 @@ const ReleaseDetail = lazy(
 )
 const Activity = lazy(() => import('@/features/activity/ActivityPage'))
 const System = lazy(() => import('@/features/system/SystemPage'))
+const Settings = lazy(() => import('@/features/settings/SettingsPage'))
 export function AppRoutes() {
   return (
     <Suspense fallback={<PageLoading />}>
@@ -52,6 +53,7 @@ export function AppRoutes() {
           />
           <Route path="/activity" element={<Activity />} />
           <Route path="/system" element={<System />} />
+          <Route path="/settings/:section?" element={<Settings />} />
           <Route
             path="*"
             element={

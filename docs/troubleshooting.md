@@ -69,6 +69,8 @@ Start with the affected resource and its latest observation. Release outcomes, c
 
 **Build or pull fails.** Read the stage log. Check source access on the builder, base-image access, image identity, registry availability and the relevant agent's network.
 
+**A push does not start a release.** Open **Settings → Deliveries** to see whether the push arrived and why it was ignored or failed. **Settings → Webhooks** shows the last rejected request, such as a wrong secret or deliveries turned off. Check that the project's **Settings** tab enables that repository and branch.
+
 **The old version is running after failure.** Inspect startup output and readiness errors in the failed release. The runner attempts to restore the previous container when replacement fails.
 
 **Some runners succeeded and another failed.** Read each target's message and current inventory. Fix the failed target and deploy again, or deliberately restore an earlier successful release.

@@ -105,7 +105,15 @@ Unsaved document changes block navigation. Graph positions save automatically in
 
 Files are loaded on server startup and by **Projects → Reload definitions**. Use reload after a configuration-management system changes YAML, variable overlays or shared defaults.
 
-Loading reports invalid files and missing definitions. A removed definition does not implicitly remove workloads: restore its file and reload to reconcile the desired configuration.
+Loading reports invalid files and missing definitions. A removed definition does not implicitly remove workloads: restore its file and reload to reconcile the desired configuration. To remove a project instead, delete it from the workspace.
+
+## Delete a project
+
+Administrators delete one environment from **Settings → Delete project**. Other environments of the same project are not affected.
+
+Deletion waits until no release is running anywhere and every runner of the project is online, so nothing is left running on a machine the server cannot reach. It then removes the project's containers and its own networks from every runner, its environment and variable files, its release history and logs, its secrets, deploy-on-push sources and alerts, and the project from every account's assignments. The audit log records `project.delete`.
+
+Data volumes and registry images are kept unless they are selected in the dialog. Selected volumes are removed from every runner and need agents on 3.1.0 or later. Selected images are removed from the registry, and their unreferenced layers are collected. Volumes, networks and images that another project also uses are always kept, as are external resources and manually tagged images. A failed deletion can be repeated; files are removed before database records, so a partial deletion never restores the project.
 
 ## Implementation
 
